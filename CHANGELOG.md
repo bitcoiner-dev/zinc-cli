@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 - No changes yet.
 
+## [0.1.1] - 2026-03-21
+
+### Fixed
+- Removed `image` `avif-native` feature from optional `ui` build path to avoid `dav1d` system-library failures in CI and constrained environments.
+
 ## [0.1.0] - 2026-03-17
 
 ### Added

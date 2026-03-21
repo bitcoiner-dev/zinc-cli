@@ -1,0 +1,48 @@
+use crate::cli::{AccountAction, AccountArgs, Cli};
+use crate::error::AppError;
+use crate::wallet_service::{now_unix, AccountState};
+use crate::{load_wallet_session, profile_path, read_profile, write_profile};
+use serde_json::{json, Value};
+use zinc_core::Account;
+
+pub async fn run(cli: &Cli, args: &AccountArgs) -> Result<Value, AppError> {
+    match &args.action {
+        AccountAction::List { count } => {
+            let session = load_wallet_session(cli)?;
+            let accounts: Vec<Account> = session.wallet.get_accounts(count.unwrap_or(20));
+            if cli.json {
+                Ok(json!({"accounts": accounts}))
+            } else {
+                let table = crate::presenter::account::format_accounts(&accounts);
+                println!("{table}");
+                Ok(Value::Null)
+            }
+        }
+        AccountAction::Use { index } => {
+            let path = profile_path(cli)?;
+            let mut profile = read_profile(&path)?;
+            let old_index = profile.account_index;
+            profile.account_index = *index;
+            profile.updated_at_unix = now_unix();
+            profile.accounts.entry(*index).or_insert(AccountState {
+                persistence_json: None,
+                inscriptions_json: None,
+            });
+            write_profile(&path, &profile)?;
+
+            let session = load_wallet_session(cli)?;
+            let taproot_addr = session.wallet.peek_taproot_address(*index).to_string();
+            let payment_addr = session
+                .wallet
+                .peek_payment_address(*index)
+                .map(|s| s.to_string());
+
+            Ok(json!({
+                "previous_account_index": old_index,
+                "account_index": index,
+                "taproot_address": taproot_addr,
+                "payment_address": payment_addr,
+            }))
+        }
+    }
+}

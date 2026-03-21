@@ -1,0 +1,7 @@
+edition = "2021"
+merge_derives = true
+use_small_heuristics = "Default"
+tab_spaces = 4
+newline_style = "Unix"
+comment_width = 100
+wrap_comments = true

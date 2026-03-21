@@ -1,0 +1,15 @@
+pub mod account;
+pub mod address;
+pub mod balance;
+pub mod config;
+pub mod doctor;
+pub mod inscription;
+pub mod lock;
+pub mod psbt;
+pub mod scenario;
+pub mod setup;
+pub mod snapshot;
+pub mod sync;
+pub mod tx;
+pub mod wait;
+pub mod wallet;

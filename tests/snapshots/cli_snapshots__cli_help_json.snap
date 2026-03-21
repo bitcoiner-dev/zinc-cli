@@ -1,0 +1,54 @@
+---
+source: tests/cli_snapshots.rs
+expression: json_output
+---
+{
+  "command": "help",
+  "command_list": [
+    "setup",
+    "config show",
+    "config set",
+    "config unset",
+    "wallet init",
+    "wallet import",
+    "wallet info",
+    "wallet reveal-mnemonic",
+    "sync chain",
+    "sync ordinals",
+    "address taproot",
+    "address payment",
+    "balance",
+    "tx list",
+    "psbt create",
+    "psbt analyze",
+    "psbt sign",
+    "psbt broadcast",
+    "account list",
+    "account use",
+    "wait tx-confirmed",
+    "wait balance",
+    "snapshot save",
+    "snapshot restore",
+    "snapshot list",
+    "lock info",
+    "lock clear",
+    "scenario mine",
+    "scenario fund",
+    "scenario reset",
+    "doctor"
+  ],
+  "global_flags": [
+    "--json",
+    "--agent",
+    "--quiet",
+    "--yes",
+    "--password",
+    "--password-env",
+    "--password-stdin",
+    "--reveal",
+    "--data-dir",
+    "--profile"
+  ],
+  "ok": true,
+  "schema_version": "1.0"
+}

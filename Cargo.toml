@@ -1,0 +1,103 @@
+[package]
+name = "zinc-wallet-cli"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+description = "Agent-first Bitcoin + Ordinals CLI wallet with account-based taproot ordinals + native segwit payment addresses (optional human mode)"
+readme = "README.md"
+repository = "https://github.com/bitcoiner-dev/zinc-cli"
+homepage = "https://github.com/bitcoiner-dev/zinc-cli"
+documentation = "https://docs.rs/zinc-wallet-cli"
+keywords = ["bitcoin", "ordinals", "wallet", "cli", "agent"]
+categories = ["command-line-utilities", "cryptography::cryptocurrencies"]
+include = [
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "USAGE.md",
+    "AGENT_PLAYBOOKS.md",
+    "COMMAND_CONTRACT_V1.md",
+    "SCHEMAS.md",
+    "assets/**",
+    "demo/README.md",
+    "demo/env.sh",
+    "demo/scripts/**",
+    "demo/artifacts/.gitkeep",
+    "src/**",
+    "examples/**",
+    "tests/**",
+]
+
+[workspace]
+
+[[bin]]
+name = "zinc-cli"
+path = "src/main.rs"
+
+[features]
+default = []
+ui = [
+    "dep:inquire",
+    "dep:ratatui",
+    "dep:crossterm",
+    "dep:owo-colors",
+    "dep:ratatui-image",
+    "dep:throbber-widgets-tui",
+    "dep:tui-big-text",
+    "dep:figlet-rs",
+    "dep:rand",
+    "dep:bip39",
+    "dep:image",
+]
+
+[dependencies]
+clap = { version = "4.5.61", features = ["derive"] }
+comfy-table = "7.2.2"
+indicatif = "0.18.4"
+inquire = { version = "0.9.1", optional = true }
+is-terminal = "0.4.17"
+miette = { version = "7.6.0", features = ["fancy"] }
+rpassword = "7.4.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0.18"
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "time"] }
+chrono = "0.4.38"
+ratatui = { version = "0.30.0", optional = true }
+crossterm = { version = "0.27.0", optional = true }
+owo-colors = { version = "4.0.0", optional = true }
+ratatui-image = { version = "10.0.6", default-features = false, features = ["crossterm", "image-defaults"], optional = true }
+throbber-widgets-tui = { version = "0.10.0", optional = true }
+tui-big-text = { version = "0.8.2", optional = true }
+figlet-rs = { version = "0.1.5", optional = true }
+supports-unicode = "3.0.0"
+
+zinc-core = "0.1.0"
+rand = { version = "0.8", optional = true }
+bip39 = { version = "2.1.0", optional = true }
+image = { version = "0.25.10", features = ["avif", "webp", "avif-native"], optional = true }
+
+
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "allow", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+pedantic = { level = "allow", priority = -1 }
+unwrap_used = "allow"
+expect_used = "allow"
+panic = "allow"
+todo = "deny"
+unimplemented = "deny"
+dead_code = "deny"
+
+[dev-dependencies]
+assert_cmd = "2.1.2"
+insta = { version = "1.46.3", features = ["json", "redactions"] }

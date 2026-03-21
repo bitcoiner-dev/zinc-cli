@@ -1,0 +1,20 @@
+---
+source: tests/cli_snapshots.rs
+assertion_line: 22
+expression: json_output
+---
+{
+  "command": "inscription list",
+  "correlation_id": "[REDACTED_CORRELATION_ID]",
+  "error": {
+    "exit_code": 15,
+    "message": "[REDACTED_ERROR_MESSAGE]",
+    "type": "not_found"
+  },
+  "meta": {
+    "duration_ms": 0,
+    "started_at_unix_ms": 0
+  },
+  "ok": false,
+  "schema_version": "1.0"
+}

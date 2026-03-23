@@ -141,6 +141,7 @@ pub enum Command {
     Balance,
     Tx(TxArgs),
     Psbt(PsbtArgs),
+    Offer(OfferArgs),
     Account(AccountArgs),
     Wait(WaitArgs),
     Snapshot(SnapshotArgs),
@@ -324,6 +325,49 @@ pub enum PsbtAction {
 }
 
 #[derive(Parser, Debug, Clone)]
+pub struct OfferArgs {
+    #[command(subcommand)]
+    pub action: OfferAction,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum OfferAction {
+    Publish {
+        #[arg(long)]
+        offer_json: Option<String>,
+        #[arg(long)]
+        offer_file: Option<PathBuf>,
+        #[arg(long)]
+        offer_stdin: bool,
+        #[arg(long)]
+        secret_key_hex: String,
+        #[arg(long)]
+        relay: Vec<String>,
+        #[arg(long)]
+        created_at_unix: Option<u64>,
+        #[arg(long, default_value_t = 5000)]
+        timeout_ms: u64,
+    },
+    Discover {
+        #[arg(long)]
+        relay: Vec<String>,
+        #[arg(long, default_value_t = 256)]
+        limit: usize,
+        #[arg(long, default_value_t = 5000)]
+        timeout_ms: u64,
+    },
+    SubmitOrd {
+        #[arg(long)]
+        psbt: Option<String>,
+        #[arg(long)]
+        psbt_file: Option<PathBuf>,
+        #[arg(long)]
+        psbt_stdin: bool,
+    },
+    ListOrd,
+}
+
+#[derive(Parser, Debug, Clone)]
 pub struct AccountArgs {
     #[command(subcommand)]
     pub action: AccountAction,
@@ -428,6 +472,75 @@ pub enum ScenarioAction {
         #[arg(long)]
         remove_snapshots: bool,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cli, Command, OfferAction};
+    use clap::Parser;
+
+    #[test]
+    fn parses_offer_publish_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "offer",
+            "publish",
+            "--offer-json",
+            "{\"version\":1}",
+            "--secret-key-hex",
+            "abc123",
+            "--relay",
+            "wss://relay.example",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Offer(args) => match args.action {
+                OfferAction::Publish {
+                    relay,
+                    secret_key_hex,
+                    ..
+                } => {
+                    assert_eq!(relay, vec!["wss://relay.example".to_string()]);
+                    assert_eq!(secret_key_hex, "abc123");
+                }
+                _ => panic!("expected offer publish action"),
+            },
+            _ => panic!("expected offer command"),
+        }
+    }
+
+    #[test]
+    fn parses_offer_discover_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "offer",
+            "discover",
+            "--relay",
+            "wss://relay.example",
+            "--limit",
+            "50",
+            "--timeout-ms",
+            "2000",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Offer(args) => match args.action {
+                OfferAction::Discover {
+                    relay,
+                    limit,
+                    timeout_ms,
+                } => {
+                    assert_eq!(relay, vec!["wss://relay.example".to_string()]);
+                    assert_eq!(limit, 50);
+                    assert_eq!(timeout_ms, 2000);
+                }
+                _ => panic!("expected offer discover action"),
+            },
+            _ => panic!("expected offer command"),
+        }
+    }
 }
 
 #[derive(Parser, Debug, Clone)]

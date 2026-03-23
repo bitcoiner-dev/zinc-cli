@@ -89,6 +89,10 @@ const COMMAND_LIST: &[&str] = &[
     "psbt analyze",
     "psbt sign",
     "psbt broadcast",
+    "offer publish",
+    "offer discover",
+    "offer submit-ord",
+    "offer list-ord",
     "account list",
     "account use",
     "wait tx-confirmed",
@@ -703,6 +707,10 @@ fn is_mutating_command(command: &Command) -> bool {
                 | crate::cli::PsbtAction::Sign { .. }
                 | crate::cli::PsbtAction::Broadcast { .. }
         ),
+        Command::Offer(args) => matches!(
+            &args.action,
+            crate::cli::OfferAction::Publish { .. } | crate::cli::OfferAction::SubmitOrd { .. }
+        ),
         Command::Account(args) => {
             matches!(&args.action, crate::cli::AccountAction::Use { .. })
         }
@@ -888,6 +896,7 @@ pub(crate) async fn dispatch(cli: &Cli) -> Result<Value, AppError> {
         Command::Balance => crate::commands::balance::run(cli).await,
         Command::Tx(args) => crate::commands::tx::run(cli, args).await,
         Command::Psbt(args) => crate::commands::psbt::run(cli, args).await,
+        Command::Offer(args) => crate::commands::offer::run(cli, args).await,
         Command::Account(args) => crate::commands::account::run(cli, args).await,
         Command::Wait(args) => crate::commands::wait::run(cli, args).await,
         Command::Snapshot(args) => crate::commands::snapshot::run(cli, args).await,
@@ -915,7 +924,8 @@ pub(crate) fn needs_lock(command: &Command) -> bool {
         | Command::Config { .. }
         | Command::Doctor
         | Command::Lock { .. }
-        | Command::Psbt { .. } => false,
+        | Command::Psbt { .. }
+        | Command::Offer { .. } => false,
         _ => true,
     }
 }

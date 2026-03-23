@@ -172,6 +172,13 @@ fn get_str(json: &Value, key: &str) -> String {
         .to_string()
 }
 
+fn get_u64(json: &Value, key: &str) -> u64 {
+    json.get(key)
+        .unwrap_or_else(|| panic!("Missing key: {} in JSON: {}", key, json))
+        .as_u64()
+        .unwrap_or_else(|| panic!("Expected u64 for {}", key))
+}
+
 fn live_tests_enabled() -> bool {
     std::env::var("ZINC_CLI_LIVE_TESTS")
         .ok()
@@ -393,6 +400,21 @@ fn test_offer_nostr_publish_discover_live() {
         &data_dir,
         TEST_PASSWORD,
     );
+    let accepted_relays = get_u64(&publish, "accepted_relays");
+    if accepted_relays == 0 {
+        let relay_message = publish
+            .get("publish_results")
+            .and_then(Value::as_array)
+            .and_then(|rows| rows.first())
+            .and_then(|row| row.get("message"))
+            .and_then(Value::as_str)
+            .unwrap_or("no relay acceptance details returned");
+        eprintln!(
+            "Skipping test_offer_nostr_publish_discover_live: no relays accepted publish ({}).",
+            relay_message
+        );
+        return;
+    }
 
     let event_id = publish
         .get("event")

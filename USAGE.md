@@ -294,3 +294,34 @@ test test_agent_wallet_workflow ... ok
 ```
 
 If account 0 does not have enough spendable balance, the transfer portion is skipped by design.
+
+## 9) Offer Live Integration Tests (Ord + Nostr)
+
+Run the ord submit/list live round-trip:
+
+```bash
+ZINC_CLI_LIVE_TESTS=1 \
+cargo test --test offer_live test_offer_ord_submit_and_list_live -- --nocapture
+```
+
+Run the nostr publish/discover live round-trip using default relay:
+
+```bash
+ZINC_CLI_LIVE_TESTS=1 \
+cargo test --test offer_live test_offer_nostr_publish_discover_live -- --nocapture
+```
+
+Use a custom nostr relay endpoint:
+
+```bash
+ZINC_CLI_LIVE_TESTS=1 \
+ZINC_CLI_TEST_NOSTR_RELAY_URL=wss://nostr-regtest.exittheloop.com \
+cargo test --test offer_live test_offer_nostr_publish_discover_live -- --nocapture
+```
+
+Notes:
+- Tests are opt-in and skipped unless `ZINC_CLI_LIVE_TESTS=1` is set.
+- Live infra defaults used by the suite:
+  - Esplora: `https://regtest.exittheloop.com/api`
+  - Ord: `https://ord-regtest.exittheloop.com`
+  - Nostr relay: `wss://nostr-regtest.exittheloop.com`

@@ -409,6 +409,14 @@ fn test_offer_nostr_publish_discover_live() {
             .and_then(|row| row.get("message"))
             .and_then(Value::as_str)
             .unwrap_or("no relay acceptance details returned");
+        if relay_message
+            .to_ascii_lowercase()
+            .contains("tls support not compiled in")
+        {
+            panic!(
+                "Nostr publish failed because wss TLS support is missing in this build: {relay_message}"
+            );
+        }
         eprintln!(
             "Skipping test_offer_nostr_publish_discover_live: no relays accepted publish ({}).",
             relay_message

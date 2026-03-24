@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve `zinc-core`.
+Thanks for helping improve `zinc-cli`.
 
 ## Development Setup
 
@@ -20,6 +20,16 @@ cargo doc -p zinc-core --no-deps
 - Add or update tests for behavior changes.
 - Update docs/examples if public APIs or user workflows change.
 - Document user-visible changes in `CHANGELOG.md`.
+
+## Release Checklist (`zinc-cli` -> `zinc-core`)
+
+1. Publish `zinc-core` to crates.io first.
+2. Update `Cargo.toml` to an exact `zinc-core` pin:
+   - `zinc-core = { version = "=X.Y.Z", path = "../zinc-core-public" }`
+3. Push a `zinc-cli` release tag.
+4. Ensure tag CI passes:
+   - exact pin validation succeeds,
+   - `cargo package` verification succeeds against released crates.io dependencies.
 
 ## Security-Sensitive Code
 

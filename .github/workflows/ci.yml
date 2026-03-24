@@ -41,5 +41,14 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Validate exact zinc-core release pin
+        run: |
+          if ! grep -Eq '^[[:space:]]*zinc-core[[:space:]]*=[[:space:]]*\{[^}]*version[[:space:]]*=[[:space:]]*"=[0-9]+\.[0-9]+\.[0-9]+"[^}]*\}' Cargo.toml; then
+            echo "Expected an exact zinc-core version pin in Cargo.toml (e.g. version = \"=0.1.2\")."
+            echo "Current zinc-core dependency line:"
+            grep -n '^[[:space:]]*zinc-core[[:space:]]*=' Cargo.toml || true
+            exit 1
+          fi
+
       - name: Verify package against released zinc-core dependency
         run: cargo package

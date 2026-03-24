@@ -5,7 +5,8 @@ on:
   pull_request:
 
 jobs:
-  validate:
+  validate-local:
+    if: ${{ github.event_name == 'pull_request' || !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -14,7 +15,7 @@ jobs:
           - cargo test --tests
           - cargo check --no-default-features
           - cargo check --features ui
-          - cargo package
+          - cargo package --no-verify
 
     steps:
       - name: Checkout
@@ -29,3 +30,16 @@ jobs:
 
       - name: Run ${{ matrix.command }}
         run: ${{ matrix.command }}
+
+  validate-release-deps:
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify package against released zinc-core dependency
+        run: cargo package

@@ -77,6 +77,38 @@ Optional output files:
 - `psbt create --out-file <path>`
 - `psbt sign --out-file <path>`
 
+## Offer Commands
+
+- `offer publish`:
+  - `event` (signed nostr event)
+  - `publish_results` (per-relay acceptance/message rows)
+  - `accepted_relays` (count)
+  - `total_relays` (count)
+- `offer discover`:
+  - `events` (decoded nostr events)
+  - `offers` (decoded offer envelopes with event metadata)
+  - `event_count`
+  - `offer_count`
+- `offer submit-ord`:
+  - `submitted` (bool)
+  - `ord_url`
+- `offer list-ord`:
+  - `ord_url`
+  - `offers` (array of base64 PSBT strings)
+  - `count`
+
+Input modes and rules:
+
+- For `offer publish`, exactly one of:
+  - `--offer-json <json>`
+  - `--offer-file <path>`
+  - `--offer-stdin` (reads offer JSON from stdin)
+- For `offer submit-ord`, exactly one of:
+  - `--psbt <base64>`
+  - `--psbt-file <path>`
+  - `--psbt-stdin` (reads base64 PSBT from stdin)
+- `offer publish` and `offer discover` require at least one `--relay`.
+
 ## Account/Wait/Snapshot
 
 - `account list`: `accounts`

@@ -83,6 +83,7 @@ Reports are written to `demo/artifacts/`.
 - sync: `sync chain|ordinals`
 - addresses and balance: `address taproot|payment`, `balance`
 - transfers: `psbt create|analyze|sign|broadcast`
+- offers: `offer publish|discover|submit-ord|list-ord`
 - accounts: `account list|use`
 - waits and tx: `wait tx-confirmed|balance`, `tx list`
 - operations: `snapshot save|restore|list`, `lock info|clear`, `doctor`

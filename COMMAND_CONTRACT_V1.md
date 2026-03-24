@@ -365,9 +365,41 @@ Success fields:
 `ord` shape:
 `{ url: string, reachable: bool, indexing_height: u32 | null, error: string | null }`
 
-## 8) Input Source Rules (PSBT Commands)
+## 7.27 offer publish
 
-For `psbt analyze`, `psbt sign`, `psbt broadcast` exactly one input source must be present:
+Command:
+`offer publish [--offer-json <json> | --offer-file <path> | --offer-stdin] --secret-key-hex <hex> --relay <url>... [--created-at-unix <unix>] [--timeout-ms N]`
+
+Success fields:
+`event`, `publish_results`, `accepted_relays`, `total_relays`
+
+## 7.28 offer discover
+
+Command:
+`offer discover --relay <url>... [--limit N] [--timeout-ms N]`
+
+Success fields:
+`events`, `offers`, `event_count`, `offer_count`
+
+## 7.29 offer submit-ord
+
+Command:
+`offer submit-ord [--psbt <base64> | --psbt-file <path> | --psbt-stdin]`
+
+Success fields:
+`submitted`, `ord_url`
+
+## 7.30 offer list-ord
+
+Command:
+`offer list-ord`
+
+Success fields:
+`ord_url`, `offers`, `count`
+
+## 8) Input Source Rules (PSBT and Offer Commands)
+
+For `psbt analyze`, `psbt sign`, `psbt broadcast`, and `offer submit-ord` exactly one PSBT input source must be present:
 
 1. `--psbt <base64>`
 2. `--psbt-file <path>`
@@ -376,6 +408,16 @@ For `psbt analyze`, `psbt sign`, `psbt broadcast` exactly one input source must 
 If zero or multiple are provided, return `invalid`.
 
 `--password-stdin` must not be combined with `--psbt-stdin` in the same invocation.
+
+For `offer publish`, exactly one offer source must be present:
+
+1. `--offer-json <json>`
+2. `--offer-file <path>`
+3. `--offer-stdin`
+
+If zero or multiple are provided, return `invalid`.
+
+For `offer publish` and `offer discover`, at least one `--relay <url>` is required.
 
 When `--policy-mode strict` is set, `psbt sign` and `psbt broadcast` fail closed with `error.type="policy"` for unsafe, medium/high, or unknown inscription-risk outcomes.
 

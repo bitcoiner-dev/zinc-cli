@@ -212,7 +212,47 @@ Rules:
 - For `psbt analyze/sign/broadcast`, exactly one of `--psbt`, `--psbt-file`, `--psbt-stdin` is required.
 - `--password-stdin` cannot be combined with `--psbt-stdin` in one invocation.
 
-## 6) Profiles, Accounts, and Waits
+## 6) Offer Commands (Nostr + Ord)
+
+Publish a signed offer event to one or more relays:
+
+```bash
+zinc-cli --agent offer publish \
+  --offer-json '{"version":1,"seller_pubkey_hex":"<xonly-pubkey-hex>","network":"regtest","inscription_id":"<inscription-id>","seller_outpoint":"<txid:vout>","ask_sats":100000,"fee_rate_sat_vb":1,"psbt_base64":"<base64-psbt>","created_at_unix":1710000000,"expires_at_unix":1710003600,"nonce":42}' \
+  --secret-key-hex <seller-secret-key-hex> \
+  --relay wss://nostr.example
+```
+
+Discover offers from one or more relays:
+
+```bash
+zinc-cli --agent offer discover \
+  --relay wss://nostr.example \
+  --limit 256 \
+  --timeout-ms 5000
+```
+
+Submit an offer PSBT to ord:
+
+```bash
+zinc-cli --agent --ord-url https://ord.example \
+  offer submit-ord --psbt-file /tmp/offer.psbt
+```
+
+List offer PSBTs from ord:
+
+```bash
+zinc-cli --agent --ord-url https://ord.example \
+  offer list-ord
+```
+
+Rules:
+
+- For `offer publish`, exactly one of `--offer-json`, `--offer-file`, `--offer-stdin` is required.
+- For `offer submit-ord`, exactly one of `--psbt`, `--psbt-file`, `--psbt-stdin` is required.
+- `offer publish` and `offer discover` require at least one `--relay`.
+
+## 7) Profiles, Accounts, and Waits
 
 Use named profile and custom data directory:
 
@@ -232,7 +272,7 @@ Wait for confirmation:
 zinc-cli --agent wait tx-confirmed --txid <txid> --timeout-secs 300
 ```
 
-## 7) Safety Notes
+## 8) Safety Notes
 
 - Prefer setting `ZINC_WALLET_PASSWORD` once for automation.
 - Use `--password-env` only when you need a non-default env var name.
@@ -240,7 +280,7 @@ zinc-cli --agent wait tx-confirmed --txid <txid> --timeout-secs 300
 - `wallet init` in human mode prints the new seed phrase once; in `--json` mode mnemonic output is redacted unless `--reveal` is set.
 - In `--json` mode, consume stdout as machine data and treat stderr as diagnostics only.
 
-## 8) Agent Flow Integration Test
+## 9) Agent Flow Integration Test
 
 Run the complete agentic wallet flow:
 
@@ -295,7 +335,7 @@ test test_agent_wallet_workflow ... ok
 
 If account 0 does not have enough spendable balance, the transfer portion is skipped by design.
 
-## 9) Offer Live Integration Tests (Ord + Nostr)
+## 10) Offer Live Integration Tests (Ord + Nostr)
 
 Run the ord submit/list live round-trip:
 

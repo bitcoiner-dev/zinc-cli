@@ -397,6 +397,14 @@ Command:
 Success fields:
 `ord_url`, `offers`, `count`
 
+## 7.31 offer accept
+
+Command:
+`offer accept [--offer-json <json> | --offer-file <path> | --offer-stdin] [--expect-inscription <id>] [--expect-ask-sats <u64>] [--dry-run]`
+
+Success fields:
+`accepted`, `dry_run`, `offer_id`, `seller_input_index`, `input_count`, `inscription_id`, `ask_sats`, `safe_to_send`, `inscription_risk`, `policy_reasons`, `analysis`, `txid?`
+
 ## 8) Input Source Rules (PSBT and Offer Commands)
 
 For `psbt analyze`, `psbt sign`, `psbt broadcast`, and `offer submit-ord` exactly one PSBT input source must be present:
@@ -409,7 +417,7 @@ If zero or multiple are provided, return `invalid`.
 
 `--password-stdin` must not be combined with `--psbt-stdin` in the same invocation.
 
-For `offer publish`, exactly one offer source must be present:
+For `offer publish` and `offer accept`, exactly one offer source must be present:
 
 1. `--offer-json <json>`
 2. `--offer-file <path>`
@@ -419,7 +427,7 @@ If zero or multiple are provided, return `invalid`.
 
 For `offer publish` and `offer discover`, at least one `--relay <url>` is required.
 
-When `--policy-mode strict` is set, `psbt sign` and `psbt broadcast` fail closed with `error.type="policy"` for unsafe, medium/high, or unknown inscription-risk outcomes.
+When `--policy-mode strict` is set, `psbt sign`, `psbt broadcast`, and `offer accept` fail closed with `error.type="policy"` for unsafe, medium/high, or unknown inscription-risk outcomes.
 
 ## 9) Compatibility and Versioning Policy
 

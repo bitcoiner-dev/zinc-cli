@@ -96,10 +96,27 @@ Optional output files:
   - `ord_url`
   - `offers` (array of base64 PSBT strings)
   - `count`
+- `offer accept`:
+  - `accepted` (bool)
+  - `dry_run` (bool)
+  - `offer_id`
+  - `seller_input_index`
+  - `input_count`
+  - `inscription_id`
+  - `ask_sats`
+  - `safe_to_send`
+  - `inscription_risk`
+  - `policy_reasons`
+  - `analysis`
+  - `txid` (present when `dry_run=false`)
 
 Input modes and rules:
 
 - For `offer publish`, exactly one of:
+  - `--offer-json <json>`
+  - `--offer-file <path>`
+  - `--offer-stdin` (reads offer JSON from stdin)
+- For `offer accept`, exactly one of:
   - `--offer-json <json>`
   - `--offer-file <path>`
   - `--offer-stdin` (reads offer JSON from stdin)

@@ -232,6 +232,23 @@ zinc-cli --agent offer discover \
   --timeout-ms 5000
 ```
 
+Accept an offer from an offer envelope (sign seller input and optionally broadcast):
+
+```bash
+zinc-cli --agent offer accept \
+  --offer-file /tmp/offer.json \
+  --expect-inscription <inscription-id> \
+  --expect-ask-sats 100000
+```
+
+Dry run acceptance checks (no broadcast):
+
+```bash
+zinc-cli --agent offer accept \
+  --offer-file /tmp/offer.json \
+  --dry-run
+```
+
 Submit an offer PSBT to ord:
 
 ```bash
@@ -249,6 +266,7 @@ zinc-cli --agent --ord-url https://ord.example \
 Rules:
 
 - For `offer publish`, exactly one of `--offer-json`, `--offer-file`, `--offer-stdin` is required.
+- For `offer accept`, exactly one of `--offer-json`, `--offer-file`, `--offer-stdin` is required.
 - For `offer submit-ord`, exactly one of `--psbt`, `--psbt-file`, `--psbt-stdin` is required.
 - `offer publish` and `offer discover` require at least one `--relay`.
 
@@ -286,6 +304,12 @@ Run the complete agentic wallet flow:
 
 ```bash
 ZINC_CLI_LIVE_TESTS=1 cargo test --test agent_flow test_agent_wallet_workflow -- --nocapture
+```
+
+Run the live offer create -> accept integration test:
+
+```bash
+ZINC_CLI_LIVE_TESTS=1 cargo test --test offer_live test_offer_create_and_accept_live -- --nocapture
 ```
 
 Sample run from a funded regtest environment:

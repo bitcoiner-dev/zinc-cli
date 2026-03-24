@@ -179,6 +179,17 @@ fn get_u64(json: &Value, key: &str) -> u64 {
         .unwrap_or_else(|| panic!("Expected u64 for {}", key))
 }
 
+fn tx_list_contains(tx_list_json: &Value, txid: &str) -> bool {
+    tx_list_json
+        .get("transactions")
+        .and_then(Value::as_array)
+        .map(|txs| {
+            txs.iter()
+                .any(|tx| tx.get("txid").and_then(Value::as_str) == Some(txid))
+        })
+        .unwrap_or(false)
+}
+
 fn live_tests_enabled() -> bool {
     std::env::var("ZINC_CLI_LIVE_TESTS")
         .ok()
@@ -212,7 +223,8 @@ fn now_nanos() -> u64 {
 }
 
 fn relay_url() -> String {
-    std::env::var("ZINC_CLI_TEST_NOSTR_RELAY_URL").unwrap_or_else(|_| DEFAULT_NOSTR_RELAY_URL.to_string())
+    std::env::var("ZINC_CLI_TEST_NOSTR_RELAY_URL")
+        .unwrap_or_else(|_| DEFAULT_NOSTR_RELAY_URL.to_string())
 }
 
 fn offer_json_payload() -> String {
@@ -473,7 +485,186 @@ fn test_offer_nostr_publish_discover_live() {
     assert!(
         found,
         "Published event {} not found via discover after retries (last event count={})",
-        event_id,
-        last_event_count
+        event_id, last_event_count
+    );
+}
+
+#[test]
+fn test_offer_create_and_accept_live() {
+    if !ensure_live_test_enabled("test_offer_create_and_accept_live") {
+        return;
+    }
+
+    let data_dir = unique_data_dir("zinc_offer_accept_live");
+    let _ = fs::remove_dir_all(&data_dir);
+
+    let import_result = run_zinc(
+        &[
+            "wallet",
+            "import",
+            "--mnemonic",
+            TEST_MNEMONIC,
+            "--network",
+            "regtest",
+            "--scheme",
+            "dual",
+            "--overwrite",
+        ],
+        &data_dir,
+        TEST_PASSWORD,
+    );
+    assert_eq!(get_str(&import_result, "network"), "regtest");
+
+    run_zinc(
+        &["--esplora-url", REGTEST_ESPLORA_URL, "sync", "chain"],
+        &data_dir,
+        TEST_PASSWORD,
+    );
+
+    run_zinc(
+        &["account", "use", "--index", "1"],
+        &data_dir,
+        TEST_PASSWORD,
+    );
+    let recipient = run_zinc(&["address", "payment", "--new"], &data_dir, TEST_PASSWORD);
+    let recipient_address = get_str(&recipient, "address");
+    run_zinc(
+        &["account", "use", "--index", "0"],
+        &data_dir,
+        TEST_PASSWORD,
+    );
+
+    let create = run_zinc(
+        &[
+            "psbt",
+            "create",
+            "--to",
+            &recipient_address,
+            "--amount-sats",
+            "1000",
+            "--fee-rate",
+            "1",
+        ],
+        &data_dir,
+        TEST_PASSWORD,
+    );
+    let unsigned_psbt = get_str(&create, "psbt");
+    assert!(!unsigned_psbt.is_empty());
+
+    let analyze = run_zinc(
+        &["psbt", "analyze", "--psbt", &unsigned_psbt],
+        &data_dir,
+        TEST_PASSWORD,
+    );
+    let analysis = analyze
+        .get("analysis")
+        .unwrap_or_else(|| panic!("Missing analysis in psbt analyze output: {analyze}"));
+    let inputs = analysis
+        .get("inputs")
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| panic!("Missing analysis.inputs in psbt analyze output: {analyze}"));
+    assert!(
+        !inputs.is_empty(),
+        "Expected at least one PSBT input in analysis: {analysis}"
+    );
+
+    let seller_txid = inputs[0]
+        .get("txid")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("Missing inputs[0].txid in analysis: {analysis}"));
+    let seller_vout = inputs[0]
+        .get("vout")
+        .and_then(Value::as_u64)
+        .unwrap_or_else(|| panic!("Missing inputs[0].vout in analysis: {analysis}"));
+    let seller_outpoint = format!("{seller_txid}:{seller_vout}");
+
+    let offer_psbt = if inputs.len() == 1 {
+        unsigned_psbt.clone()
+    } else {
+        let buyer_indices = (1..inputs.len())
+            .map(|index| index.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let signed_buyers = run_zinc(
+            &[
+                "psbt",
+                "sign",
+                "--psbt",
+                &unsigned_psbt,
+                "--sign-inputs",
+                &buyer_indices,
+                "--finalize",
+            ],
+            &data_dir,
+            TEST_PASSWORD,
+        );
+        get_str(&signed_buyers, "psbt")
+    };
+
+    let created_at = now_unix();
+    let expires_at = created_at + 3600;
+    let ask_sats = 1000u64;
+    let inscription_id = "integration-offer-inscription-1";
+    let offer_json = json!({
+        "version": 1u8,
+        "seller_pubkey_hex": TEST_SELLER_PUBKEY_HEX,
+        "network": "regtest",
+        "inscription_id": inscription_id,
+        "seller_outpoint": seller_outpoint,
+        "ask_sats": ask_sats,
+        "fee_rate_sat_vb": 1u64,
+        "psbt_base64": offer_psbt,
+        "created_at_unix": created_at as i64,
+        "expires_at_unix": expires_at as i64,
+        "nonce": now_nanos()
+    })
+    .to_string();
+
+    let accepted = run_zinc(
+        &[
+            "--esplora-url",
+            REGTEST_ESPLORA_URL,
+            "offer",
+            "accept",
+            "--offer-json",
+            &offer_json,
+            "--expect-inscription",
+            inscription_id,
+            "--expect-ask-sats",
+            &ask_sats.to_string(),
+        ],
+        &data_dir,
+        TEST_PASSWORD,
+    );
+
+    assert!(get_bool(&accepted, "accepted"));
+    assert!(!get_bool(&accepted, "dry_run"));
+    assert_eq!(get_u64(&accepted, "input_count"), inputs.len() as u64);
+    assert_eq!(get_u64(&accepted, "seller_input_index"), 0);
+
+    let txid = get_str(&accepted, "txid");
+    assert!(
+        !txid.is_empty(),
+        "Expected txid in offer accept output: {accepted}"
+    );
+
+    let mut found_tx = false;
+    for _ in 0..10 {
+        run_zinc(
+            &["--esplora-url", REGTEST_ESPLORA_URL, "sync", "chain"],
+            &data_dir,
+            TEST_PASSWORD,
+        );
+        let tx_list = run_zinc(&["tx", "list", "--limit", "100"], &data_dir, TEST_PASSWORD);
+        if tx_list_contains(&tx_list, &txid) {
+            found_tx = true;
+            break;
+        }
+        thread::sleep(Duration::from_secs(2));
+    }
+    assert!(
+        found_tx,
+        "Accepted offer txid {} was not found in tx list after retries",
+        txid
     );
 }

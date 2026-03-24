@@ -20,6 +20,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout zinc-core sibling (path dependency)
+        run: |
+          git clone --depth 1 https://github.com/bitcoiner-dev/zinc-core.git "$GITHUB_WORKSPACE/../zinc-core-public"
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 

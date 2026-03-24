@@ -365,6 +365,20 @@ pub enum OfferAction {
         psbt_stdin: bool,
     },
     ListOrd,
+    Accept {
+        #[arg(long)]
+        offer_json: Option<String>,
+        #[arg(long)]
+        offer_file: Option<PathBuf>,
+        #[arg(long)]
+        offer_stdin: bool,
+        #[arg(long)]
+        expect_inscription: Option<String>,
+        #[arg(long)]
+        expect_ask_sats: Option<u64>,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -537,6 +551,42 @@ mod tests {
                     assert_eq!(timeout_ms, 2000);
                 }
                 _ => panic!("expected offer discover action"),
+            },
+            _ => panic!("expected offer command"),
+        }
+    }
+
+    #[test]
+    fn parses_offer_accept_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "offer",
+            "accept",
+            "--offer-json",
+            "{\"version\":1}",
+            "--expect-inscription",
+            "inscription123",
+            "--expect-ask-sats",
+            "1234",
+            "--dry-run",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Offer(args) => match args.action {
+                OfferAction::Accept {
+                    offer_json,
+                    expect_inscription,
+                    expect_ask_sats,
+                    dry_run,
+                    ..
+                } => {
+                    assert_eq!(offer_json.as_deref(), Some("{\"version\":1}"));
+                    assert_eq!(expect_inscription.as_deref(), Some("inscription123"));
+                    assert_eq!(expect_ask_sats, Some(1234));
+                    assert!(dry_run);
+                }
+                _ => panic!("expected offer accept action"),
             },
             _ => panic!("expected offer command"),
         }

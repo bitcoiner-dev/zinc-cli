@@ -143,13 +143,13 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<Value, AppError> {
     }
 }
 
-struct PsbtPolicyDecision {
-    safe_to_send: bool,
-    inscription_risk: &'static str,
-    policy_reasons: Vec<String>,
+pub(crate) struct PsbtPolicyDecision {
+    pub safe_to_send: bool,
+    pub inscription_risk: &'static str,
+    pub policy_reasons: Vec<String>,
 }
 
-fn derive_psbt_policy(analysis: &Value) -> PsbtPolicyDecision {
+pub(crate) fn derive_psbt_policy(analysis: &Value) -> PsbtPolicyDecision {
     let warning_level = analysis
         .get("warning_level")
         .and_then(Value::as_str)
@@ -217,7 +217,7 @@ fn derive_psbt_policy(analysis: &Value) -> PsbtPolicyDecision {
     }
 }
 
-fn analyze_psbt_with_policy(
+pub(crate) fn analyze_psbt_with_policy(
     wallet: &ZincWallet,
     source: &str,
 ) -> Result<(Value, PsbtPolicyDecision), AppError> {
@@ -236,7 +236,7 @@ fn strict_mode_should_block(policy: &PsbtPolicyDecision) -> bool {
     matches!(policy.inscription_risk, "medium" | "high" | "unknown")
 }
 
-fn enforce_policy_mode(cli: &Cli, policy: &PsbtPolicyDecision) -> Result<(), AppError> {
+pub(crate) fn enforce_policy_mode(cli: &Cli, policy: &PsbtPolicyDecision) -> Result<(), AppError> {
     if matches!(cli.policy_mode, PolicyMode::Strict) && strict_mode_should_block(policy) {
         let reasons = if policy.policy_reasons.is_empty() {
             "no explicit policy reasons returned".to_string()

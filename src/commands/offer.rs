@@ -1,11 +1,17 @@
 use crate::cli::{Cli, OfferAction, OfferArgs};
+use crate::commands::psbt::{analyze_psbt_with_policy, enforce_policy_mode};
+use crate::config::NetworkArg;
 use crate::error::AppError;
+use crate::network_retry::with_network_retry;
 use crate::utils::resolve_psbt_source;
+use crate::wallet_service::map_wallet_error;
+use crate::{load_wallet_session, persist_wallet_session};
 use serde_json::{json, Value};
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 use zinc_core::{
-    NostrOfferEvent, NostrRelayClient, OfferEnvelopeV1, OrdClient, RelayQueryOptions,
+    prepare_offer_acceptance, NostrOfferEvent, NostrRelayClient, OfferEnvelopeV1, OrdClient,
+    RelayQueryOptions, SignOptions,
 };
 
 pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
@@ -115,6 +121,94 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
                 "count": offers.len(),
             }))
         }
+        OfferAction::Accept {
+            offer_json,
+            offer_file,
+            offer_stdin,
+            expect_inscription,
+            expect_ask_sats,
+            dry_run,
+        } => {
+            let source = resolve_offer_source(
+                offer_json.as_deref(),
+                offer_file.as_ref().map(|p| p.to_str().unwrap()),
+                *offer_stdin,
+            )?;
+            let offer: OfferEnvelopeV1 = serde_json::from_str(&source)
+                .map_err(|e| AppError::Invalid(format!("invalid offer json: {e}")))?;
+            assert_offer_expectations(&offer, expect_inscription.as_deref(), *expect_ask_sats)?;
+
+            let mut session = load_wallet_session(cli)?;
+            assert_offer_network_matches_profile(&offer, session.profile.network)?;
+            let now_unix = i64::try_from(current_unix()).unwrap_or(i64::MAX);
+            let plan = prepare_offer_acceptance(&offer, now_unix).map_err(map_offer_error)?;
+            let (analysis, policy) = analyze_psbt_with_policy(&session.wallet, &offer.psbt_base64)?;
+            enforce_policy_mode(cli, &policy)?;
+
+            // Attempt local signing on the seller input to ensure this wallet can accept
+            // the offer before optionally broadcasting it.
+            let signed = session
+                .wallet
+                .sign_psbt(
+                    &offer.psbt_base64,
+                    Some(SignOptions {
+                        sign_inputs: Some(vec![plan.seller_input_index]),
+                        sighash: None,
+                        finalize: !*dry_run,
+                    }),
+                )
+                .map_err(map_wallet_error)?;
+
+            if *dry_run {
+                return Ok(json!({
+                    "accepted": true,
+                    "dry_run": true,
+                    "offer_id": plan.offer_id,
+                    "seller_input_index": plan.seller_input_index,
+                    "input_count": plan.input_count,
+                    "inscription_id": offer.inscription_id,
+                    "ask_sats": offer.ask_sats,
+                    "safe_to_send": policy.safe_to_send,
+                    "inscription_risk": policy.inscription_risk,
+                    "policy_reasons": policy.policy_reasons,
+                    "analysis": analysis
+                }));
+            }
+
+            let esplora_url = session.profile.esplora_url.clone();
+            let txid: String = with_network_retry(
+                cli,
+                "offer accept broadcast",
+                &mut session.wallet,
+                |wallet| {
+                    let url = esplora_url.clone();
+                    let psbt = signed.clone();
+                    Box::pin(async move {
+                        wallet
+                            .broadcast(&psbt, &url)
+                            .await
+                            .map_err(map_wallet_error)
+                    })
+                },
+            )
+            .await?;
+            persist_wallet_session(&mut session)?;
+
+            Ok(json!({
+                "accepted": true,
+                "dry_run": false,
+                "offer_id": plan.offer_id,
+                "seller_input_index": plan.seller_input_index,
+                "input_count": plan.input_count,
+                "inscription_id": offer.inscription_id,
+                "ask_sats": offer.ask_sats,
+                "txid": txid,
+                "safe_to_send": policy.safe_to_send,
+                "inscription_risk": policy.inscription_risk,
+                "policy_reasons": policy.policy_reasons,
+                "analysis": analysis
+            }))
+        }
     }
 }
 
@@ -167,6 +261,53 @@ fn current_unix() -> u64 {
         .as_secs()
 }
 
+fn assert_offer_expectations(
+    offer: &OfferEnvelopeV1,
+    expect_inscription: Option<&str>,
+    expect_ask_sats: Option<u64>,
+) -> Result<(), AppError> {
+    if let Some(expected) = expect_inscription {
+        if offer.inscription_id != expected {
+            return Err(AppError::Invalid(format!(
+                "offer inscription_id mismatch: expected {}, got {}",
+                expected, offer.inscription_id
+            )));
+        }
+    }
+    if let Some(expected) = expect_ask_sats {
+        if offer.ask_sats != expected {
+            return Err(AppError::Invalid(format!(
+                "offer ask_sats mismatch: expected {}, got {}",
+                expected, offer.ask_sats
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn assert_offer_network_matches_profile(
+    offer: &OfferEnvelopeV1,
+    network: NetworkArg,
+) -> Result<(), AppError> {
+    let profile_network = match network {
+        NetworkArg::Bitcoin => "bitcoin",
+        NetworkArg::Signet => "signet",
+        NetworkArg::Testnet => "testnet",
+        NetworkArg::Regtest => "regtest",
+    };
+    let lower_offer_network = offer.network.trim().to_ascii_lowercase();
+
+    let matches = lower_offer_network == profile_network
+        || (profile_network == "bitcoin" && lower_offer_network == "mainnet");
+    if !matches {
+        return Err(AppError::Invalid(format!(
+            "offer network mismatch: offer={}, profile={}",
+            offer.network, profile_network
+        )));
+    }
+    Ok(())
+}
+
 fn map_offer_error<E: ToString>(err: E) -> AppError {
     let message = err.to_string();
     let lower = message.to_ascii_lowercase();
@@ -187,8 +328,27 @@ fn map_offer_error<E: ToString>(err: E) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::{map_offer_error, resolve_offer_source};
+    use super::{assert_offer_expectations, map_offer_error, resolve_offer_source};
     use crate::error::AppError;
+    use zinc_core::OfferEnvelopeV1;
+
+    fn sample_offer() -> OfferEnvelopeV1 {
+        OfferEnvelopeV1 {
+            version: 1,
+            seller_pubkey_hex: "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+                .to_string(),
+            network: "regtest".to_string(),
+            inscription_id: "inscription-123".to_string(),
+            seller_outpoint: "6fb976ab49dcec017f1e201e84395983204ae1a7c2abf7ced0a85d692e442799:0"
+                .to_string(),
+            ask_sats: 42_000,
+            fee_rate_sat_vb: 1,
+            psbt_base64: "cHNidP8BAAoCAAAAAQAAAAA=".to_string(),
+            created_at_unix: 1_710_000_000,
+            expires_at_unix: 1_710_086_400,
+            nonce: 1,
+        }
+    }
 
     #[test]
     fn resolve_offer_source_prefers_inline_json() {
@@ -213,5 +373,21 @@ mod tests {
     fn map_offer_error_classifies_network_issues() {
         let err = map_offer_error("relay timed out while publishing");
         assert!(matches!(err, AppError::Network(_)));
+    }
+
+    #[test]
+    fn assert_offer_expectations_rejects_inscription_mismatch() {
+        let offer = sample_offer();
+        let err = assert_offer_expectations(&offer, Some("wrong-inscription"), Some(42_000))
+            .expect_err("must reject mismatch");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn assert_offer_expectations_rejects_ask_mismatch() {
+        let offer = sample_offer();
+        let err = assert_offer_expectations(&offer, Some("inscription-123"), Some(43_000))
+            .expect_err("must reject mismatch");
+        assert!(matches!(err, AppError::Invalid(_)));
     }
 }

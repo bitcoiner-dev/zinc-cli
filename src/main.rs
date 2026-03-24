@@ -709,7 +709,9 @@ fn is_mutating_command(command: &Command) -> bool {
         ),
         Command::Offer(args) => matches!(
             &args.action,
-            crate::cli::OfferAction::Publish { .. } | crate::cli::OfferAction::SubmitOrd { .. }
+            crate::cli::OfferAction::Publish { .. }
+                | crate::cli::OfferAction::SubmitOrd { .. }
+                | crate::cli::OfferAction::Accept { dry_run: false, .. }
         ),
         Command::Account(args) => {
             matches!(&args.action, crate::cli::AccountAction::Use { .. })

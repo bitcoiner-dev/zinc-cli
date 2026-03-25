@@ -34,7 +34,7 @@ fn cargo_cmd() -> Command {
 fn run_zinc(args: &[&str], data_dir: &str, password: &str) -> Value {
     let mut cmd = cargo_cmd();
     cmd.args(&["run", "--quiet", "--"])
-        .arg("--json")
+        .arg("--agent")
         .arg("--data-dir")
         .arg(data_dir)
         .arg("--password")
@@ -62,7 +62,7 @@ fn run_zinc(args: &[&str], data_dir: &str, password: &str) -> Value {
 fn run_zinc_ignore_error(args: &[&str], data_dir: &str, password: &str) -> Value {
     let mut cmd = cargo_cmd();
     cmd.args(&["run", "--quiet", "--"])
-        .arg("--json")
+        .arg("--agent")
         .arg("--data-dir")
         .arg(data_dir)
         .arg("--password")
@@ -721,7 +721,7 @@ fn test_psbt_error_handling() {
 #[test]
 fn test_command_list_complete() {
     let mut cmd = cargo_cmd();
-    cmd.args(&["run", "--quiet", "--", "--json", "help"]);
+    cmd.args(&["run", "--quiet", "--", "--agent", "help"]);
     let output = cmd.output().expect("failed to execute process");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = parse_json_from_output(&stdout);

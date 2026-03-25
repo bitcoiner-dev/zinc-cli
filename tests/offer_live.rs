@@ -46,7 +46,7 @@ fn cargo_cmd() -> Command {
 fn run_zinc(args: &[&str], data_dir: &str, password: &str) -> Value {
     let mut cmd = cargo_cmd();
     cmd.args(["run", "--quiet", "--"])
-        .arg("--json")
+        .arg("--agent")
         .arg("--data-dir")
         .arg(data_dir)
         .arg("--password")
@@ -82,7 +82,7 @@ fn run_zinc(args: &[&str], data_dir: &str, password: &str) -> Value {
 fn run_zinc_allow_error(args: &[&str], data_dir: &str, password: &str) -> Value {
     let mut cmd = cargo_cmd();
     cmd.args(["run", "--quiet", "--"])
-        .arg("--json")
+        .arg("--agent")
         .arg("--data-dir")
         .arg(data_dir)
         .arg("--password")

@@ -3,10 +3,10 @@ use crate::error::AppError;
 use crate::utils::run_bitcoin_cli;
 use crate::wallet_service::NetworkArg;
 use crate::{confirm, load_wallet_session, persist_wallet_session, snapshot_dir};
-use serde_json::{json, Value};
+use crate::output::CommandOutput;
 use std::fs;
 
-pub async fn run(cli: &Cli, args: &ScenarioArgs) -> Result<Value, AppError> {
+pub async fn run(cli: &Cli, args: &ScenarioArgs) -> Result<CommandOutput, AppError> {
     let mut session = load_wallet_session(cli)?;
     if !matches!(session.profile.network, NetworkArg::Regtest) {
         return Err(AppError::Invalid(
@@ -38,12 +38,11 @@ pub async fn run(cli: &Cli, args: &ScenarioArgs) -> Result<Value, AppError> {
                 ],
             )?;
 
-            json!({
-                "action": "mine",
-                "blocks": blocks,
-                "address": mining_address,
-                "raw": generated
-            })
+            CommandOutput::ScenarioMine {
+                blocks: *blocks as u64,
+                address: mining_address,
+                raw_output: generated,
+            }
         }
         ScenarioAction::Fund {
             address,
@@ -80,15 +79,14 @@ pub async fn run(cli: &Cli, args: &ScenarioArgs) -> Result<Value, AppError> {
                 ],
             )?;
 
-            json!({
-                "action": "fund",
-                "address": destination,
-                "amount_btc": amount_btc,
-                "txid": txid.trim(),
-                "mine_blocks": mine_blocks,
-                "mine_address": mine_address,
-                "generated_blocks": generated
-            })
+            CommandOutput::ScenarioFund {
+                address: destination,
+                amount_btc: amount_btc.clone(),
+                txid: txid.trim().to_string(),
+                mine_blocks: *mine_blocks as u64,
+                mine_address,
+                generated_blocks: generated,
+            }
         }
         ScenarioAction::Reset {
             remove_profile,
@@ -123,10 +121,9 @@ pub async fn run(cli: &Cli, args: &ScenarioArgs) -> Result<Value, AppError> {
                 }
             }
 
-            json!({
-                "action": "reset",
-                "removed": removed
-            })
+            CommandOutput::ScenarioReset {
+                removed,
+            }
         }
     };
 

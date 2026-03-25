@@ -1,10 +1,10 @@
 use crate::cli::Cli;
 use crate::error::AppError;
 use crate::{profile_path, read_profile};
-use serde_json::{json, Value};
+use crate::output::CommandOutput;
 use zinc_core::{OrdClient, ZincWallet};
 
-pub async fn run(cli: &Cli) -> Result<Value, AppError> {
+pub async fn run(cli: &Cli) -> Result<CommandOutput, AppError> {
     let profile = read_profile(&profile_path(cli)?)?;
     let esplora_ok = ZincWallet::check_connection(&profile.esplora_url).await;
     let ord_height_result = OrdClient::new(profile.ord_url.clone())
@@ -16,17 +16,13 @@ pub async fn run(cli: &Cli) -> Result<Value, AppError> {
         Err(err) => (false, None, Some(err.to_string())),
     };
 
-    Ok(json!({
-        "healthy": esplora_ok && ord_ok,
-        "esplora": {
-            "url": profile.esplora_url,
-            "reachable": esplora_ok
-        },
-        "ord": {
-            "url": profile.ord_url,
-            "reachable": ord_ok,
-            "indexing_height": ord_height,
-            "error": ord_error
-        }
-    }))
+    Ok(CommandOutput::Doctor {
+        healthy: esplora_ok && ord_ok,
+        esplora_url: profile.esplora_url.clone(),
+        esplora_reachable: esplora_ok,
+        ord_url: profile.ord_url.clone(),
+        ord_reachable: ord_ok,
+        ord_indexing_height: ord_height.map(|h| h as u64),
+        ord_error,
+    })
 }

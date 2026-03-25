@@ -9,11 +9,12 @@ use crate::wallet_service::{
 };
 use crate::wizard::{resolve_setup_values, run_tui_setup_wizard, should_run_setup_wizard};
 use crate::{now_unix, profile_path, wallet_password, write_profile};
-use serde_json::{json, Value};
+use crate::output::CommandOutput;
+use serde_json::json;
 use std::io::IsTerminal;
 use zinc_core::{encrypt_wallet_internal, generate_wallet_internal};
 
-pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<Value, AppError> {
+pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError> {
     let seed = resolve_setup_values(cli, args)?;
 
     let is_tui = should_run_setup_wizard(
@@ -37,7 +38,6 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<Value, AppError> {
     config.scheme = values.default_scheme.clone();
     config.esplora_url = values.default_esplora_url.clone();
     config.ord_url = values.default_ord_url.clone();
-    config.json = Some(values.json_default);
     config.quiet = Some(values.quiet_default);
     save_persisted_config(&config)?;
 
@@ -66,14 +66,12 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<Value, AppError> {
             password: values.password.clone().or(cli.password.clone()),
             password_env: Some(values.password_env.clone()),
             password_stdin: cli.password_stdin,
-            json: values.json_default,
             quiet: values.quiet_default,
             reveal: cli.reveal,
             yes: cli.yes,
             agent: cli.agent,
             no_images: cli.no_images,
             ascii: false,
-            view: cli.view,
             thumb: cli.thumb,
             correlation_id: cli.correlation_id.clone(),
             log_json: cli.log_json,
@@ -165,34 +163,35 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<Value, AppError> {
     #[cfg(feature = "ui")]
     if is_tui {
         // If we ran the TUI, transition directly to the dashboard
-        return crate::dashboard::run(cli).await;
+        return crate::dashboard::run(cli).await.map(CommandOutput::Generic);
     }
 
-    let mut result = json!({
-        "ok": true,
-        "config_saved": true,
-        "wizard_used": false,
-        "profile": values.profile,
-        "data_dir": crate::wallet_service::data_dir(&crate::service_config(cli)).display().to_string(),
-        "defaults": {
-            "network": values.default_network.as_deref().or(cli.network.as_deref()).unwrap_or("regtest"),
-            "scheme": values.default_scheme.as_deref().or(cli.scheme.as_deref()).unwrap_or("dual"),
-            "esplora_url": values.default_esplora_url.as_deref().or(cli.esplora_url.as_deref()).unwrap_or(default_esplora_url(parse_network("regtest").unwrap())),
-            "ord_url": values.default_ord_url.as_deref().or(cli.ord_url.as_deref()).unwrap_or(default_ord_url(parse_network("regtest").unwrap())),
-            "json": values.json_default,
-            "quiet": values.quiet_default,
-        },
-        "password_env": values.password_env,
-    });
-
-    if let Some(wallet) = wallet_result {
-        result["wallet"] = wallet;
-    } else {
-        result["wallet"] = json!({
-            "requested": values.initialize_wallet,
-            "initialized": false,
-        });
+    let mut wallet_initialized = false;
+    let mut wallet_mode = None;
+    let mut wallet_phrase = None;
+    let mut wallet_word_count = None;
+    if let Some(wallet_info) = wallet_result {
+        wallet_initialized = wallet_info["wallet_initialized"].as_bool().unwrap_or(false);
+        wallet_mode = wallet_info["mode"].as_str().map(|s: &str| s.to_string());
+        wallet_phrase = wallet_info["phrase"].as_str().map(|s: &str| s.to_string());
+        wallet_word_count = wallet_info["word_count"].as_u64().map(|v| v as usize);
     }
 
-    Ok(result)
+    Ok(CommandOutput::Setup {
+        config_saved: true,
+        wizard_used: is_tui,
+        profile: Some(values.profile),
+        data_dir: crate::wallet_service::data_dir(&crate::service_config(cli)).display().to_string(),
+        default_network: values.default_network.as_deref().or(cli.network.as_deref()).unwrap_or("regtest").to_string(),
+        default_scheme: values.default_scheme.as_deref().or(cli.scheme.as_deref()).unwrap_or("dual").to_string(),
+        default_esplora_url: values.default_esplora_url.as_deref().or(cli.esplora_url.as_deref()).unwrap_or_else(|| default_esplora_url(parse_network("regtest").unwrap())).to_string(),
+        default_ord_url: values.default_ord_url.as_deref().or(cli.ord_url.as_deref()).unwrap_or_else(|| default_ord_url(parse_network("regtest").unwrap())).to_string(),
+        quiet_default: values.quiet_default,
+        password_env: values.password_env.clone(),
+        wallet_requested: values.initialize_wallet,
+        wallet_initialized,
+        wallet_mode,
+        wallet_phrase,
+        wallet_word_count,
+    })
 }

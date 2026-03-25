@@ -9,14 +9,6 @@ pub enum PolicyMode {
     Strict,
 }
 
-#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[value(rename_all = "lower")]
-pub enum ViewMode {
-    #[default]
-    Card,
-    Json,
-    Raw,
-}
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[value(rename_all = "lower")]
@@ -37,14 +29,8 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 
-    #[arg(long, global = true, help = "Output exactly as JSON")]
-    pub json: bool,
 
-    #[arg(
-        long,
-        global = true,
-        help = "Agent mode (implies --json --quiet --ascii)"
-    )]
+    #[arg(long, global = true, help = "Agent mode (machine-readable JSON output)")]
     pub agent: bool,
 
     #[arg(long, global = true, help = "Suppress all non-error output")]
@@ -100,16 +86,8 @@ pub struct Cli {
         long,
         global = true,
         value_enum,
-        default_value_t = ViewMode::Card,
-        help = "Human output style in non-JSON mode: card|json|raw"
-    )]
-    pub view: ViewMode,
-
-    #[arg(
-        long,
-        global = true,
-        value_enum,
         default_value_t = ThumbMode::None,
+        hide = true,
         help = "Inscription thumbnail style in human output: none|ascii|ansi"
     )]
     pub thumb: ThumbMode,
@@ -206,9 +184,8 @@ pub struct SetupArgs {
     #[arg(long)]
     pub default_ord_url: Option<String>,
     #[arg(long)]
-    pub json_default: Option<bool>,
-    #[arg(long)]
     pub quiet_default: Option<bool>,
+    
     #[arg(long)]
     pub restore_mnemonic: Option<String>,
     #[arg(long)]
@@ -550,15 +527,13 @@ pub enum ScenarioAction {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, OfferAction, ThumbMode, ViewMode};
+    use super::{Cli, Command, OfferAction, ThumbMode};
     use clap::Parser;
 
     #[test]
-    fn parses_global_view_and_thumb_switches() {
+    fn parses_global_thumb_switch() {
         let cli = Cli::try_parse_from([
             "zinc-cli",
-            "--view",
-            "json",
             "--thumb",
             "ascii",
             "offer",
@@ -568,12 +543,11 @@ mod tests {
         ])
         .expect("cli parse");
 
-        assert_eq!(cli.view, ViewMode::Json);
         assert_eq!(cli.thumb, ThumbMode::Ascii);
     }
 
     #[test]
-    fn defaults_global_view_and_thumb_switches() {
+    fn defaults_global_thumb_switch() {
         let cli = Cli::try_parse_from([
             "zinc-cli",
             "offer",
@@ -583,7 +557,6 @@ mod tests {
         ])
         .expect("cli parse");
 
-        assert_eq!(cli.view, ViewMode::Card);
         assert_eq!(cli.thumb, ThumbMode::None);
     }
 

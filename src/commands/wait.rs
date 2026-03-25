@@ -4,14 +4,14 @@ use crate::load_wallet_session;
 use crate::network_retry::with_network_retry;
 use crate::wallet_service::map_wallet_error;
 use indicatif::{ProgressBar, ProgressStyle};
-use serde_json::{json, Value};
+use crate::output::CommandOutput;
 use std::time::Duration;
 use tokio::time::sleep;
 
-pub async fn run(cli: &Cli, args: &WaitArgs) -> Result<Value, AppError> {
+pub async fn run(cli: &Cli, args: &WaitArgs) -> Result<CommandOutput, AppError> {
     let mut session = load_wallet_session(cli)?;
 
-    let spinner = if !cli.json && !cli.quiet {
+    let spinner = if !cli.agent && !cli.quiet {
         let pb = ProgressBar::new_spinner();
         pb.set_style(
             ProgressStyle::default_spinner()
@@ -60,12 +60,12 @@ pub async fn run(cli: &Cli, args: &WaitArgs) -> Result<Value, AppError> {
                     if let Some(pb) = spinner {
                         pb.finish_with_message("Transaction confirmed!");
                     }
-                    return Ok(json!({
-                        "txid": txid,
-                        "confirmation_time": confirmation_time,
-                        "confirmed": true,
-                        "waited_secs": start.elapsed().as_secs()
-                    }));
+                    return Ok(CommandOutput::WaitTxConfirmed {
+                        txid: txid.clone(),
+                        confirmation_time,
+                        confirmed: true,
+                        waited_secs: start.elapsed().as_secs(),
+                    });
                 }
 
                 if start.elapsed() >= timeout {
@@ -83,12 +83,12 @@ pub async fn run(cli: &Cli, args: &WaitArgs) -> Result<Value, AppError> {
             poll_secs,
         } => {
             if *confirmed_at_least == 0 {
-                return Ok(json!({
-                    "confirmed": 0,
-                    "confirmed_balance": 0,
-                    "target": confirmed_at_least,
-                    "waited_secs": 0
-                }));
+                return Ok(CommandOutput::WaitBalance {
+                    confirmed: 0,
+                    confirmed_balance: 0,
+                    target: *confirmed_at_least,
+                    waited_secs: 0,
+                });
             }
 
             if let Some(ref pb) = spinner {
@@ -112,12 +112,12 @@ pub async fn run(cli: &Cli, args: &WaitArgs) -> Result<Value, AppError> {
                     if let Some(pb) = spinner {
                         pb.finish_with_message("Balance reached!");
                     }
-                    return Ok(json!({
-                        "confirmed": confirmed,
-                        "confirmed_balance": confirmed,
-                        "target": confirmed_at_least,
-                        "waited_secs": start.elapsed().as_secs()
-                    }));
+                    return Ok(CommandOutput::WaitBalance {
+                        confirmed,
+                        confirmed_balance: confirmed,
+                        target: *confirmed_at_least,
+                        waited_secs: start.elapsed().as_secs(),
+                    });
                 }
 
                 if start.elapsed() >= timeout {

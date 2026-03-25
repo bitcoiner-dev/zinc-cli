@@ -7,10 +7,10 @@ use crate::wallet_service::{
     Profile,
 };
 use crate::{now_unix, profile_path, read_profile, wallet_password, write_profile};
-use serde_json::{json, Value};
 use std::collections::BTreeMap;
+use crate::output::CommandOutput;
 
-pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<Value, AppError> {
+pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError> {
     match &args.action {
         WalletAction::Init {
             words,
@@ -61,30 +61,25 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<Value, AppError> {
             };
             write_profile(&profile_path, &profile)?;
 
-            let phrase = if cli.reveal || (!cli.json && !cli.agent) {
+            let phrase = if cli.reveal || !cli.agent {
                 wallet.phrase.clone()
             } else {
                 "<hidden; use --reveal to show>".to_string()
             };
 
-            let mut res = json!({
-                "profile": cli.profile,
-                "version": 1,
-                "network": network_arg,
-                "scheme": scheme_arg,
-                "account_index": 0,
-                "esplora_url": default_esplora_url(network_arg).to_string(),
-                "ord_url": default_ord_url(network_arg).to_string(),
-                "bitcoin_cli": default_bitcoin_cli(),
-                "bitcoin_cli_args": default_bitcoin_cli_args(),
-                "phrase": phrase,
-            });
-
-            if cli.reveal || (!cli.json && !cli.agent) {
-                res["words"] = json!(wallet.words);
-            }
-
-            Ok(res)
+            Ok(CommandOutput::WalletInit {
+                profile: cli.profile.clone(),
+                version: 1,
+                network: network_arg.to_string(),
+                scheme: scheme_arg.to_string(),
+                account_index: 0,
+                esplora_url: default_esplora_url(network_arg).to_string(),
+                ord_url: default_ord_url(network_arg).to_string(),
+                bitcoin_cli: default_bitcoin_cli(),
+                bitcoin_cli_args: default_bitcoin_cli_args().join(" "),
+                phrase,
+                words: if cli.reveal || !cli.agent { Some(wallet.words.len()) } else { None },
+            })
         }
         WalletAction::Import {
             mnemonic,
@@ -131,53 +126,42 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<Value, AppError> {
             };
             write_profile(&profile_path, &profile)?;
 
-            let mut res = json!({
-                "profile": cli.profile,
-                "network": network_arg,
-                "scheme": scheme_arg,
-                "account_index": 0,
-                "imported": true
-            });
-            if cli.reveal || (!cli.json && !cli.agent) {
-                res["phrase"] = json!(mnemonic.to_string());
-            }
-
-            Ok(res)
+            Ok(CommandOutput::WalletImport {
+                profile: cli.profile.clone(),
+                network: network_arg.to_string(),
+                scheme: scheme_arg.to_string(),
+                account_index: 0,
+                imported: true,
+                phrase: if cli.reveal || !cli.agent { Some(mnemonic.to_string()) } else { None },
+            })
         }
         WalletAction::Info => {
             let profile = read_profile(&profile_path(cli)?)?;
             let state = profile.account_state();
-            let res = json!({
-                "profile": cli.profile,
-                "version": profile.version,
-                "network": profile.network,
-                "scheme": profile.scheme,
-                "account_index": profile.account_index,
-                "esplora_url": profile.esplora_url,
-                "ord_url": profile.ord_url,
-                "bitcoin_cli": profile.bitcoin_cli,
-                "bitcoin_cli_args": profile.bitcoin_cli_args,
-                "has_persistence": state.persistence_json.is_some(),
-                "has_inscriptions": state.inscriptions_json.is_some(),
-                "updated_at_unix": profile.updated_at_unix
-            });
-            if cli.json {
-                Ok(res)
-            } else {
-                let table = crate::presenter::wallet::format_wallet_info(&res);
-                println!("{table}");
-                Ok(Value::Null)
-            }
+            Ok(CommandOutput::WalletInfo {
+                profile: cli.profile.clone(),
+                version: profile.version,
+                network: profile.network.to_string(),
+                scheme: profile.scheme.to_string(),
+                account_index: profile.account_index,
+                esplora_url: profile.esplora_url.clone(),
+                ord_url: profile.ord_url.clone(),
+                bitcoin_cli: profile.bitcoin_cli.clone(),
+                bitcoin_cli_args: profile.bitcoin_cli_args.join(" "),
+                has_persistence: state.persistence_json.is_some(),
+                has_inscriptions: state.inscriptions_json.is_some(),
+                updated_at_unix: profile.updated_at_unix,
+            })
         }
         WalletAction::RevealMnemonic => {
             let profile = read_profile(&profile_path(cli)?)?;
             let password = wallet_password(cli)?;
             let result = decrypt_wallet_internal(&profile.encrypted_mnemonic, &password)
                 .map_err(|e| crate::wallet_service::map_wallet_error(e.to_string()))?;
-            Ok(json!({
-                "phrase": result.phrase,
-                "words": result.phrase.split_whitespace().count()
-            }))
+            Ok(CommandOutput::RevealMnemonic {
+                phrase: result.phrase.clone(),
+                words: result.phrase.split_whitespace().count(),
+            })
         }
     }
 }

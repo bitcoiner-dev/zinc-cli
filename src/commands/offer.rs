@@ -1,4 +1,4 @@
-use crate::cli::{Cli, OfferAction, OfferArgs, ThumbMode, ViewMode};
+use crate::cli::{Cli, OfferAction, OfferArgs, ThumbMode};
 use crate::commands::psbt::{analyze_psbt_with_policy, enforce_policy_mode};
 use crate::config::NetworkArg;
 use crate::error::AppError;
@@ -7,6 +7,7 @@ use crate::presenter::thumbnail::{render_non_image_badge, render_thumbnail_from_
 use crate::utils::{maybe_write_text, resolve_psbt_source};
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
+use crate::output::CommandOutput;
 use serde_json::{json, Value};
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -15,7 +16,7 @@ use zinc_core::{
     OfferEnvelopeV1, OrdClient, RelayQueryOptions, SignOptions,
 };
 
-pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
+pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<CommandOutput, AppError> {
     match &args.action {
         OfferAction::Create {
             inscription,
@@ -338,22 +339,72 @@ async fn finalize_offer_output(
     cli: &Cli,
     action: &OfferAction,
     response: Value,
-) -> Result<Value, AppError> {
-    if cli.json || cli.view != ViewMode::Card {
-        return Ok(response);
-    }
+) -> Result<CommandOutput, AppError> {
+    let thumbnail_lines = maybe_offer_thumbnail_lines(cli, action, &response).await;
+    let hide_inscription_ids = cli.thumb != ThumbMode::None;
 
-    if let Some(thumbnail_lines) = maybe_offer_thumbnail_lines(cli, action, &response).await {
-        for line in thumbnail_lines {
-            println!("{line}");
+    match action {
+        OfferAction::Create { inscription, .. } => {
+            Ok(CommandOutput::OfferCreate {
+                inscription: inscription.clone(),
+                ask_sats: response.get("ask_sats").and_then(Value::as_u64).unwrap_or(0),
+                fee_rate_sat_vb: response.get("fee_rate_sat_vb").and_then(Value::as_u64).unwrap_or(0),
+                seller_address: response.get("seller_address").and_then(Value::as_str).unwrap_or("").to_string(),
+                seller_outpoint: response.get("seller_outpoint").and_then(Value::as_str).unwrap_or("").to_string(),
+                seller_pubkey_hex: response.get("offer").and_then(|o| o.get("seller_pubkey_hex")).and_then(Value::as_str).unwrap_or("").to_string(),
+                expires_at_unix: response.get("offer").and_then(|o| o.get("expires_at_unix")).and_then(Value::as_i64).unwrap_or(0),
+                thumbnail_lines,
+                hide_inscription_ids,
+                raw_response: response,
+            })
+        }
+        OfferAction::Publish { .. } => {
+            Ok(CommandOutput::OfferPublish {
+                event_id: response.get("event").and_then(|v| v.get("id")).and_then(Value::as_str).unwrap_or("").to_string(),
+                accepted_relays: response.get("accepted_relays").and_then(Value::as_u64).unwrap_or(0),
+                total_relays: response.get("total_relays").and_then(Value::as_u64).unwrap_or(0),
+                publish_results: response.get("publish_results").and_then(Value::as_array).unwrap_or(&vec![]).clone(),
+                raw_response: response,
+            })
+        }
+        OfferAction::Discover { .. } => {
+            Ok(CommandOutput::OfferDiscover {
+                event_count: response.get("event_count").and_then(Value::as_u64).unwrap_or(0),
+                offer_count: response.get("offer_count").and_then(Value::as_u64).unwrap_or(0),
+                offers: response.get("offers").and_then(Value::as_array).unwrap_or(&vec![]).clone(),
+                thumbnail_lines,
+                hide_inscription_ids,
+                raw_response: response,
+            })
+        }
+        OfferAction::SubmitOrd { .. } => {
+            Ok(CommandOutput::OfferSubmitOrd {
+                ord_url: response.get("ord_url").and_then(Value::as_str).unwrap_or("").to_string(),
+                submitted: true,
+                raw_response: response,
+            })
+        }
+        OfferAction::ListOrd => {
+            Ok(CommandOutput::OfferListOrd {
+                ord_url: response.get("ord_url").and_then(Value::as_str).unwrap_or("").to_string(),
+                count: response.get("count").and_then(Value::as_u64).unwrap_or(0),
+                offers: response.get("offers").and_then(Value::as_array).unwrap_or(&vec![]).clone(),
+                raw_response: response,
+            })
+        }
+        OfferAction::Accept { .. } => {
+            Ok(CommandOutput::OfferAccept {
+                inscription: response.get("inscription_id").and_then(Value::as_str).unwrap_or("").to_string(),
+                ask_sats: response.get("ask_sats").and_then(Value::as_u64).unwrap_or(0),
+                txid: response.get("txid").and_then(Value::as_str).unwrap_or("-").to_string(),
+                dry_run: response.get("dry_run").and_then(Value::as_bool).unwrap_or(false),
+                inscription_risk: response.get("inscription_risk").and_then(Value::as_str).unwrap_or("").to_string(),
+                thumbnail_lines,
+                hide_inscription_ids,
+                raw_response: response,
+            })
         }
     }
-    let hide_inscription_ids = cli.thumb != ThumbMode::None;
-    println!(
-        "{}",
-        render_offer_card(action, &response, hide_inscription_ids)
-    );
-    Ok(Value::Null)
 }
 
 async fn maybe_offer_thumbnail_lines(
@@ -414,231 +465,9 @@ fn offer_thumbnail_inscription_id(action: &OfferAction, response: &Value) -> Opt
     }
 }
 
-fn render_offer_card(action: &OfferAction, response: &Value, hide_inscription_ids: bool) -> String {
-    match action {
-        OfferAction::Create { .. } => render_offer_create_card(response, hide_inscription_ids),
-        OfferAction::Publish { .. } => render_offer_publish_card(response),
-        OfferAction::Discover { .. } => render_offer_discover_card(response, hide_inscription_ids),
-        OfferAction::SubmitOrd { .. } => render_offer_submit_ord_card(response),
-        OfferAction::ListOrd => render_offer_list_ord_card(response),
-        OfferAction::Accept { .. } => render_offer_accept_card(response, hide_inscription_ids),
-    }
-}
 
-fn render_offer_create_card(response: &Value, hide_inscription_ids: bool) -> String {
-    let inscription = response
-        .get("inscription")
-        .and_then(Value::as_str)
-        .unwrap_or("-");
-    let ask_sats = response.get("ask_sats").and_then(Value::as_u64).unwrap_or(0);
-    let fee_rate = response
-        .get("fee_rate_sat_vb")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let seller_address = response
-        .get("seller_address")
-        .and_then(Value::as_str)
-        .unwrap_or("-");
-    let outpoint = response
-        .get("seller_outpoint")
-        .and_then(Value::as_str)
-        .unwrap_or("-");
 
-    let mut lines = vec!["OFFER CREATE".to_string()];
-    if hide_inscription_ids {
-        lines.push("inscription: [thumbnail shown above]".to_string());
-    } else {
-        lines.push(format!("inscription: {}", abbreviate(inscription, 12, 8)));
-    }
-    lines.push(format!("ask: {} sats @ {} sat/vB", ask_sats, fee_rate));
-    lines.push(format!("seller input: {}", abbreviate(seller_address, 12, 8)));
-    lines.push(format!("outpoint: {}", abbreviate(outpoint, 16, 6)));
-
-    if let Some(offer) = response.get("offer").and_then(Value::as_object) {
-        let seller_pubkey = offer
-            .get("seller_pubkey_hex")
-            .and_then(Value::as_str)
-            .unwrap_or("-");
-        let expires_at = offer
-            .get("expires_at_unix")
-            .and_then(Value::as_i64)
-            .unwrap_or_default();
-        lines.push(format!(
-            "seller pubkey: {}",
-            abbreviate(seller_pubkey, 10, 6)
-        ));
-        lines.push(format!("expires_at: {expires_at}"));
-    }
-
-    lines.join("\n")
-}
-
-fn render_offer_publish_card(response: &Value) -> String {
-    let event_id = response
-        .get("event")
-        .and_then(|v| v.get("id"))
-        .and_then(Value::as_str)
-        .unwrap_or("-");
-    let accepted_relays = response
-        .get("accepted_relays")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let total_relays = response
-        .get("total_relays")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-
-    let mut lines = vec![
-        "OFFER PUBLISH".to_string(),
-        format!("event: {}", abbreviate(event_id, 12, 8)),
-        format!("accepted relays: {accepted_relays}/{total_relays}"),
-    ];
-
-    if let Some(results) = response.get("publish_results").and_then(Value::as_array) {
-        for result in results.iter().take(3) {
-            let relay = result
-                .get("relay_url")
-                .and_then(Value::as_str)
-                .unwrap_or("-");
-            let accepted = result
-                .get("accepted")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let status = if accepted { "ok" } else { "reject" };
-            lines.push(format!("{status}: {relay}"));
-        }
-        if results.len() > 3 {
-            lines.push(format!("... and {} more relays", results.len() - 3));
-        }
-    }
-
-    lines.join("\n")
-}
-
-fn render_offer_discover_card(response: &Value, hide_inscription_ids: bool) -> String {
-    let event_count = response
-        .get("event_count")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let offer_count = response
-        .get("offer_count")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-
-    let mut lines = vec![
-        "OFFER DISCOVER".to_string(),
-        format!("decoded offers: {offer_count} (events: {event_count})"),
-    ];
-
-    if let Some(offers) = response.get("offers").and_then(Value::as_array) {
-        for (idx, entry) in offers.iter().take(8).enumerate() {
-            let event_id = entry
-                .get("event_id")
-                .and_then(Value::as_str)
-                .unwrap_or("-");
-            let offer = entry.get("offer").and_then(Value::as_object);
-            let inscription = offer
-                .and_then(|o| o.get("inscription_id"))
-                .and_then(Value::as_str)
-                .unwrap_or("-");
-            let ask_sats = offer
-                .and_then(|o| o.get("ask_sats"))
-                .and_then(Value::as_u64)
-                .unwrap_or(0);
-            let seller = offer
-                .and_then(|o| o.get("seller_pubkey_hex"))
-                .and_then(Value::as_str)
-                .unwrap_or("-");
-
-            if hide_inscription_ids {
-                lines.push(format!(
-                    "{:>2}. ask {} sats | seller {} | evt {}",
-                    idx + 1,
-                    ask_sats,
-                    abbreviate(seller, 10, 6),
-                    abbreviate(event_id, 10, 6)
-                ));
-            } else {
-                lines.push(format!(
-                    "{:>2}. {} | {} sats | seller {} | evt {}",
-                    idx + 1,
-                    abbreviate(inscription, 12, 8),
-                    ask_sats,
-                    abbreviate(seller, 10, 6),
-                    abbreviate(event_id, 10, 6)
-                ));
-            }
-        }
-        if offers.len() > 8 {
-            lines.push(format!("... and {} more offers", offers.len() - 8));
-        }
-    }
-
-    lines.join("\n")
-}
-
-fn render_offer_submit_ord_card(response: &Value) -> String {
-    let ord_url = response
-        .get("ord_url")
-        .and_then(Value::as_str)
-        .unwrap_or("-");
-    "OFFER SUBMIT-ORD\nsubmitted: true\nord endpoint: ".to_string() + ord_url
-}
-
-fn render_offer_list_ord_card(response: &Value) -> String {
-    let ord_url = response
-        .get("ord_url")
-        .and_then(Value::as_str)
-        .unwrap_or("-");
-    let count = response.get("count").and_then(Value::as_u64).unwrap_or(0);
-    let mut lines = vec![
-        "OFFER LIST-ORD".to_string(),
-        format!("count: {count}"),
-        format!("ord endpoint: {ord_url}"),
-    ];
-    if let Some(offers) = response.get("offers").and_then(Value::as_array) {
-        for (idx, psbt) in offers.iter().take(3).enumerate() {
-            if let Some(psbt_str) = psbt.as_str() {
-                lines.push(format!("{:>2}. {}", idx + 1, abbreviate(psbt_str, 14, 8)));
-            }
-        }
-    }
-    lines.join("\n")
-}
-
-fn render_offer_accept_card(response: &Value, hide_inscription_ids: bool) -> String {
-    let inscription = response
-        .get("inscription_id")
-        .and_then(Value::as_str)
-        .unwrap_or("-");
-    let ask_sats = response.get("ask_sats").and_then(Value::as_u64).unwrap_or(0);
-    let txid = response.get("txid").and_then(Value::as_str).unwrap_or("-");
-    let dry_run = response
-        .get("dry_run")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let risk = response
-        .get("inscription_risk")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
-
-    let mut lines = vec!["OFFER ACCEPT".to_string()];
-    if hide_inscription_ids {
-        lines.push("inscription: [thumbnail shown above]".to_string());
-    } else {
-        lines.push(format!("inscription: {}", abbreviate(inscription, 12, 8)));
-    }
-    lines.push(format!("ask: {ask_sats} sats"));
-    lines.push(format!("mode: {}", if dry_run { "dry-run" } else { "broadcast" }));
-    lines.push(format!("inscription risk: {risk}"));
-
-    if txid != "-" {
-        lines.push(format!("txid: {}", abbreviate(txid, 12, 8)));
-    }
-    lines.join("\n")
-}
-
-fn abbreviate(value: &str, prefix: usize, suffix: usize) -> String {
+pub fn abbreviate(value: &str, prefix: usize, suffix: usize) -> String {
     if value.chars().count() <= prefix + suffix + 3 {
         return value.to_string();
     }
@@ -781,8 +610,7 @@ fn map_offer_error<E: ToString>(err: E) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::{
-        abbreviate, assert_offer_expectations, map_offer_error, render_offer_create_card,
-        render_offer_discover_card, resolve_offer_source,
+        abbreviate, assert_offer_expectations, map_offer_error, resolve_offer_source,
     };
     use crate::error::AppError;
     use serde_json::json;
@@ -860,46 +688,5 @@ mod tests {
         assert_eq!(short, "123456...cdef");
     }
 
-    #[test]
-    fn render_offer_discover_card_compacts_details() {
-        let response = json!({
-            "event_count": 1,
-            "offer_count": 1,
-            "offers": [{
-                "event_id": "84cef3dbdefa4f6bb88707830c0b70b475572b3f0d836733f75ac3655bd53db1",
-                "offer": {
-                    "inscription_id": "59d4303c9800696fbfe331d26ae6485f034c1196e2221ffa3d9a09267ac93664i0",
-                    "ask_sats": 100000,
-                    "seller_pubkey_hex": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
-                }
-            }]
-        });
 
-        let card = render_offer_discover_card(&response, false);
-        assert!(card.contains("OFFER DISCOVER"));
-        assert!(card.contains("100000 sats"));
-        assert!(card.contains("seller 79be667ef9...f81798"));
-        assert!(card.contains("evt 84cef3dbde...d53db1"));
-    }
-
-    #[test]
-    fn render_offer_create_card_omits_psbt_blob() {
-        let response = json!({
-            "inscription": "59d4303c9800696fbfe331d26ae6485f034c1196e2221ffa3d9a09267ac93664i0",
-            "ask_sats": 100000,
-            "fee_rate_sat_vb": 1,
-            "seller_address": "bcrt1q8eklls60qxjxyfuv7vwq5pdmxdthrdrqrhpee3",
-            "seller_outpoint": "59d4303c9800696fbfe331d26ae6485f034c1196e2221ffa3d9a09267ac93664:0",
-            "psbt": "cHNidP8BAAoCAAAAAQAAAAA=",
-            "offer": {
-                "seller_pubkey_hex": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
-                "expires_at_unix": 1774408224
-            }
-        });
-
-        let card = render_offer_create_card(&response, false);
-        assert!(card.contains("OFFER CREATE"));
-        assert!(card.contains("ask: 100000 sats"));
-        assert!(!card.contains("cHNidP8BAAoCAAAAAQAAAAA="));
-    }
 }

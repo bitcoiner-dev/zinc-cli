@@ -2,9 +2,9 @@ use crate::cli::{AddressArgs, AddressKind, Cli};
 use crate::error::AppError;
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
-use serde_json::{json, Value};
+use crate::output::CommandOutput;
 
-pub async fn run(cli: &Cli, args: &AddressArgs) -> Result<Value, AppError> {
+pub async fn run(cli: &Cli, args: &AddressArgs) -> Result<CommandOutput, AppError> {
     let mut session = load_wallet_session(cli)?;
     let (kind, address) = match &args.kind {
         AddressKind::Taproot { index, new } => {
@@ -44,11 +44,8 @@ pub async fn run(cli: &Cli, args: &AddressArgs) -> Result<Value, AppError> {
         }
     };
     persist_wallet_session(&mut session)?;
-    if cli.json {
-        Ok(json!({"type": kind, "address": address}))
-    } else {
-        let table = crate::presenter::address::format_address(kind, &address);
-        println!("{table}");
-        Ok(Value::Null)
-    }
+    Ok(CommandOutput::Address {
+        kind: kind.to_string(),
+        address,
+    })
 }

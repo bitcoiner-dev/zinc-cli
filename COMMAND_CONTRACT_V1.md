@@ -15,18 +15,17 @@ This document defines the active `v1` command contract. It is additive with curr
 ## 2) Execution Profiles
 
 1. Human profile
-- CLI called without `--json`.
-- Output may be user-friendly text.
+- Default output mode (`ZINC_CLI_OUTPUT=human`).
+- Output is a curated, styled, user-friendly presentation.
 
 2. Agent profile
-- CLI called with `--agent` (preferred) or `--json`.
-- `--agent` implies `--json --quiet --ascii`.
+- CLI called with `--agent` or `ZINC_CLI_OUTPUT=agent`.
 - Exactly one JSON object on `stdout` per invocation.
 - Non-JSON noise must not be printed to `stdout`.
 
 ## 3) Global Flags (Supported)
 
-`--json`, `--agent`, `--quiet`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--view`, `--thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
+`--agent`, `--quiet`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
 
 Global flags are supported both before and after command tokens.
 
@@ -39,8 +38,7 @@ Reliability defaults:
 - `--policy-mode` defaults to `warn`.
 
 Human-output defaults:
-- `--view` defaults to `card` (non-JSON only).
-- `--thumb` defaults to `none` (non-JSON only).
+- `--thumb` defaults to `none`.
 
 ## 4) JSON Envelope
 

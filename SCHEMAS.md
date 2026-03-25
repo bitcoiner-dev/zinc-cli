@@ -1,6 +1,6 @@
 # zinc-cli JSON Schemas (v1.0)
 
-All commands support `--json` and emit exactly one JSON object to `stdout`.
+All commands support `--agent` and emit exactly one JSON object to `stdout`.
 
 For full contract details (typing, compatibility, and command policy), see `COMMAND_CONTRACT_V1.md`.
 For task-oriented command examples (human + agent), see `USAGE.md`.

@@ -63,7 +63,6 @@ The `ui` feature enables a basic terminal dashboard for humans that shows:
 - ordinals/payment addresses per account
 
 Even without `ui`, human command output can be tuned with:
-- `--view card|json|raw` for concise cards vs pretty/raw JSON in non-JSON mode
 - `--thumb none|ascii|ansi` to show inscription previews in human output
 
 Run dashboard:
@@ -105,7 +104,7 @@ Reports are written to `demo/artifacts/`.
 
 - Prefer `ZINC_WALLET_PASSWORD` (default password env) or `--password-stdin`.
 - Use `--password-env` only when you need a non-default env var name.
-- In `--json` mode, mnemonic output is redacted unless `--reveal` is set.
+- In `--agent` mode, mnemonic output is redacted unless `--reveal` is set.
 - See [SECURITY.md](./SECURITY.md).
 
 ## License

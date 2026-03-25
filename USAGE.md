@@ -15,8 +15,7 @@ With `ui` enabled, the basic dashboard shows account balance, inscriptions, and 
 
 Useful globals:
 
-- `--json` machine output mode (recommended for agents)
-- `--agent` shorthand for `--json --quiet --ascii`
+- `--agent` machine output mode (returns structured JSON)
 - `--profile <name>` select profile (default: `default`)
 - `--data-dir <path>` override data root
 - `--password <value>`
@@ -29,15 +28,14 @@ Useful globals:
 - `--network-timeout-secs <n>` timeout for remote calls (default: `30`)
 - `--network-retries <n>` retry count for transient network failures/timeouts (default: `0`)
 - `--policy-mode warn|strict` transaction safety behavior (default: `warn`)
-- `--view card|json|raw` non-JSON output style (default: `card`)
-- `--thumb none|ascii|ansi` inscription preview style for human output (default: `none`)
+- `--thumb none|ascii|ansi` inscription preview style in human mode (default: `none`)
 
 Environment defaults (optional):
 
 - `ZINC_CLI_PROFILE`
 - `ZINC_CLI_DATA_DIR`
 - `ZINC_CLI_PASSWORD_ENV`
-- `ZINC_CLI_JSON` (`1|true|yes|on`)
+- `ZINC_CLI_OUTPUT` (`human|agent`)
 - `ZINC_CLI_QUIET` (`1|true|yes|on`)
 - `ZINC_CLI_NETWORK`
 - `ZINC_CLI_SCHEME`
@@ -53,7 +51,7 @@ Environment defaults (optional):
 Inspect effective config:
 
 ```bash
-zinc-cli --json config show
+zinc-cli --agent config show
 ```
 
 Persist config defaults:
@@ -96,7 +94,7 @@ zinc-cli wallet info
 Reveal seed phrase (sensitive):
 
 ```bash
-zinc-cli --yes wallet reveal-mnemonic
+zinc-cli --yes --agent wallet reveal-mnemonic
 ```
 
 Sync and check balance:

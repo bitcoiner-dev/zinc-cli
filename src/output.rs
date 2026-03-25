@@ -372,21 +372,33 @@ impl HumanPresenter {
     }
 
     fn print_inscription_list(&self, inscriptions: &[zinc_core::ordinals::Inscription], display_items: &Option<Vec<InscriptionItemDisplay>>, thumb_mode_enabled: bool) -> String {
+        use console::style;
+        use crate::presenter::grid::{GridCard, render_grid};
+
         let mut out = String::new();
         if let Some(items) = display_items {
-            for (idx, item) in items.iter().enumerate() {
-                out.push_str(&format!(
-                    "[{}] #{} {} sats {}\n",
-                    idx + 1,
-                    item.number,
-                    item.value_sats,
-                    item.content_type
-                ));
-                for line in &item.badge_lines {
-                    out.push_str(&format!("{line}\n"));
-                }
-                out.push_str("\n");
-            }
+            let cards: Vec<GridCard> = items
+                .iter()
+                .map(|item| {
+                    let mut lines = Vec::new();
+                    // Styled header
+                    lines.push(format!(
+                        "{}",
+                        style(format!("#{}", item.number)).bold().cyan(),
+                    ));
+                    // Thumbnail / badge lines
+                    lines.extend(item.badge_lines.iter().cloned());
+                    GridCard { lines }
+                })
+                .collect();
+
+            // Use terminal width if available, otherwise default to 120.
+            let term_width = {
+                let (_, cols) = console::Term::stdout().size();
+                if cols > 0 { cols as usize } else { 120 }
+            };
+            out.push_str(&render_grid(&cards, term_width, 3));
+
             if inscriptions.len() > items.len() {
                 out.push_str(&format!("... and {} more inscriptions\n", inscriptions.len() - items.len()));
             }

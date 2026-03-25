@@ -3,19 +3,133 @@ use crate::commands::psbt::{analyze_psbt_with_policy, enforce_policy_mode};
 use crate::config::NetworkArg;
 use crate::error::AppError;
 use crate::network_retry::with_network_retry;
-use crate::utils::resolve_psbt_source;
+use crate::utils::{maybe_write_text, resolve_psbt_source};
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
 use serde_json::{json, Value};
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 use zinc_core::{
-    prepare_offer_acceptance, NostrOfferEvent, NostrRelayClient, OfferEnvelopeV1, OrdClient,
-    RelayQueryOptions, SignOptions,
+    prepare_offer_acceptance, CreateOfferRequest, NostrOfferEvent, NostrRelayClient,
+    OfferEnvelopeV1, OrdClient, RelayQueryOptions, SignOptions,
 };
 
 pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
     match &args.action {
+        OfferAction::Create {
+            inscription,
+            amount,
+            fee_rate,
+            expires_in_secs,
+            created_at_unix,
+            nonce,
+            publisher_pubkey_hex,
+            seller_payout_address,
+            submit_ord,
+            offer_out_file,
+            psbt_out_file,
+        } => {
+            let mut session = load_wallet_session(cli)?;
+            if session
+                .wallet
+                .inscriptions()
+                .iter()
+                .any(|ins| ins.id == *inscription)
+            {
+                return Err(AppError::Invalid(format!(
+                    "inscription {} already in wallet",
+                    inscription
+                )));
+            }
+
+            let ord_url = resolve_ord_url(cli)?;
+            let client = OrdClient::new(ord_url.clone());
+            let inscription_details = client
+                .get_inscription_details(inscription)
+                .await
+                .map_err(map_offer_error)?;
+            let output_details = client
+                .get_output_details(&inscription_details.satpoint.outpoint)
+                .await
+                .map_err(map_offer_error)?;
+
+            if !output_details
+                .inscriptions
+                .iter()
+                .any(|id| id == inscription)
+            {
+                return Err(AppError::Invalid(format!(
+                    "inscription {} is not present in output {}",
+                    inscription, output_details.outpoint
+                )));
+            }
+
+            let postage_sats = inscription_details.value.ok_or_else(|| {
+                AppError::Invalid(format!("inscription {} is unbound", inscription))
+            })?;
+            let created_unix_u64 = created_at_unix.unwrap_or_else(current_unix);
+            let created_unix = i64::try_from(created_unix_u64)
+                .map_err(|_| AppError::Invalid("created_at_unix is out of range".to_string()))?;
+            let expires_u64 = created_unix_u64
+                .checked_add(*expires_in_secs)
+                .ok_or_else(|| {
+                    AppError::Invalid("created_at_unix + expires_in_secs overflowed".to_string())
+                })?;
+            let expires_unix = i64::try_from(expires_u64)
+                .map_err(|_| AppError::Invalid("expires_at_unix is out of range".to_string()))?;
+
+            let request = CreateOfferRequest {
+                inscription_id: inscription.clone(),
+                seller_outpoint: inscription_details.satpoint.outpoint,
+                seller_input_address: output_details.address.clone(),
+                seller_payout_address: seller_payout_address
+                    .clone()
+                    .unwrap_or_else(|| output_details.address.clone()),
+                seller_output_value_sats: postage_sats,
+                ask_sats: *amount,
+                fee_rate_sat_vb: *fee_rate,
+                created_at_unix: created_unix,
+                expires_at_unix: expires_unix,
+                nonce: nonce.unwrap_or_else(current_nanos),
+                publisher_pubkey_hex: publisher_pubkey_hex.clone(),
+            };
+            let created = session
+                .wallet
+                .create_offer(&request)
+                .map_err(map_offer_error)?;
+
+            if let Some(path) = psbt_out_file {
+                maybe_write_text(Some(&path.display().to_string()), &created.psbt)?;
+            }
+            if let Some(path) = offer_out_file {
+                let offer_json = serde_json::to_string_pretty(&created.offer)
+                    .map_err(|e| AppError::Internal(format!("failed to serialize offer: {e}")))?;
+                maybe_write_text(Some(&path.display().to_string()), &offer_json)?;
+            }
+
+            if *submit_ord {
+                client
+                    .submit_offer_psbt(&created.psbt)
+                    .await
+                    .map_err(map_offer_error)?;
+            }
+
+            persist_wallet_session(&mut session)?;
+            Ok(json!({
+                "inscription": created.inscription,
+                "seller_address": created.seller_address,
+                "seller_outpoint": created.seller_outpoint,
+                "postage_sats": created.postage_sats,
+                "ask_sats": created.ask_sats,
+                "fee_rate_sat_vb": created.fee_rate_sat_vb,
+                "seller_input_index": created.seller_input_index,
+                "buyer_input_count": created.buyer_input_count,
+                "psbt": created.psbt,
+                "offer": created.offer,
+                "submitted_ord": submit_ord,
+                "ord_url": ord_url,
+            }))
+        }
         OfferAction::Publish {
             offer_json,
             offer_file,
@@ -261,6 +375,13 @@ fn current_unix() -> u64 {
         .as_secs()
 }
 
+fn current_nanos() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64
+}
+
 fn assert_offer_expectations(
     offer: &OfferEnvelopeV1,
     expect_inscription: Option<&str>,
@@ -311,6 +432,9 @@ fn assert_offer_network_matches_profile(
 fn map_offer_error<E: ToString>(err: E) -> AppError {
     let message = err.to_string();
     let lower = message.to_ascii_lowercase();
+    if lower.contains("policy") || lower.contains("safety lock") || lower.contains("security") {
+        return AppError::Policy(message);
+    }
     if lower.contains("network")
         || lower.contains("request")
         || lower.contains("relay")
@@ -373,6 +497,12 @@ mod tests {
     fn map_offer_error_classifies_network_issues() {
         let err = map_offer_error("relay timed out while publishing");
         assert!(matches!(err, AppError::Network(_)));
+    }
+
+    #[test]
+    fn map_offer_error_classifies_policy_issues() {
+        let err = map_offer_error("Policy error: safety lock engaged");
+        assert!(matches!(err, AppError::Policy(_)));
     }
 
     #[test]

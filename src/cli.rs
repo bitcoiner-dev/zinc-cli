@@ -332,6 +332,30 @@ pub struct OfferArgs {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum OfferAction {
+    Create {
+        #[arg(long)]
+        inscription: String,
+        #[arg(long, alias = "ask-sats")]
+        amount: u64,
+        #[arg(long)]
+        fee_rate: u64,
+        #[arg(long, default_value_t = 3600)]
+        expires_in_secs: u64,
+        #[arg(long)]
+        created_at_unix: Option<u64>,
+        #[arg(long)]
+        nonce: Option<u64>,
+        #[arg(long)]
+        publisher_pubkey_hex: Option<String>,
+        #[arg(long)]
+        seller_payout_address: Option<String>,
+        #[arg(long)]
+        submit_ord: bool,
+        #[arg(long)]
+        offer_out_file: Option<PathBuf>,
+        #[arg(long)]
+        psbt_out_file: Option<PathBuf>,
+    },
     Publish {
         #[arg(long)]
         offer_json: Option<String>,
@@ -551,6 +575,60 @@ mod tests {
                     assert_eq!(timeout_ms, 2000);
                 }
                 _ => panic!("expected offer discover action"),
+            },
+            _ => panic!("expected offer command"),
+        }
+    }
+
+    #[test]
+    fn parses_offer_create_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "offer",
+            "create",
+            "--inscription",
+            "inscription123",
+            "--amount",
+            "1234",
+            "--fee-rate",
+            "2",
+            "--expires-in-secs",
+            "7200",
+            "--publisher-pubkey-hex",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "--seller-payout-address",
+            "bcrt1qexample0000000000000000000000000000000",
+            "--submit-ord",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Offer(args) => match args.action {
+                OfferAction::Create {
+                    inscription,
+                    amount,
+                    fee_rate,
+                    expires_in_secs,
+                    publisher_pubkey_hex,
+                    seller_payout_address,
+                    submit_ord,
+                    ..
+                } => {
+                    assert_eq!(inscription, "inscription123");
+                    assert_eq!(amount, 1234);
+                    assert_eq!(fee_rate, 2);
+                    assert_eq!(expires_in_secs, 7200);
+                    assert_eq!(
+                        publisher_pubkey_hex.as_deref(),
+                        Some("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
+                    );
+                    assert_eq!(
+                        seller_payout_address.as_deref(),
+                        Some("bcrt1qexample0000000000000000000000000000000")
+                    );
+                    assert!(submit_ord);
+                }
+                _ => panic!("expected offer create action"),
             },
             _ => panic!("expected offer command"),
         }

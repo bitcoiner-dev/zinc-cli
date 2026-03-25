@@ -214,6 +214,30 @@ Rules:
 
 ## 6) Offer Commands (Nostr + Ord)
 
+Create an ord-compatible buyer offer PSBT and a relay-ready offer envelope:
+
+```bash
+zinc-cli --agent --ord-url https://ord.example offer create \
+  --inscription <inscription-id> \
+  --amount 100000 \
+  --fee-rate 1 \
+  --expires-in-secs 3600 \
+  --seller-payout-address <seller-payment-address> \
+  --publisher-pubkey-hex <xonly-pubkey-hex> \
+  --offer-out-file /tmp/offer.json \
+  --psbt-out-file /tmp/offer.psbt
+```
+
+Create and immediately submit the PSBT to ord:
+
+```bash
+zinc-cli --agent --ord-url https://ord.example offer create \
+  --inscription <inscription-id> \
+  --amount 100000 \
+  --fee-rate 1 \
+  --submit-ord
+```
+
 Publish a signed offer event to one or more relays:
 
 ```bash
@@ -268,6 +292,10 @@ Rules:
 - For `offer publish`, exactly one of `--offer-json`, `--offer-file`, `--offer-stdin` is required.
 - For `offer accept`, exactly one of `--offer-json`, `--offer-file`, `--offer-stdin` is required.
 - For `offer submit-ord`, exactly one of `--psbt`, `--psbt-file`, `--psbt-stdin` is required.
+- `offer create` requires `--ord-url` and inscription metadata available from ord indexer.
+- `offer create --seller-payout-address` is optional; when omitted, payout defaults to the inscription output address from ord metadata.
+- For dual-scheme sellers, pass `--seller-payout-address <payment-address>` to direct proceeds to the seller payment branch.
+- `offer create --publisher-pubkey-hex` can override the default publisher pubkey embedded in the offer envelope.
 - `offer publish` and `offer discover` require at least one `--relay`.
 
 ## 7) Profiles, Accounts, and Waits

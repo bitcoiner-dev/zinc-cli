@@ -89,10 +89,12 @@ const COMMAND_LIST: &[&str] = &[
     "psbt analyze",
     "psbt sign",
     "psbt broadcast",
+    "offer create",
     "offer publish",
     "offer discover",
     "offer submit-ord",
     "offer list-ord",
+    "offer accept",
     "account list",
     "account use",
     "wait tx-confirmed",
@@ -709,7 +711,8 @@ fn is_mutating_command(command: &Command) -> bool {
         ),
         Command::Offer(args) => matches!(
             &args.action,
-            crate::cli::OfferAction::Publish { .. }
+            crate::cli::OfferAction::Create { .. }
+                | crate::cli::OfferAction::Publish { .. }
                 | crate::cli::OfferAction::SubmitOrd { .. }
                 | crate::cli::OfferAction::Accept { dry_run: false, .. }
         ),

@@ -79,6 +79,19 @@ Optional output files:
 
 ## Offer Commands
 
+- `offer create`:
+  - `inscription`
+  - `seller_address`
+  - `seller_outpoint`
+  - `postage_sats`
+  - `ask_sats`
+  - `fee_rate_sat_vb`
+  - `seller_input_index`
+  - `buyer_input_count`
+  - `psbt`
+  - `offer` (offer envelope)
+  - `submitted_ord`
+  - `ord_url`
 - `offer publish`:
   - `event` (signed nostr event)
   - `publish_results` (per-relay acceptance/message rows)
@@ -124,6 +137,9 @@ Input modes and rules:
   - `--psbt <base64>`
   - `--psbt-file <path>`
   - `--psbt-stdin` (reads base64 PSBT from stdin)
+- `offer create` requires ord indexer metadata (`--ord-url`) for the target inscription.
+- `offer create` accepts optional `--seller-payout-address` to override payout destination output.
+- `offer create` accepts optional `--publisher-pubkey-hex` to override the embedded envelope publisher key.
 - `offer publish` and `offer discover` require at least one `--relay`.
 
 ## Account/Wait/Snapshot

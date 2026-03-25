@@ -365,7 +365,20 @@ Success fields:
 `ord` shape:
 `{ url: string, reachable: bool, indexing_height: u32 | null, error: string | null }`
 
-## 7.27 offer publish
+## 7.27 offer create
+
+Command:
+`offer create --inscription <id> --amount <u64> --fee-rate <u64> [--expires-in-secs <u64>] [--created-at-unix <unix>] [--nonce <u64>] [--seller-payout-address <addr>] [--publisher-pubkey-hex <xonly-hex>] [--submit-ord] [--offer-out-file <path>] [--psbt-out-file <path>]`
+
+Notes:
+- `--amount` has alias `--ask-sats`.
+- `--ord-url` must be configured or provided as a global override.
+- `--seller-payout-address` overrides payout destination output while preserving seller input metadata from ord inscription output.
+
+Success fields:
+`inscription`, `seller_address`, `seller_outpoint`, `postage_sats`, `ask_sats`, `fee_rate_sat_vb`, `seller_input_index`, `buyer_input_count`, `psbt`, `offer`, `submitted_ord`, `ord_url`
+
+## 7.28 offer publish
 
 Command:
 `offer publish [--offer-json <json> | --offer-file <path> | --offer-stdin] --secret-key-hex <hex> --relay <url>... [--created-at-unix <unix>] [--timeout-ms N]`
@@ -373,7 +386,7 @@ Command:
 Success fields:
 `event`, `publish_results`, `accepted_relays`, `total_relays`
 
-## 7.28 offer discover
+## 7.29 offer discover
 
 Command:
 `offer discover --relay <url>... [--limit N] [--timeout-ms N]`
@@ -381,7 +394,7 @@ Command:
 Success fields:
 `events`, `offers`, `event_count`, `offer_count`
 
-## 7.29 offer submit-ord
+## 7.30 offer submit-ord
 
 Command:
 `offer submit-ord [--psbt <base64> | --psbt-file <path> | --psbt-stdin]`
@@ -389,7 +402,7 @@ Command:
 Success fields:
 `submitted`, `ord_url`
 
-## 7.30 offer list-ord
+## 7.31 offer list-ord
 
 Command:
 `offer list-ord`
@@ -397,7 +410,7 @@ Command:
 Success fields:
 `ord_url`, `offers`, `count`
 
-## 7.31 offer accept
+## 7.32 offer accept
 
 Command:
 `offer accept [--offer-json <json> | --offer-file <path> | --offer-stdin] [--expect-inscription <id>] [--expect-ask-sats <u64>] [--dry-run]`
@@ -426,6 +439,8 @@ For `offer publish` and `offer accept`, exactly one offer source must be present
 If zero or multiple are provided, return `invalid`.
 
 For `offer publish` and `offer discover`, at least one `--relay <url>` is required.
+
+`offer create` requires `--ord-url` and a resolvable inscription on that ord indexer.
 
 When `--policy-mode strict` is set, `psbt sign`, `psbt broadcast`, and `offer accept` fail closed with `error.type="policy"` for unsafe, medium/high, or unknown inscription-risk outcomes.
 

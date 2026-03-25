@@ -41,7 +41,7 @@ async fn get_inscription_display_items(
         let mut badge_lines = Vec::new();
         if content_type.starts_with("image/") {
             match client.get_inscription_content(&ins.id).await {
-                Ok(content) => match render_thumbnail_from_bytes(&content.bytes, mode, 24) {
+                Ok(content) => match render_thumbnail_from_bytes(&content.bytes, mode, 48) {
                     Ok(lines) => {
                         badge_lines.extend(lines);
                     }

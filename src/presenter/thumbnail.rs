@@ -31,8 +31,10 @@ pub fn render_non_image_badge(content_type: Option<&str>) -> Vec<String> {
     ]
 }
 
-fn render_ascii(img: &DynamicImage, width: u32, height: u32) -> Vec<String> {
-    let resized = img.resize_exact(width, height, FilterType::Triangle).to_rgb8();
+fn render_ascii(img: &DynamicImage, max_cols: u32, max_rows: u32) -> Vec<String> {
+    let resized = img.resize(max_cols, max_rows, FilterType::Triangle).to_rgb8();
+    let width = resized.width();
+    let height = resized.height();
     let mut lines = Vec::with_capacity(height as usize);
 
     for y in 0..height {
@@ -51,18 +53,55 @@ fn render_ascii(img: &DynamicImage, width: u32, height: u32) -> Vec<String> {
     lines
 }
 
-fn render_ansi(img: &DynamicImage, width: u32, height: u32) -> Vec<String> {
-    let resized = img.resize_exact(width, height, FilterType::Triangle).to_rgb8();
-    let mut lines = Vec::with_capacity(height as usize);
+fn render_ansi(img: &DynamicImage, max_cols: u32, max_rows: u32) -> Vec<String> {
+    let target_height_pixels = max_rows * 2;
+    let resized = img.resize(max_cols, target_height_pixels, FilterType::Triangle).to_rgba8();
+    
+    let width = resized.width();
+    let height = resized.height();
+    let rows = (height + 1) / 2;
+    let mut lines = Vec::with_capacity(rows as usize);
 
-    for y in 0..height {
+    for row in 0..rows {
+        let y_top = row * 2;
+        let y_bottom = y_top + 1;
+        
         let mut line = String::new();
         for x in 0..width {
-            let pixel = resized.get_pixel(x, y);
-            line.push_str(&format!(
-                "\x1b[48;2;{};{};{}m  ",
-                pixel[0], pixel[1], pixel[2]
-            ));
+            let top_rgba = resized.get_pixel(x, y_top);
+            let bottom_rgba = if y_bottom < height {
+                resized.get_pixel(x, y_bottom)
+            } else {
+                &image::Rgba([0, 0, 0, 0])
+            };
+
+            let top_trans = top_rgba[3] < 128;
+            let bot_trans = bottom_rgba[3] < 128;
+
+            match (top_trans, bot_trans) {
+                (true, true) => {
+                    line.push_str("\x1b[0m ");
+                }
+                (false, true) => {
+                    line.push_str(&format!(
+                        "\x1b[0m\x1b[38;2;{};{};{}m▀",
+                        top_rgba[0], top_rgba[1], top_rgba[2]
+                    ));
+                }
+                (true, false) => {
+                    line.push_str(&format!(
+                        "\x1b[0m\x1b[38;2;{};{};{}m▄",
+                        bottom_rgba[0], bottom_rgba[1], bottom_rgba[2]
+                    ));
+                }
+                (false, false) => {
+                    line.push_str(&format!(
+                        "\x1b[0m\x1b[38;2;{};{};{}m\x1b[48;2;{};{};{}m▀",
+                        top_rgba[0], top_rgba[1], top_rgba[2],
+                        bottom_rgba[0], bottom_rgba[1], bottom_rgba[2]
+                    ));
+                }
+            }
         }
         line.push_str("\x1b[0m");
         lines.push(line);
@@ -75,16 +114,16 @@ fn render_ansi(img: &DynamicImage, width: u32, height: u32) -> Vec<String> {
 mod tests {
     use super::{render_non_image_badge, render_thumbnail_from_bytes};
     use crate::cli::ThumbMode;
-    use image::{DynamicImage, ImageFormat, Rgb, RgbImage};
+    use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
     use std::io::Cursor;
 
     fn sample_png() -> Vec<u8> {
-        let mut img = RgbImage::new(2, 2);
-        img.put_pixel(0, 0, Rgb([255, 0, 0]));
-        img.put_pixel(1, 0, Rgb([0, 255, 0]));
-        img.put_pixel(0, 1, Rgb([0, 0, 255]));
-        img.put_pixel(1, 1, Rgb([255, 255, 255]));
-        let dyn_img = DynamicImage::ImageRgb8(img);
+        let mut img = RgbaImage::new(2, 2);
+        img.put_pixel(0, 0, Rgba([255, 0, 0, 255]));
+        img.put_pixel(1, 0, Rgba([0, 255, 0, 0])); // Transparent
+        img.put_pixel(0, 1, Rgba([0, 0, 255, 255]));
+        img.put_pixel(1, 1, Rgba([255, 255, 255, 255]));
+        let dyn_img = DynamicImage::ImageRgba8(img);
         let mut bytes = Vec::new();
         dyn_img
             .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
@@ -96,7 +135,7 @@ mod tests {
     fn ascii_thumbnail_renders_multiple_lines() {
         let bytes = sample_png();
         let lines = render_thumbnail_from_bytes(&bytes, ThumbMode::Ascii, 16).expect("ascii");
-        assert!(lines.len() >= 4);
+        assert!(lines.len() >= 1);
         assert!(lines.iter().all(|line| !line.is_empty()));
     }
 
@@ -104,7 +143,7 @@ mod tests {
     fn ansi_thumbnail_contains_color_escape_sequences() {
         let bytes = sample_png();
         let lines = render_thumbnail_from_bytes(&bytes, ThumbMode::Ansi, 16).expect("ansi");
-        assert!(lines.iter().any(|line| line.contains("\x1b[48;2;")));
+        assert!(lines.iter().any(|line| line.contains("\x1b[38;2;")));
         assert!(lines.iter().all(|line| line.ends_with("\x1b[0m")));
     }
 

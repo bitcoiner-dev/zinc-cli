@@ -437,7 +437,7 @@ async fn maybe_offer_thumbnail_lines(
     }
 
     let content = client.get_inscription_content(&inscription_id).await.ok()?;
-    let rendered = render_thumbnail_from_bytes(&content.bytes, cli.thumb, 24).ok()?;
+    let rendered = render_thumbnail_from_bytes(&content.bytes, cli.thumb, 48).ok()?;
     let mut lines = vec![format!(
         "thumbnail ({}):",
         abbreviate(&inscription_id, 12, 8)
@@ -613,7 +613,6 @@ mod tests {
         abbreviate, assert_offer_expectations, map_offer_error, resolve_offer_source,
     };
     use crate::error::AppError;
-    use serde_json::json;
     use zinc_core::OfferEnvelopeV1;
 
     fn sample_offer() -> OfferEnvelopeV1 {

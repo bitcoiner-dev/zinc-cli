@@ -62,6 +62,10 @@ The `ui` feature enables a basic terminal dashboard for humans that shows:
 - inscriptions
 - ordinals/payment addresses per account
 
+Even without `ui`, human command output can be tuned with:
+- `--view card|json|raw` for concise cards vs pretty/raw JSON in non-JSON mode
+- `--thumb none|ascii|ansi` to show inscription previews in human output
+
 Run dashboard:
 
 ```bash

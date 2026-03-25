@@ -29,6 +29,8 @@ Useful globals:
 - `--network-timeout-secs <n>` timeout for remote calls (default: `30`)
 - `--network-retries <n>` retry count for transient network failures/timeouts (default: `0`)
 - `--policy-mode warn|strict` transaction safety behavior (default: `warn`)
+- `--view card|json|raw` non-JSON output style (default: `card`)
+- `--thumb none|ascii|ansi` inscription preview style for human output (default: `none`)
 
 Environment defaults (optional):
 
@@ -103,6 +105,7 @@ Sync and check balance:
 zinc-cli sync chain
 zinc-cli sync ordinals
 zinc-cli balance
+zinc-cli --thumb ascii inscription list
 ```
 
 Get addresses:
@@ -247,6 +250,25 @@ zinc-cli --agent offer publish \
   --relay wss://nostr.example
 ```
 
+Human-focused, glanceable offer output (great for demos):
+
+```bash
+zinc-cli --ord-url https://ord.example --view card --thumb ascii offer create \
+  --inscription <inscription-id> \
+  --amount 100000 \
+  --fee-rate 1
+```
+
+```bash
+zinc-cli --ord-url https://ord.example --view card --thumb ascii offer discover \
+  --relay wss://nostr.example
+```
+
+```bash
+zinc-cli --ord-url https://ord.example --view card --thumb ascii offer accept \
+  --offer-file /tmp/offer.json
+```
+
 Discover offers from one or more relays:
 
 ```bash
@@ -297,6 +319,7 @@ Rules:
 - For dual-scheme sellers, pass `--seller-payout-address <payment-address>` to direct proceeds to the seller payment branch.
 - `offer create --publisher-pubkey-hex` can override the default publisher pubkey embedded in the offer envelope.
 - `offer publish` and `offer discover` require at least one `--relay`.
+- `--thumb ascii|ansi` requires `--ord-url` (or profile ord url) and works only in human mode (not `--json`/`--agent`).
 
 ## 7) Profiles, Accounts, and Waits
 

@@ -4,5 +4,6 @@ pub mod balance;
 pub mod config;
 pub mod inscription;
 pub mod snapshot;
+pub mod thumbnail;
 pub mod tx;
 pub mod wallet;

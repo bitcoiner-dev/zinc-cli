@@ -15,7 +15,7 @@ mod utils;
 mod wallet_service;
 mod wizard;
 
-use crate::cli::{Cli, Command, PolicyMode};
+use crate::cli::{Cli, Command, PolicyMode, ViewMode};
 use crate::config::*;
 use crate::error::AppError;
 use crate::utils::{env_bool, env_non_empty};
@@ -69,6 +69,8 @@ const GLOBAL_FLAGS: &[&str] = &[
     "--network-timeout-secs",
     "--network-retries",
     "--policy-mode",
+    "--view",
+    "--thumb",
 ];
 const COMMAND_LIST: &[&str] = &[
     "setup",
@@ -299,7 +301,7 @@ async fn main() -> miette::Result<()> {
             let envelope = wrap_envelope(Ok(replay_value), &cli);
             println!("{}", serde_json::to_string(&envelope).unwrap());
         } else if !replay_value.is_null() && !is_non_json_rendered_command(&cli.command) {
-            println!("{}", serde_json::to_string(&replay_value).unwrap());
+            println!("{}", serialize_non_json_value(&cli, &replay_value));
         }
         return Ok(());
     }
@@ -332,8 +334,7 @@ async fn main() -> miette::Result<()> {
                 let envelope = wrap_envelope(Ok(val), &cli_final);
                 println!("{}", serde_json::to_string(&envelope).unwrap());
             } else if !val.is_null() && !is_non_json_rendered_command(&cli_final.command) {
-                // For contract_v1.rs compatibility, print non-null results as JSON even in human mode
-                println!("{}", serde_json::to_string(&val).unwrap());
+                println!("{}", serialize_non_json_value(&cli_final, &val));
             }
         }
         Err((err, cli_final)) => {
@@ -920,6 +921,39 @@ fn is_non_json_rendered_command(command: &Command) -> bool {
         #[cfg(feature = "ui")]
         Command::Dashboard => true,
         _ => false,
+    }
+}
+
+fn serialize_non_json_value(cli: &Cli, value: &Value) -> String {
+    serialize_non_json_value_for_view(cli.view, value)
+}
+
+fn serialize_non_json_value_for_view(view: ViewMode, value: &Value) -> String {
+    match view {
+        ViewMode::Json => serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string()),
+        ViewMode::Card | ViewMode::Raw => {
+            serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::serialize_non_json_value_for_view;
+    use crate::cli::ViewMode;
+    use serde_json::json;
+
+    #[test]
+    fn serialize_non_json_value_for_view_json_is_pretty() {
+        let rendered = serialize_non_json_value_for_view(ViewMode::Json, &json!({"a":1,"b":2}));
+        assert!(rendered.contains('\n'));
+        assert!(rendered.contains("  \"a\""));
+    }
+
+    #[test]
+    fn serialize_non_json_value_for_view_card_is_compact() {
+        let rendered = serialize_non_json_value_for_view(ViewMode::Card, &json!({"a":1}));
+        assert_eq!(rendered, "{\"a\":1}");
     }
 }
 

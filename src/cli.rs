@@ -9,6 +9,24 @@ pub enum PolicyMode {
     Strict,
 }
 
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[value(rename_all = "lower")]
+pub enum ViewMode {
+    #[default]
+    Card,
+    Json,
+    Raw,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[value(rename_all = "lower")]
+pub enum ThumbMode {
+    #[default]
+    None,
+    Ascii,
+    Ansi,
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "zinc-cli",
@@ -77,6 +95,24 @@ pub struct Cli {
     pub no_images: bool,
     #[arg(long, global = true, help = "Force ASCII fallback mode")]
     pub ascii: bool,
+
+    #[arg(
+        long,
+        global = true,
+        value_enum,
+        default_value_t = ViewMode::Card,
+        help = "Human output style in non-JSON mode: card|json|raw"
+    )]
+    pub view: ViewMode,
+
+    #[arg(
+        long,
+        global = true,
+        value_enum,
+        default_value_t = ThumbMode::None,
+        help = "Inscription thumbnail style in human output: none|ascii|ansi"
+    )]
+    pub thumb: ThumbMode,
 
     #[arg(
         long,
@@ -514,8 +550,42 @@ pub enum ScenarioAction {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, OfferAction};
+    use super::{Cli, Command, OfferAction, ThumbMode, ViewMode};
     use clap::Parser;
+
+    #[test]
+    fn parses_global_view_and_thumb_switches() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "--view",
+            "json",
+            "--thumb",
+            "ascii",
+            "offer",
+            "discover",
+            "--relay",
+            "wss://relay.example",
+        ])
+        .expect("cli parse");
+
+        assert_eq!(cli.view, ViewMode::Json);
+        assert_eq!(cli.thumb, ThumbMode::Ascii);
+    }
+
+    #[test]
+    fn defaults_global_view_and_thumb_switches() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "offer",
+            "discover",
+            "--relay",
+            "wss://relay.example",
+        ])
+        .expect("cli parse");
+
+        assert_eq!(cli.view, ViewMode::Card);
+        assert_eq!(cli.thumb, ThumbMode::None);
+    }
 
     #[test]
     fn parses_offer_publish_subcommand() {

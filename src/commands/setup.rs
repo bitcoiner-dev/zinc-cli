@@ -73,6 +73,8 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<Value, AppError> {
             agent: cli.agent,
             no_images: cli.no_images,
             ascii: false,
+            view: cli.view,
+            thumb: cli.thumb,
             correlation_id: cli.correlation_id.clone(),
             log_json: cli.log_json,
             idempotency_key: cli.idempotency_key.clone(),

@@ -26,7 +26,7 @@ This document defines the active `v1` command contract. It is additive with curr
 
 ## 3) Global Flags (Supported)
 
-`--json`, `--agent`, `--quiet`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
+`--json`, `--agent`, `--quiet`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--view`, `--thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
 
 Global flags are supported both before and after command tokens.
 
@@ -37,6 +37,10 @@ Reliability defaults:
 - `--network-timeout-secs` defaults to `30`.
 - `--network-retries` defaults to `0`.
 - `--policy-mode` defaults to `warn`.
+
+Human-output defaults:
+- `--view` defaults to `card` (non-JSON only).
+- `--thumb` defaults to `none` (non-JSON only).
 
 ## 4) JSON Envelope
 

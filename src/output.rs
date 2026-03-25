@@ -259,6 +259,8 @@ pub struct InscriptionItemDisplay {
     pub value_sats: String,
     pub content_type: String,
     pub badge_lines: Vec<String>,
+    /// Raw image bytes for viuer to render directly to stdout.
+    pub image_bytes: Option<Vec<u8>>,
 }
 
 pub trait Presenter {
@@ -335,15 +337,12 @@ impl Presenter for AgentPresenter {
 pub struct HumanPresenter {
     #[allow(dead_code)]
     pub use_color: bool,
-    #[allow(dead_code)]
-    pub thumb_mode: crate::cli::ThumbMode,
 }
 
 impl HumanPresenter {
-    pub fn new(use_color: bool, thumb_mode: crate::cli::ThumbMode) -> Self {
+    pub fn new(use_color: bool) -> Self {
         Self {
             use_color,
-            thumb_mode,
         }
     }
 
@@ -373,31 +372,83 @@ impl HumanPresenter {
 
     fn print_inscription_list(&self, inscriptions: &[zinc_core::ordinals::Inscription], display_items: &Option<Vec<InscriptionItemDisplay>>, thumb_mode_enabled: bool) -> String {
         use console::style;
-        use crate::presenter::grid::{GridCard, render_grid};
+        use crate::presenter::thumbnail::print_thumbnail_at;
 
         let mut out = String::new();
         if let Some(items) = display_items {
-            let cards: Vec<GridCard> = items
-                .iter()
-                .map(|item| {
-                    let mut lines = Vec::new();
-                    // Styled header
-                    lines.push(format!(
-                        "{}",
-                        style(format!("#{}", item.number)).bold().cyan(),
-                    ));
-                    // Thumbnail / badge lines
-                    lines.extend(item.badge_lines.iter().cloned());
-                    GridCard { lines }
-                })
-                .collect();
-
-            // Use terminal width if available, otherwise default to 120.
             let term_width = {
                 let (_, cols) = console::Term::stdout().size();
                 if cols > 0 { cols as usize } else { 120 }
             };
-            out.push_str(&render_grid(&cards, term_width, 3));
+
+            let card_width: u32 = 24;
+            let gutter: usize = 2;
+            let cards_per_row = ((term_width + gutter) / (card_width as usize + gutter)).max(1);
+
+            for row_items in items.chunks(cards_per_row) {
+                // 1. Print all headers for the row
+                for (col, item) in row_items.iter().enumerate() {
+                    let x_offset = col * (card_width as usize + gutter);
+                    let header = format!("{}", style(format!("#{}", item.number)).bold().cyan());
+                    
+                    if col > 0 {
+                        print!("\x1b[{}G{header}", x_offset + 1);
+                    } else {
+                        print!("{header}");
+                    }
+                }
+                println!();
+
+                // 2. Pre-allocate vertical space 
+                // Printing images near the bottom of the terminal triggers scrolling.
+                // The ANSI Save Cursor (\x1b[s) uses absolute screen row. If the screen scrolls 
+                // between Image 1 and Image 2, Image 2's restored Y-coordinate is physically lower!
+                // We pre-allocate space by printing newlines, then returning up, to guarantee
+                // the viewport won't scroll while viuer prints the row of images.
+                let space_to_reserve = 14; 
+                for _ in 0..space_to_reserve {
+                    println!();
+                }
+                // move back up
+                print!("\x1b[{}A", space_to_reserve);
+
+                // 3. Print all images for the row
+                // Each print_thumbnail_at call uses viuer's restore_cursor to return to this line
+                let mut max_img_height: u32 = 0;
+                for (col, item) in row_items.iter().enumerate() {
+                    let x_offset = col * (card_width as usize + gutter);
+                    if let Some(ref bytes) = item.image_bytes {
+                        let img_height = print_thumbnail_at(bytes, card_width, x_offset as u16);
+                        if let Some((_, h)) = img_height {
+                            max_img_height = max_img_height.max(h);
+                        }
+                    }
+                }
+
+                // 3. Move cursor down past the tallest image
+                if max_img_height > 0 {
+                    print!("\x1b[{}B\r", max_img_height);
+                }
+
+                // 4. Print all badge lines for the row
+                let max_badge_lines = row_items.iter().map(|i| i.badge_lines.len()).max().unwrap_or(0);
+                for line_idx in 0..max_badge_lines {
+                    for (col, item) in row_items.iter().enumerate() {
+                        if let Some(line) = item.badge_lines.get(line_idx) {
+                            let x_offset = col * (card_width as usize + gutter);
+                            if col > 0 {
+                                print!("\x1b[{}G{line}", x_offset + 1);
+                            } else {
+                                print!("{line}");
+                            }
+                        }
+                    }
+                    println!();
+                }
+
+                // Blank line between rows
+                println!();
+            }
 
             if inscriptions.len() > items.len() {
                 out.push_str(&format!("... and {} more inscriptions\n", inscriptions.len() - items.len()));

@@ -301,7 +301,7 @@ async fn main() -> miette::Result<()> {
         } else if !replay_value.is_null() && !is_non_json_rendered_command(&cli.command) {
             let output = crate::output::CommandOutput::Generic(replay_value);
             use crate::output::Presenter;
-            let presenter = crate::output::HumanPresenter::new(true, cli.thumb);
+            let presenter = crate::output::HumanPresenter::new(true);
             println!("{}", presenter.render(&output));
         }
         return Ok(());
@@ -339,7 +339,7 @@ async fn main() -> miette::Result<()> {
                 println!("{}", serde_json::to_string(&envelope).unwrap());
             } else if !val_json.is_null() && !is_non_json_rendered_command(&cli_final.command) {
                 use crate::output::Presenter;
-                let presenter = crate::output::HumanPresenter::new(true, cli_final.thumb);
+                let presenter = crate::output::HumanPresenter::new(true);
                 println!("{}", presenter.render(&val));
             }
         }

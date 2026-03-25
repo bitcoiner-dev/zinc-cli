@@ -10,14 +10,6 @@ pub enum PolicyMode {
 }
 
 
-#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[value(rename_all = "lower")]
-pub enum ThumbMode {
-    #[default]
-    None,
-    Ascii,
-    Ansi,
-}
 
 #[derive(Parser, Debug, Clone)]
 #[command(
@@ -85,12 +77,9 @@ pub struct Cli {
     #[arg(
         long,
         global = true,
-        value_enum,
-        default_value_t = ThumbMode::None,
-        hide = true,
-        help = "Inscription thumbnail style in human output: none|ascii|ansi"
+        help = "Show inscription thumbnails (auto-detects best rendering)"
     )]
-    pub thumb: ThumbMode,
+    pub thumb: bool,
 
     #[arg(
         long,
@@ -132,6 +121,13 @@ pub struct Cli {
     #[arg(
         long,
         global = true,
+        help = "Disable inscription thumbnails"
+    )]
+    pub no_thumb: bool,
+
+    #[arg(
+        long,
+        global = true,
         value_enum,
         default_value_t = PolicyMode::Warn,
         help = "Policy behavior for potentially risky PSBT operations: warn|strict"
@@ -143,6 +139,18 @@ pub struct Cli {
 
     #[arg(skip)]
     pub started_at_unix_ms: u128,
+}
+
+impl Cli {
+    pub fn thumb_enabled(&self) -> bool {
+        if self.no_thumb || self.no_images {
+            false
+        } else if self.thumb {
+            true
+        } else {
+            !self.agent
+        }
+    }
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -527,7 +535,7 @@ pub enum ScenarioAction {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, OfferAction, ThumbMode};
+    use super::{Cli, Command, OfferAction};
     use clap::Parser;
 
     #[test]
@@ -535,7 +543,6 @@ mod tests {
         let cli = Cli::try_parse_from([
             "zinc-cli",
             "--thumb",
-            "ascii",
             "offer",
             "discover",
             "--relay",
@@ -543,7 +550,7 @@ mod tests {
         ])
         .expect("cli parse");
 
-        assert_eq!(cli.thumb, ThumbMode::Ascii);
+        assert!(cli.thumb_enabled());
     }
 
     #[test]
@@ -557,7 +564,9 @@ mod tests {
         ])
         .expect("cli parse");
 
-        assert_eq!(cli.thumb, ThumbMode::None);
+        // Should default to true because output mode is human by default
+        assert!(cli.thumb_enabled());
+        assert!(!cli.no_thumb);
     }
 
     #[test]

@@ -1,6 +1,6 @@
-use crate::cli::{Cli, InscriptionArgs, ThumbMode};
+use crate::cli::{Cli, InscriptionArgs};
 use crate::error::AppError;
-use crate::presenter::thumbnail::{render_non_image_badge, render_thumbnail_from_bytes};
+use crate::presenter::thumbnail::render_non_image_badge;
 use crate::load_wallet_session;
 use crate::output::{CommandOutput, InscriptionItemDisplay};
 use zinc_core::{ordinals::Inscription, OrdClient};
@@ -9,23 +9,22 @@ pub async fn run(cli: &Cli, _args: &InscriptionArgs) -> Result<CommandOutput, Ap
     let session = load_wallet_session(cli)?;
     let inscriptions = session.wallet.inscriptions();
 
-    let display_items = if cli.thumb == ThumbMode::None {
+    let display_items = if !cli.thumb_enabled() {
         None
     } else {
-        Some(get_inscription_display_items(&session.profile.ord_url, &inscriptions, cli.thumb).await)
+        Some(get_inscription_display_items(&session.profile.ord_url, &inscriptions).await)
     };
 
     Ok(CommandOutput::InscriptionList {
         inscriptions: inscriptions.to_vec(),
         display_items,
-        thumb_mode_enabled: cli.thumb != ThumbMode::None,
+        thumb_mode_enabled: cli.thumb_enabled(),
     })
 }
 
 async fn get_inscription_display_items(
     ord_url: &str,
     inscriptions: &[Inscription],
-    mode: ThumbMode,
 ) -> Vec<InscriptionItemDisplay> {
     const MAX_VISIBLE: usize = 8;
     let client = OrdClient::new(ord_url.to_string());
@@ -39,21 +38,19 @@ async fn get_inscription_display_items(
             .unwrap_or_else(|| "-".to_string());
 
         let mut badge_lines = Vec::new();
+        let mut image_bytes = None;
+
         if content_type.starts_with("image/") {
             match client.get_inscription_content(&ins.id).await {
-                Ok(content) => match render_thumbnail_from_bytes(&content.bytes, mode, 48) {
-                    Ok(lines) => {
-                        badge_lines.extend(lines);
-                    }
-                    Err(_) => {
-                        badge_lines.push(format!(
-                            "(thumbnail unavailable: {})",
-                            crate::commands::offer::abbreviate(&ins.id, 12, 8)
-                        ));
-                    }
-                },
+                Ok(content) => {
+                    // Store raw bytes — viuer will render them during output.
+                    image_bytes = Some(content.bytes);
+                }
                 Err(_) => {
-                    badge_lines.push(format!("(thumbnail unavailable: {})", crate::commands::offer::abbreviate(&ins.id, 12, 8)));
+                    badge_lines.push(format!(
+                        "(thumbnail unavailable: {})",
+                        crate::commands::offer::abbreviate(&ins.id, 12, 8)
+                    ));
                 }
             }
         } else {
@@ -66,6 +63,7 @@ async fn get_inscription_display_items(
             value_sats: value,
             content_type: content_type.to_string(),
             badge_lines,
+            image_bytes,
         });
     }
     

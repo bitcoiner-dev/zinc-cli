@@ -1,9 +1,9 @@
-use crate::cli::{Cli, OfferAction, OfferArgs, ThumbMode};
+use crate::cli::{Cli, OfferAction, OfferArgs};
 use crate::commands::psbt::{analyze_psbt_with_policy, enforce_policy_mode};
 use crate::config::NetworkArg;
 use crate::error::AppError;
 use crate::network_retry::with_network_retry;
-use crate::presenter::thumbnail::{render_non_image_badge, render_thumbnail_from_bytes};
+use crate::presenter::thumbnail::{render_non_image_badge, print_thumbnail};
 use crate::utils::{maybe_write_text, resolve_psbt_source};
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
@@ -341,7 +341,7 @@ async fn finalize_offer_output(
     response: Value,
 ) -> Result<CommandOutput, AppError> {
     let thumbnail_lines = maybe_offer_thumbnail_lines(cli, action, &response).await;
-    let hide_inscription_ids = cli.thumb != ThumbMode::None;
+    let hide_inscription_ids = cli.thumb_enabled();
 
     match action {
         OfferAction::Create { inscription, .. } => {
@@ -412,7 +412,7 @@ async fn maybe_offer_thumbnail_lines(
     action: &OfferAction,
     response: &Value,
 ) -> Option<Vec<String>> {
-    if cli.thumb == ThumbMode::None {
+    if !cli.thumb_enabled() {
         return None;
     }
 
@@ -437,13 +437,17 @@ async fn maybe_offer_thumbnail_lines(
     }
 
     let content = client.get_inscription_content(&inscription_id).await.ok()?;
-    let rendered = render_thumbnail_from_bytes(&content.bytes, cli.thumb, 48).ok()?;
-    let mut lines = vec![format!(
+    let lines = vec![format!(
         "thumbnail ({}):",
         abbreviate(&inscription_id, 12, 8)
     )];
-    lines.extend(rendered);
-    Some(lines)
+    // Flush the header, then print the image directly via viuer
+    for line in &lines {
+        println!("{line}");
+    }
+    print_thumbnail(&content.bytes, 24);
+    // Return empty vec since we already printed everything
+    Some(Vec::new())
 }
 
 fn offer_thumbnail_inscription_id(action: &OfferAction, response: &Value) -> Option<String> {

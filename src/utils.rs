@@ -104,6 +104,19 @@ pub fn run_bitcoin_cli(
     profile: &Profile,
     args: &[String],
 ) -> Result<String, crate::error::AppError> {
+    let path = std::path::Path::new(&profile.bitcoin_cli);
+    let bin_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+
+    if bin_name != "bitcoin-cli" && bin_name != "bitcoin-cli.exe" {
+        return Err(crate::error::AppError::Internal(format!(
+            "security violation: bitcoin_cli must be 'bitcoin-cli' or 'bitcoin-cli.exe', got '{}'",
+            profile.bitcoin_cli
+        )));
+    }
+
     let mut cmd = std::process::Command::new(&profile.bitcoin_cli);
     for arg in &profile.bitcoin_cli_args {
         cmd.arg(arg);

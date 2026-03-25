@@ -1,0 +1,4 @@
+## 2024-05-24 - Command Injection via Configured `bitcoin_cli` Binary
+**Vulnerability:** The application allowed arbitrary command execution by reading the `bitcoin_cli` command to run from a user-provided profile configuration and executing it directly with `std::process::Command::new` without validating the binary name.
+**Learning:** Profile configurations or configuration files can often be manipulated by users. Trusting arbitrary paths or commands specified in these files can lead to remote code execution (RCE) or local privilege escalation if the application is run with elevated privileges.
+**Prevention:** Implement a strict whitelist on the binary name allowed to be executed when the binary path is sourced from user configuration or input. Always extract the base filename and compare it against the expected executable name (e.g., `bitcoin-cli` or `bitcoin-cli.exe`).

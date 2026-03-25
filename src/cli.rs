@@ -163,6 +163,7 @@ pub enum Command {
     Balance,
     Tx(TxArgs),
     Psbt(PsbtArgs),
+    #[command(hide = true)]
     Offer(OfferArgs),
     Account(AccountArgs),
     Wait(WaitArgs),

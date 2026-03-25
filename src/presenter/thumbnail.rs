@@ -2,6 +2,7 @@
 /// graphics protocol (Kitty, iTerm2, Sixel, or halfblock fallback).
 /// Returns the (width, height) of the rendered image in terminal cells,
 /// or `None` if rendering failed.
+#[allow(dead_code)]
 pub fn print_thumbnail(bytes: &[u8], width: u32) -> Option<(u32, u32)> {
     let img = image::load_from_memory(bytes).ok()?;
     let conf = viuer::Config {

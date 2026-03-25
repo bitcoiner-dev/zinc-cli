@@ -12,6 +12,7 @@ pub struct BtcBalance {
 
 #[derive(Serialize)]
 #[serde(untagged)]
+#[allow(dead_code)]
 pub enum CommandOutput {
     WalletInit {
         profile: Option<String>,

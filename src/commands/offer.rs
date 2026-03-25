@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::cli::{Cli, OfferAction, OfferArgs};
 use crate::commands::psbt::{analyze_psbt_with_policy, enforce_policy_mode};
 use crate::config::NetworkArg;

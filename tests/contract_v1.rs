@@ -44,7 +44,7 @@ fn init_wallet(data_dir: &str, password: &str) {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         data_dir,
         "--password",
@@ -91,7 +91,7 @@ fn parse_json_lines(output: &str) -> Vec<Value> {
 #[test]
 fn test_json_envelope_help() {
     let mut cmd = cargo_cmd();
-    cmd.args(&["run", "--quiet", "--", "--json", "help"]);
+    cmd.args(&["run", "--quiet", "--", "--agent", "help"]);
 
     let output = cmd.output().expect("failed to execute process");
     assert!(output.status.success());
@@ -114,7 +114,7 @@ fn test_correlation_id_can_be_overridden_by_flag() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--correlation-id",
         "agent-run-42",
         "help",
@@ -135,7 +135,7 @@ fn test_log_json_emits_structured_stderr_events() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--log-json",
         "config",
         "show",
@@ -176,7 +176,7 @@ fn test_log_json_emits_structured_stderr_events() {
 #[test]
 fn test_json_envelope_error() {
     let mut cmd = cargo_cmd();
-    cmd.args(&["run", "--quiet", "--", "--json", "invalid-command"]);
+    cmd.args(&["run", "--quiet", "--", "--agent", "invalid-command"]);
 
     let output = cmd.output().expect("failed to execute process");
     assert!(!output.status.success());
@@ -199,7 +199,7 @@ fn test_mnemonic_hiding() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         data_dir,
         "--password",
@@ -240,10 +240,9 @@ fn test_wallet_init_human_mode_shows_mnemonic() {
     let output = cmd.output().expect("failed to execute process");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = parse_json_from_output(&stdout);
-
-    assert_ne!(json["phrase"], "<hidden; use --reveal to show>");
-    assert!(json.get("words").is_some());
+    assert!(stdout.contains("Wallet initialized"));
+    assert!(stdout.contains("Phrase"));
+    assert!(!stdout.contains("<hidden"));
 }
 
 #[test]
@@ -256,7 +255,7 @@ fn test_mnemonic_reveal() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--reveal",
         "--data-dir",
         data_dir,
@@ -286,7 +285,7 @@ fn test_password_stdin() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         data_dir,
         "--password-stdin",
@@ -327,7 +326,7 @@ fn test_lock_failure() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         data_dir,
         "wallet",
@@ -362,7 +361,7 @@ fn test_lock_info_and_clear() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         data_dir,
         "lock",
@@ -381,7 +380,7 @@ fn test_lock_info_and_clear() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--yes",
         "--data-dir",
         data_dir,
@@ -404,7 +403,7 @@ fn test_password_stdin_conflicts_with_psbt_stdin() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--password-stdin",
         "psbt",
         "analyze",
@@ -425,7 +424,7 @@ fn test_password_stdin_conflicts_with_psbt_stdin() {
 #[test]
 fn test_psbt_analyze_requires_input_source() {
     let mut cmd = cargo_cmd();
-    cmd.args(&["run", "--quiet", "--", "--json", "psbt", "analyze"]);
+    cmd.args(&["run", "--quiet", "--", "--agent", "psbt", "analyze"]);
     let output = cmd.output().expect("failed to execute process");
     assert!(!output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -445,7 +444,7 @@ fn test_psbt_analyze_rejects_multiple_input_sources() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "psbt",
         "analyze",
         "--psbt",
@@ -476,7 +475,7 @@ fn test_psbt_analyze_stdin_empty_is_invalid() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         &data_dir,
         "--password",
@@ -519,7 +518,7 @@ fn test_atomic_write_ignores_corrupt_temp_file() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         &data_dir,
         "--password",
@@ -555,7 +554,7 @@ fn test_corrupt_profile_json_maps_to_config_error() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         &data_dir,
         "wallet",
@@ -591,7 +590,7 @@ fn test_agent_flag_emits_json_envelope() {
 #[test]
 fn test_unknown_command_has_suggestion() {
     let mut cmd = cargo_cmd();
-    cmd.args(&["run", "--quiet", "--", "--json", "walet", "info"]);
+    cmd.args(&["run", "--quiet", "--", "--agent", "walet", "info"]);
 
     let output = cmd.output().expect("failed to execute process");
     assert!(!output.status.success());
@@ -609,7 +608,7 @@ fn test_unknown_command_has_suggestion() {
 #[test]
 fn test_unknown_global_flag_has_suggestion() {
     let mut cmd = cargo_cmd();
-    cmd.args(&["run", "--quiet", "--", "--json", "--jons", "wallet", "info"]);
+    cmd.args(&["run", "--quiet", "--", "--agent", "--jons", "wallet", "info"]);
 
     let output = cmd.output().expect("failed to execute process");
     assert!(!output.status.success());
@@ -621,7 +620,7 @@ fn test_unknown_global_flag_has_suggestion() {
     assert!(json["error"]["message"]
         .as_str()
         .unwrap()
-        .contains("did you mean --json"));
+        .contains("unexpected argument"));
 }
 
 #[test]
@@ -631,7 +630,7 @@ fn test_unknown_option_is_rejected_with_hint() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--password",
         "testpass",
         "wallet",
@@ -671,7 +670,7 @@ fn test_global_flags_work_after_command() {
         &data_dir,
         "--password",
         "testpass",
-        "--json",
+        "--agent",
     ]);
 
     let output = cmd.output().expect("failed to execute process");
@@ -692,7 +691,7 @@ fn test_config_show_reflects_env_defaults() {
     cmd.env("ZINC_CLI_PROFILE", "env-profile");
     cmd.env("ZINC_CLI_DATA_DIR", &data_dir);
     cmd.env("ZINC_CLI_PASSWORD_ENV", "BOT_PASS_ENV");
-    cmd.env("ZINC_CLI_JSON", "1");
+    cmd.env("ZINC_CLI_OUTPUT", "agent");
     cmd.env("ZINC_CLI_QUIET", "true");
 
     let output = cmd.output().expect("failed to execute process");
@@ -704,7 +703,7 @@ fn test_config_show_reflects_env_defaults() {
     assert_eq!(json["profile"], "env-profile");
     assert_eq!(json["data_dir"], data_dir);
     assert_eq!(json["password_env"], "BOT_PASS_ENV");
-    assert_eq!(json["json"], true);
+    assert_eq!(json["agent"], true);
     assert_eq!(json["quiet"], true);
 }
 
@@ -718,7 +717,7 @@ fn test_wallet_init_uses_env_network_defaults() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         &data_dir,
         "--password",
@@ -742,7 +741,7 @@ fn test_wallet_init_uses_env_network_defaults() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         &data_dir,
         "--password",
@@ -775,7 +774,7 @@ fn test_json_mode_can_be_enabled_by_env() {
         "wallet",
         "info",
     ]);
-    cmd.env("ZINC_CLI_JSON", "true");
+    cmd.env("ZINC_CLI_OUTPUT", "agent");
 
     let output = cmd.output().expect("failed to execute process");
     assert!(output.status.success());
@@ -792,14 +791,14 @@ fn test_config_set_and_unset_roundtrip() {
 
     let mut set_cmd = cargo_cmd();
     set_cmd.args(&[
-        "run", "--quiet", "--", "--json", "config", "set", "network", "signet",
+        "run", "--quiet", "--", "--agent", "config", "set", "network", "signet",
     ]);
     set_cmd.env("HOME", &home);
     let set_output = set_cmd.output().expect("failed to execute process");
     assert!(set_output.status.success());
 
     let mut show_cmd = cargo_cmd();
-    show_cmd.args(&["run", "--quiet", "--", "--json", "config", "show"]);
+    show_cmd.args(&["run", "--quiet", "--", "--agent", "config", "show"]);
     show_cmd.env("HOME", &home);
     let show_output = show_cmd.output().expect("failed to execute process");
     assert!(show_output.status.success());
@@ -808,14 +807,14 @@ fn test_config_set_and_unset_roundtrip() {
 
     let mut unset_cmd = cargo_cmd();
     unset_cmd.args(&[
-        "run", "--quiet", "--", "--json", "config", "unset", "network",
+        "run", "--quiet", "--", "--agent", "config", "unset", "network",
     ]);
     unset_cmd.env("HOME", &home);
     let unset_output = unset_cmd.output().expect("failed to execute process");
     assert!(unset_output.status.success());
 
     let mut show_after_cmd = cargo_cmd();
-    show_after_cmd.args(&["run", "--quiet", "--", "--json", "config", "show"]);
+    show_after_cmd.args(&["run", "--quiet", "--", "--agent", "config", "show"]);
     show_after_cmd.env("HOME", &home);
     let show_after_output = show_after_cmd.output().expect("failed to execute process");
     assert!(show_after_output.status.success());
@@ -836,7 +835,7 @@ fn test_setup_persists_defaults_and_wallet_uses_them() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "setup",
         "--profile",
         "bot-a",
@@ -848,8 +847,6 @@ fn test_setup_persists_defaults_and_wallet_uses_them() {
         "signet",
         "--default-scheme",
         "unified",
-        "--json-default",
-        "true",
         "--quiet-default",
         "true",
     ]);
@@ -862,6 +859,7 @@ fn test_setup_persists_defaults_and_wallet_uses_them() {
         "run",
         "--quiet",
         "--",
+        "--agent",
         "--password",
         "testpass",
         "wallet",
@@ -880,6 +878,7 @@ fn test_setup_persists_defaults_and_wallet_uses_them() {
         "run",
         "--quiet",
         "--",
+        "--agent",
         "--password",
         "testpass",
         "wallet",
@@ -900,7 +899,7 @@ fn test_setup_without_flags_uses_noninteractive_path_in_tests() {
     fs::create_dir_all(&home).expect("failed to create test home");
 
     let mut setup_cmd = cargo_cmd();
-    setup_cmd.args(&["run", "--quiet", "--", "--json", "setup"]);
+    setup_cmd.args(&["run", "--quiet", "--", "--agent", "setup"]);
     setup_cmd.env("HOME", &home);
 
     let output = setup_cmd.output().expect("failed to execute process");
@@ -937,7 +936,7 @@ fn test_wallet_reveal_mnemonic_matches_created_wallet_phrase() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--reveal",
         "--data-dir",
         &data_dir,
@@ -960,7 +959,7 @@ fn test_wallet_reveal_mnemonic_matches_created_wallet_phrase() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         &data_dir,
         "--password",
@@ -989,7 +988,7 @@ fn test_wallet_reveal_mnemonic_requires_correct_password() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         &data_dir,
         "--password",
@@ -1005,10 +1004,10 @@ fn test_wallet_reveal_mnemonic_requires_correct_password() {
 }
 
 #[test]
-fn test_parse_error_json_mode_enabled_by_numeric_env() {
+fn test_parse_error_agent_mode_enabled_by_env() {
     let mut cmd = cargo_cmd();
     cmd.args(&["run", "--quiet", "--", "invalid-command"]);
-    cmd.env("ZINC_CLI_JSON", "1");
+    cmd.env("ZINC_CLI_OUTPUT", "agent");
     cmd.env("ZINC_CLI_CORRELATION_ID", "preparse-env-cid");
 
     let output = cmd.output().expect("failed to execute process");
@@ -1035,7 +1034,7 @@ fn test_setup_propagates_password_env_and_restore_mnemonic() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--password",
         "testpass",
         "setup",
@@ -1069,7 +1068,7 @@ fn test_setup_propagates_password_env_and_restore_mnemonic() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         &data_dir,
         "--password",
@@ -1097,7 +1096,7 @@ fn test_setup_words_24_generates_24_word_wallet() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--password",
         "testpass",
         "setup",
@@ -1128,7 +1127,7 @@ fn test_wait_balance_zero_target_includes_contract_fields() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         &data_dir,
         "--password",
@@ -1159,7 +1158,7 @@ fn test_sync_chain_network_error_maps_to_network_type() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--data-dir",
         &data_dir,
         "--password",
@@ -1184,7 +1183,7 @@ fn test_psbt_analyze_missing_file_maps_to_config_type() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "psbt",
         "analyze",
         "--psbt-file",
@@ -1209,7 +1208,7 @@ fn test_idempotency_replays_mutating_command_response() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--idempotency-key",
         "idem-001",
         "--data-dir",
@@ -1233,7 +1232,7 @@ fn test_idempotency_replays_mutating_command_response() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--idempotency-key",
         "idem-001",
         "--data-dir",
@@ -1264,7 +1263,7 @@ fn test_idempotency_key_reuse_with_different_payload_is_rejected() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--idempotency-key",
         "idem-conflict",
         "--data-dir",
@@ -1284,7 +1283,7 @@ fn test_idempotency_key_reuse_with_different_payload_is_rejected() {
         "run",
         "--quiet",
         "--",
-        "--json",
+        "--agent",
         "--idempotency-key",
         "idem-conflict",
         "--data-dir",

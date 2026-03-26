@@ -15,27 +15,28 @@ With `ui` enabled, the basic dashboard shows account balance, inscriptions, and 
 
 Useful globals:
 
-- `--json` machine output mode (recommended for agents)
-- `--agent` shorthand for `--json --quiet --ascii`
+- `--agent` machine output mode (returns structured JSON)
 - `--profile <name>` select profile (default: `default`)
 - `--data-dir <path>` override data root
 - `--password <value>`
 - `--password-env <ENV_NAME>` (default env: `ZINC_WALLET_PASSWORD`)
 - `--password-stdin`
-- `--reveal` show mnemonic fields in `--json` mode, and on `wallet import`
+- `--reveal` show mnemonic fields in `--agent` mode, and on `wallet import`
 - `--correlation-id <id>` set a stable workflow/request identifier
 - `--log-json` emit structured lifecycle logs to stderr (`command_start|command_finish|command_error`)
 - `--idempotency-key <key>` de-duplicate mutating commands for retry-safe automation
 - `--network-timeout-secs <n>` timeout for remote calls (default: `30`)
 - `--network-retries <n>` retry count for transient network failures/timeouts (default: `0`)
 - `--policy-mode warn|strict` transaction safety behavior (default: `warn`)
+- `--thumb` force inscription thumbnails on
+- `--no-thumb` disable inscription thumbnails
 
 Environment defaults (optional):
 
 - `ZINC_CLI_PROFILE`
 - `ZINC_CLI_DATA_DIR`
 - `ZINC_CLI_PASSWORD_ENV`
-- `ZINC_CLI_JSON` (`1|true|yes|on`)
+- `ZINC_CLI_OUTPUT` (`human|agent`)
 - `ZINC_CLI_QUIET` (`1|true|yes|on`)
 - `ZINC_CLI_NETWORK`
 - `ZINC_CLI_SCHEME`
@@ -51,7 +52,7 @@ Environment defaults (optional):
 Inspect effective config:
 
 ```bash
-zinc-cli --json config show
+zinc-cli --agent config show
 ```
 
 Persist config defaults:
@@ -94,7 +95,7 @@ zinc-cli wallet info
 Reveal seed phrase (sensitive):
 
 ```bash
-zinc-cli --yes wallet reveal-mnemonic
+zinc-cli --yes --agent wallet reveal-mnemonic
 ```
 
 Sync and check balance:
@@ -103,6 +104,7 @@ Sync and check balance:
 zinc-cli sync chain
 zinc-cli sync ordinals
 zinc-cli balance
+zinc-cli inscription list
 ```
 
 Get addresses:
@@ -116,7 +118,7 @@ zinc-cli address payment
 
 ## 3) Agent Mode (Recommended)
 
-Use `--agent` (or `--json`) and parse stdout as one JSON object.
+Use `--agent` and parse stdout as one JSON object.
 
 ```bash
 zinc-cli --agent wallet info
@@ -212,7 +214,9 @@ Rules:
 - For `psbt analyze/sign/broadcast`, exactly one of `--psbt`, `--psbt-file`, `--psbt-stdin` is required.
 - `--password-stdin` cannot be combined with `--psbt-stdin` in one invocation.
 
-## 6) Offer Commands (Nostr + Ord)
+## 6) Offer Commands (Nostr + Ord, Advanced)
+
+`offer` is callable directly (`zinc-cli offer ...`) but intentionally hidden from top-level `zinc-cli --help`.
 
 Create an ord-compatible buyer offer PSBT and a relay-ready offer envelope:
 
@@ -245,6 +249,25 @@ zinc-cli --agent offer publish \
   --offer-json '{"version":1,"seller_pubkey_hex":"<xonly-pubkey-hex>","network":"regtest","inscription_id":"<inscription-id>","seller_outpoint":"<txid:vout>","ask_sats":100000,"fee_rate_sat_vb":1,"psbt_base64":"<base64-psbt>","created_at_unix":1710000000,"expires_at_unix":1710003600,"nonce":42}' \
   --secret-key-hex <seller-secret-key-hex> \
   --relay wss://nostr.example
+```
+
+Human-focused, glanceable offer output (great for demos):
+
+```bash
+zinc-cli --ord-url https://ord.example --thumb offer create \
+  --inscription <inscription-id> \
+  --amount 100000 \
+  --fee-rate 1
+```
+
+```bash
+zinc-cli --ord-url https://ord.example --thumb offer discover \
+  --relay wss://nostr.example
+```
+
+```bash
+zinc-cli --ord-url https://ord.example --thumb offer accept \
+  --offer-file /tmp/offer.json
 ```
 
 Discover offers from one or more relays:
@@ -297,6 +320,9 @@ Rules:
 - For dual-scheme sellers, pass `--seller-payout-address <payment-address>` to direct proceeds to the seller payment branch.
 - `offer create --publisher-pubkey-hex` can override the default publisher pubkey embedded in the offer envelope.
 - `offer publish` and `offer discover` require at least one `--relay`.
+- `--thumb` and `--no-thumb` are boolean toggles.
+- In human mode, thumbnails are enabled by default unless `--no-thumb` or `--no-images` is set.
+- In `--agent` mode, thumbnails are disabled by default unless `--thumb` is explicitly set.
 
 ## 7) Profiles, Accounts, and Waits
 
@@ -323,8 +349,8 @@ zinc-cli --agent wait tx-confirmed --txid <txid> --timeout-secs 300
 - Prefer setting `ZINC_WALLET_PASSWORD` once for automation.
 - Use `--password-env` only when you need a non-default env var name.
 - Avoid `--password` in shared process environments.
-- `wallet init` in human mode prints the new seed phrase once; in `--json` mode mnemonic output is redacted unless `--reveal` is set.
-- In `--json` mode, consume stdout as machine data and treat stderr as diagnostics only.
+- `wallet init` in human mode prints the new seed phrase once; in `--agent` mode mnemonic output is redacted unless `--reveal` is set.
+- In `--agent` mode, consume stdout as machine data and treat stderr as diagnostics only.
 
 ## 9) Agent Flow Integration Test
 

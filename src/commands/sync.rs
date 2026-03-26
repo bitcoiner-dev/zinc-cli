@@ -4,10 +4,10 @@ use crate::network_retry::with_network_retry;
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
 use indicatif::{ProgressBar, ProgressStyle};
-use serde_json::{json, Value};
+use crate::output::CommandOutput;
 
-pub async fn run(cli: &Cli, args: &SyncArgs) -> Result<Value, AppError> {
-    let spinner = if !cli.json && !cli.quiet {
+pub async fn run(cli: &Cli, args: &SyncArgs) -> Result<CommandOutput, AppError> {
+    let spinner = if !cli.agent && !cli.quiet {
         let pb = ProgressBar::new_spinner();
         pb.set_style(
             ProgressStyle::default_spinner()
@@ -31,7 +31,7 @@ pub async fn run(cli: &Cli, args: &SyncArgs) -> Result<Value, AppError> {
             })
             .await?;
             persist_wallet_session(&mut session)?;
-            json!({"events": events})
+            CommandOutput::SyncChain { events }
         }
         SyncTarget::Ordinals => {
             let mut session = load_wallet_session(cli)?;
@@ -45,7 +45,7 @@ pub async fn run(cli: &Cli, args: &SyncArgs) -> Result<Value, AppError> {
             })
             .await?;
             persist_wallet_session(&mut session)?;
-            json!({"inscriptions": count})
+            CommandOutput::SyncOrdinals { inscriptions: count }
         }
     };
 

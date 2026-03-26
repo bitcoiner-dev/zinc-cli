@@ -9,7 +9,7 @@ fn test_inscription_list_no_wallet_json() {
     cmd.env("ZINC_CLI_DATA_DIR", "/tmp/nonexistent_zinc_dir_test")
         .arg("inscription")
         .arg("list")
-        .arg("--json");
+        .arg("--agent");
 
     let output = cmd.output().unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();

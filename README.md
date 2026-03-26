@@ -11,7 +11,7 @@ It uses an account-based model where each account has:
 - a native segwit address for BTC payments
 
 Default behavior is optimized for automation (`--agent` JSON envelopes).
-Optional human mode is available via `--features ui`.
+Optional interactive dashboard mode is available via `--features ui`.
 
 ## Install
 
@@ -62,6 +62,10 @@ The `ui` feature enables a basic terminal dashboard for humans that shows:
 - inscriptions
 - ordinals/payment addresses per account
 
+Even without `ui`, human command output can be tuned with:
+- `--thumb` to force thumbnail rendering on
+- `--no-thumb` to disable thumbnail rendering
+
 Run dashboard:
 
 ```bash
@@ -83,7 +87,7 @@ Reports are written to `demo/artifacts/`.
 - sync: `sync chain|ordinals`
 - addresses and balance: `address taproot|payment`, `balance`
 - transfers: `psbt create|analyze|sign|broadcast`
-- offers: `offer create|publish|discover|accept|submit-ord|list-ord`
+- advanced offers (hidden from top-level help): `offer create|publish|discover|accept|submit-ord|list-ord`
 - accounts: `account list|use`
 - waits and tx: `wait tx-confirmed|balance`, `tx list`
 - operations: `snapshot save|restore|list`, `lock info|clear`, `doctor`
@@ -101,7 +105,7 @@ Reports are written to `demo/artifacts/`.
 
 - Prefer `ZINC_WALLET_PASSWORD` (default password env) or `--password-stdin`.
 - Use `--password-env` only when you need a non-default env var name.
-- In `--json` mode, mnemonic output is redacted unless `--reveal` is set.
+- In `--agent` mode, mnemonic output is redacted unless `--reveal` is set.
 - See [SECURITY.md](./SECURITY.md).
 
 ## License

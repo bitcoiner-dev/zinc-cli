@@ -4,10 +4,11 @@ use crate::network_retry::with_network_retry;
 use crate::utils::{maybe_write_text, parse_indices, resolve_psbt_source};
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
+use crate::output::CommandOutput;
 use serde_json::{json, Value};
 use zinc_core::*;
 
-pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<Value, AppError> {
+pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<CommandOutput, AppError> {
     let psbt_stdin = match &args.action {
         PsbtAction::Create { .. } => false,
         PsbtAction::Analyze { psbt_stdin, .. } => *psbt_stdin,
@@ -37,7 +38,7 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<Value, AppError> {
                 maybe_write_text(Some(&path.display().to_string()), &psbt)?;
             }
             persist_wallet_session(&mut session)?;
-            Ok(json!({"psbt": psbt}))
+            Ok(CommandOutput::PsbtCreate { psbt })
         }
         PsbtAction::Analyze {
             psbt,
@@ -51,17 +52,17 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<Value, AppError> {
             )?;
             let session = load_wallet_session(cli)?;
             let (parsed, policy) = analyze_psbt_with_policy(&session.wallet, &source)?;
-            Ok(json!({
-                "analysis": parsed,
-                "safe_to_send": policy.safe_to_send,
-                "inscription_risk": policy.inscription_risk,
-                "policy_reasons": policy.policy_reasons,
-                "policy": {
+            Ok(CommandOutput::PsbtAnalyze {
+                analysis: parsed,
+                safe_to_send: policy.safe_to_send,
+                inscription_risk: policy.inscription_risk.to_string(),
+                policy_reasons: policy.policy_reasons.clone(),
+                policy: json!({
                     "safe_to_send": policy.safe_to_send,
                     "inscription_risk": policy.inscription_risk,
                     "reasons": policy.policy_reasons
-                }
-            }))
+                })
+            })
         }
         PsbtAction::Sign {
             psbt,
@@ -97,13 +98,13 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<Value, AppError> {
                 maybe_write_text(Some(&path.display().to_string()), &signed)?;
             }
             persist_wallet_session(&mut session)?;
-            Ok(json!({
-                "psbt": signed,
-                "safe_to_send": policy.safe_to_send,
-                "inscription_risk": policy.inscription_risk,
-                "policy_reasons": policy.policy_reasons,
-                "analysis": analysis
-            }))
+            Ok(CommandOutput::PsbtSign {
+                psbt: signed,
+                safe_to_send: policy.safe_to_send,
+                inscription_risk: policy.inscription_risk.to_string(),
+                policy_reasons: policy.policy_reasons.clone(),
+                analysis,
+            })
         }
         PsbtAction::Broadcast {
             psbt,
@@ -132,13 +133,13 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<Value, AppError> {
                 })
                 .await?;
             persist_wallet_session(&mut session)?;
-            Ok(json!({
-                "txid": txid,
-                "safe_to_send": policy.safe_to_send,
-                "inscription_risk": policy.inscription_risk,
-                "policy_reasons": policy.policy_reasons,
-                "analysis": analysis
-            }))
+            Ok(CommandOutput::PsbtBroadcast {
+                txid,
+                safe_to_send: policy.safe_to_send,
+                inscription_risk: policy.inscription_risk.to_string(),
+                policy_reasons: policy.policy_reasons.clone(),
+                analysis,
+            })
         }
     }
 }

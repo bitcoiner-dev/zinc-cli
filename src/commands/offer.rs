@@ -1,11 +1,14 @@
+#![allow(dead_code)]
 use crate::cli::{Cli, OfferAction, OfferArgs};
 use crate::commands::psbt::{analyze_psbt_with_policy, enforce_policy_mode};
 use crate::config::NetworkArg;
 use crate::error::AppError;
 use crate::network_retry::with_network_retry;
+use crate::presenter::thumbnail::{render_non_image_badge, print_thumbnail};
 use crate::utils::{maybe_write_text, resolve_psbt_source};
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
+use crate::output::CommandOutput;
 use serde_json::{json, Value};
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -14,7 +17,7 @@ use zinc_core::{
     OfferEnvelopeV1, OrdClient, RelayQueryOptions, SignOptions,
 };
 
-pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
+pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<CommandOutput, AppError> {
     match &args.action {
         OfferAction::Create {
             inscription,
@@ -115,7 +118,7 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
             }
 
             persist_wallet_session(&mut session)?;
-            Ok(json!({
+            let response = json!({
                 "inscription": created.inscription,
                 "seller_address": created.seller_address,
                 "seller_outpoint": created.seller_outpoint,
@@ -128,7 +131,8 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
                 "offer": created.offer,
                 "submitted_ord": submit_ord,
                 "ord_url": ord_url,
-            }))
+            });
+            finalize_offer_output(cli, &args.action, response).await
         }
         OfferAction::Publish {
             offer_json,
@@ -160,12 +164,13 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
             let results = NostrRelayClient::publish_offer_multi(relay, &event, *timeout_ms).await;
             let accepted = results.iter().filter(|r| r.accepted).count();
 
-            Ok(json!({
+            let response = json!({
                 "event": event,
                 "publish_results": results,
                 "accepted_relays": accepted,
                 "total_relays": relay.len(),
-            }))
+            });
+            finalize_offer_output(cli, &args.action, response).await
         }
         OfferAction::Discover {
             relay,
@@ -196,12 +201,13 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
                 })
                 .collect();
 
-            Ok(json!({
+            let response = json!({
                 "events": events,
                 "offers": offers,
                 "event_count": events.len(),
                 "offer_count": offers.len(),
-            }))
+            });
+            finalize_offer_output(cli, &args.action, response).await
         }
         OfferAction::SubmitOrd {
             psbt,
@@ -220,20 +226,22 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
                 .await
                 .map_err(map_offer_error)?;
 
-            Ok(json!({
+            let response = json!({
                 "submitted": true,
                 "ord_url": ord_url,
-            }))
+            });
+            finalize_offer_output(cli, &args.action, response).await
         }
         OfferAction::ListOrd => {
             let ord_url = resolve_ord_url(cli)?;
             let client = OrdClient::new(ord_url.clone());
             let offers = client.get_offer_psbts().await.map_err(map_offer_error)?;
-            Ok(json!({
+            let response = json!({
                 "ord_url": ord_url,
                 "offers": offers,
                 "count": offers.len(),
-            }))
+            });
+            finalize_offer_output(cli, &args.action, response).await
         }
         OfferAction::Accept {
             offer_json,
@@ -274,7 +282,7 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
                 .map_err(map_wallet_error)?;
 
             if *dry_run {
-                return Ok(json!({
+                let response = json!({
                     "accepted": true,
                     "dry_run": true,
                     "offer_id": plan.offer_id,
@@ -286,7 +294,8 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
                     "inscription_risk": policy.inscription_risk,
                     "policy_reasons": policy.policy_reasons,
                     "analysis": analysis
-                }));
+                });
+                return finalize_offer_output(cli, &args.action, response).await;
             }
 
             let esplora_url = session.profile.esplora_url.clone();
@@ -308,7 +317,7 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
             .await?;
             persist_wallet_session(&mut session)?;
 
-            Ok(json!({
+            let response = json!({
                 "accepted": true,
                 "dry_run": false,
                 "offer_id": plan.offer_id,
@@ -321,9 +330,162 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<Value, AppError> {
                 "inscription_risk": policy.inscription_risk,
                 "policy_reasons": policy.policy_reasons,
                 "analysis": analysis
-            }))
+            });
+            finalize_offer_output(cli, &args.action, response).await
         }
     }
+}
+
+async fn finalize_offer_output(
+    cli: &Cli,
+    action: &OfferAction,
+    response: Value,
+) -> Result<CommandOutput, AppError> {
+    let thumbnail_lines = maybe_offer_thumbnail_lines(cli, action, &response).await;
+    let hide_inscription_ids = cli.thumb_enabled();
+
+    match action {
+        OfferAction::Create { inscription, .. } => {
+            Ok(CommandOutput::OfferCreate {
+                inscription: inscription.clone(),
+                ask_sats: response.get("ask_sats").and_then(Value::as_u64).unwrap_or(0),
+                fee_rate_sat_vb: response.get("fee_rate_sat_vb").and_then(Value::as_u64).unwrap_or(0),
+                seller_address: response.get("seller_address").and_then(Value::as_str).unwrap_or("").to_string(),
+                seller_outpoint: response.get("seller_outpoint").and_then(Value::as_str).unwrap_or("").to_string(),
+                seller_pubkey_hex: response.get("offer").and_then(|o| o.get("seller_pubkey_hex")).and_then(Value::as_str).unwrap_or("").to_string(),
+                expires_at_unix: response.get("offer").and_then(|o| o.get("expires_at_unix")).and_then(Value::as_i64).unwrap_or(0),
+                thumbnail_lines,
+                hide_inscription_ids,
+                raw_response: response,
+            })
+        }
+        OfferAction::Publish { .. } => {
+            Ok(CommandOutput::OfferPublish {
+                event_id: response.get("event").and_then(|v| v.get("id")).and_then(Value::as_str).unwrap_or("").to_string(),
+                accepted_relays: response.get("accepted_relays").and_then(Value::as_u64).unwrap_or(0),
+                total_relays: response.get("total_relays").and_then(Value::as_u64).unwrap_or(0),
+                publish_results: response.get("publish_results").and_then(Value::as_array).unwrap_or(&vec![]).clone(),
+                raw_response: response,
+            })
+        }
+        OfferAction::Discover { .. } => {
+            Ok(CommandOutput::OfferDiscover {
+                event_count: response.get("event_count").and_then(Value::as_u64).unwrap_or(0),
+                offer_count: response.get("offer_count").and_then(Value::as_u64).unwrap_or(0),
+                offers: response.get("offers").and_then(Value::as_array).unwrap_or(&vec![]).clone(),
+                thumbnail_lines,
+                hide_inscription_ids,
+                raw_response: response,
+            })
+        }
+        OfferAction::SubmitOrd { .. } => {
+            Ok(CommandOutput::OfferSubmitOrd {
+                ord_url: response.get("ord_url").and_then(Value::as_str).unwrap_or("").to_string(),
+                submitted: true,
+                raw_response: response,
+            })
+        }
+        OfferAction::ListOrd => {
+            Ok(CommandOutput::OfferListOrd {
+                ord_url: response.get("ord_url").and_then(Value::as_str).unwrap_or("").to_string(),
+                count: response.get("count").and_then(Value::as_u64).unwrap_or(0),
+                offers: response.get("offers").and_then(Value::as_array).unwrap_or(&vec![]).clone(),
+                raw_response: response,
+            })
+        }
+        OfferAction::Accept { .. } => {
+            Ok(CommandOutput::OfferAccept {
+                inscription: response.get("inscription_id").and_then(Value::as_str).unwrap_or("").to_string(),
+                ask_sats: response.get("ask_sats").and_then(Value::as_u64).unwrap_or(0),
+                txid: response.get("txid").and_then(Value::as_str).unwrap_or("-").to_string(),
+                dry_run: response.get("dry_run").and_then(Value::as_bool).unwrap_or(false),
+                inscription_risk: response.get("inscription_risk").and_then(Value::as_str).unwrap_or("").to_string(),
+                thumbnail_lines,
+                hide_inscription_ids,
+                raw_response: response,
+            })
+        }
+    }
+}
+
+async fn maybe_offer_thumbnail_lines(
+    cli: &Cli,
+    action: &OfferAction,
+    response: &Value,
+) -> Option<Vec<String>> {
+    if !cli.thumb_enabled() {
+        return None;
+    }
+
+    let inscription_id = offer_thumbnail_inscription_id(action, response)?;
+    let ord_url = resolve_ord_url(cli)
+        .ok()
+        .or_else(|| response.get("ord_url").and_then(Value::as_str).map(ToString::to_string))?;
+
+    let client = OrdClient::new(ord_url);
+    let details = client.get_inscription_details(&inscription_id).await.ok()?;
+    let content_type = details.content_type.clone();
+    if !content_type
+        .as_deref()
+        .is_some_and(|kind| kind.starts_with("image/"))
+    {
+        let mut badge = vec![format!(
+            "thumbnail ({}):",
+            abbreviate(&inscription_id, 12, 8)
+        )];
+        badge.extend(render_non_image_badge(content_type.as_deref()));
+        return Some(badge);
+    }
+
+    let content = client.get_inscription_content(&inscription_id).await.ok()?;
+    let lines = vec![format!(
+        "thumbnail ({}):",
+        abbreviate(&inscription_id, 12, 8)
+    )];
+    // Flush the header, then print the image directly via viuer
+    for line in &lines {
+        println!("{line}");
+    }
+    print_thumbnail(&content.bytes, 24);
+    // Return empty vec since we already printed everything
+    Some(Vec::new())
+}
+
+fn offer_thumbnail_inscription_id(action: &OfferAction, response: &Value) -> Option<String> {
+    match action {
+        OfferAction::Create { inscription, .. } => Some(inscription.clone()),
+        OfferAction::Accept { .. } => response
+            .get("inscription_id")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        OfferAction::Discover { .. } => response
+            .get("offers")
+            .and_then(Value::as_array)
+            .and_then(|offers| offers.first())
+            .and_then(|entry| entry.get("offer"))
+            .and_then(|offer| offer.get("inscription_id"))
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        OfferAction::Publish { .. } | OfferAction::SubmitOrd { .. } | OfferAction::ListOrd => None,
+    }
+}
+
+
+
+pub fn abbreviate(value: &str, prefix: usize, suffix: usize) -> String {
+    if value.chars().count() <= prefix + suffix + 3 {
+        return value.to_string();
+    }
+    let start: String = value.chars().take(prefix).collect();
+    let end: String = value
+        .chars()
+        .rev()
+        .take(suffix)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    format!("{start}...{end}")
 }
 
 fn resolve_ord_url(cli: &Cli) -> Result<String, AppError> {
@@ -452,7 +614,9 @@ fn map_offer_error<E: ToString>(err: E) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::{assert_offer_expectations, map_offer_error, resolve_offer_source};
+    use super::{
+        abbreviate, assert_offer_expectations, map_offer_error, resolve_offer_source,
+    };
     use crate::error::AppError;
     use zinc_core::OfferEnvelopeV1;
 
@@ -520,4 +684,13 @@ mod tests {
             .expect_err("must reject mismatch");
         assert!(matches!(err, AppError::Invalid(_)));
     }
+
+    #[test]
+    fn abbreviate_shortens_long_identifiers() {
+        let value = "1234567890abcdef1234567890abcdef";
+        let short = abbreviate(value, 6, 4);
+        assert_eq!(short, "123456...cdef");
+    }
+
+
 }

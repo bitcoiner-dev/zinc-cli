@@ -9,24 +9,20 @@ pub enum PolicyMode {
     Strict,
 }
 
+
+
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "zinc-cli",
     version,
-    about = "CLI wallet for Zinc Bitcoin + Ordinals workflows"
+    about = "CLI wallet for Zinc Bitcoin + Ordinals"
 )]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 
-    #[arg(long, global = true, help = "Output exactly as JSON")]
-    pub json: bool,
 
-    #[arg(
-        long,
-        global = true,
-        help = "Agent mode (implies --json --quiet --ascii)"
-    )]
+    #[arg(long, global = true, help = "Agent mode (machine-readable JSON output)")]
     pub agent: bool,
 
     #[arg(long, global = true, help = "Suppress all non-error output")]
@@ -81,6 +77,13 @@ pub struct Cli {
     #[arg(
         long,
         global = true,
+        help = "Show inscription thumbnails (auto-detects best rendering)"
+    )]
+    pub thumb: bool,
+
+    #[arg(
+        long,
+        global = true,
         help = "Correlation ID for agent workflows (auto-generated if omitted)"
     )]
     pub correlation_id: Option<String>,
@@ -118,6 +121,13 @@ pub struct Cli {
     #[arg(
         long,
         global = true,
+        help = "Disable inscription thumbnails"
+    )]
+    pub no_thumb: bool,
+
+    #[arg(
+        long,
+        global = true,
         value_enum,
         default_value_t = PolicyMode::Warn,
         help = "Policy behavior for potentially risky PSBT operations: warn|strict"
@@ -131,6 +141,18 @@ pub struct Cli {
     pub started_at_unix_ms: u128,
 }
 
+impl Cli {
+    pub fn thumb_enabled(&self) -> bool {
+        if self.no_thumb || self.no_images {
+            false
+        } else if self.thumb {
+            true
+        } else {
+            !self.agent
+        }
+    }
+}
+
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
     Setup(SetupArgs),
@@ -141,6 +163,7 @@ pub enum Command {
     Balance,
     Tx(TxArgs),
     Psbt(PsbtArgs),
+    #[command(hide = true)]
     Offer(OfferArgs),
     Account(AccountArgs),
     Wait(WaitArgs),
@@ -148,6 +171,7 @@ pub enum Command {
     Lock(LockArgs),
     Scenario(ScenarioArgs),
     Inscription(InscriptionArgs),
+    Version,
     #[cfg(feature = "ui")]
     Dashboard,
     Doctor,
@@ -170,9 +194,8 @@ pub struct SetupArgs {
     #[arg(long)]
     pub default_ord_url: Option<String>,
     #[arg(long)]
-    pub json_default: Option<bool>,
-    #[arg(long)]
     pub quiet_default: Option<bool>,
+
     #[arg(long)]
     pub restore_mnemonic: Option<String>,
     #[arg(long)]
@@ -516,6 +539,37 @@ pub enum ScenarioAction {
 mod tests {
     use super::{Cli, Command, OfferAction};
     use clap::Parser;
+
+    #[test]
+    fn parses_global_thumb_switch() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "--thumb",
+            "offer",
+            "discover",
+            "--relay",
+            "wss://relay.example",
+        ])
+        .expect("cli parse");
+
+        assert!(cli.thumb_enabled());
+    }
+
+    #[test]
+    fn defaults_global_thumb_switch() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "offer",
+            "discover",
+            "--relay",
+            "wss://relay.example",
+        ])
+        .expect("cli parse");
+
+        // Should default to true because output mode is human by default
+        assert!(cli.thumb_enabled());
+        assert!(!cli.no_thumb);
+    }
 
     #[test]
     fn parses_offer_publish_subcommand() {

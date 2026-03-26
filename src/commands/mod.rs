@@ -14,3 +14,4 @@ pub mod sync;
 pub mod tx;
 pub mod wait;
 pub mod wallet;
+pub mod version;

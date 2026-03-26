@@ -25,7 +25,7 @@ cargo doc -p zinc-core --no-deps
 
 1. Publish `zinc-core` to crates.io first.
 2. Update `Cargo.toml` to an exact `zinc-core` pin:
-   - `zinc-core = { version = "=X.Y.Z", path = "../zinc-core-public" }`
+   - `zinc-core = { version = "=X.Y.Z" }`
 3. Push a `zinc-cli` release tag.
 4. Ensure tag CI passes:
    - exact pin validation succeeds,

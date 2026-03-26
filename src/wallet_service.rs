@@ -86,7 +86,7 @@ pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<String, AppError> {
         return Ok(pass);
     }
 
-    if config.json {
+    if config.agent {
         return Err(AppError::Auth(format!(
             "wallet password missing (use --password, --password-stdin, or set {})",
             config.password_env

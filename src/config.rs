@@ -14,7 +14,6 @@ pub struct PersistedConfig {
     pub profile: Option<String>,
     pub data_dir: Option<String>,
     pub password_env: Option<String>,
-    pub json: Option<bool>,
     pub quiet: Option<bool>,
     pub network: Option<String>,
     pub scheme: Option<String>,
@@ -29,7 +28,6 @@ impl Default for PersistedConfig {
             profile: None,
             data_dir: None,
             password_env: None,
-            json: None,
             quiet: None,
             network: Some("regtest".to_string()),
             scheme: None,
@@ -70,7 +68,6 @@ pub enum ConfigField {
     Profile,
     DataDir,
     PasswordEnv,
-    Json,
     Quiet,
     Network,
     Scheme,
@@ -83,7 +80,6 @@ pub const CONFIG_KEYS: &[&str] = &[
     "profile",
     "data-dir",
     "password-env",
-    "json",
     "quiet",
     "network",
     "scheme",
@@ -98,7 +94,6 @@ impl ConfigField {
             Self::Profile => "profile",
             Self::DataDir => "data-dir",
             Self::PasswordEnv => "password-env",
-            Self::Json => "json",
             Self::Quiet => "quiet",
             Self::Network => "network",
             Self::Scheme => "scheme",
@@ -113,7 +108,6 @@ impl ConfigField {
             "profile" => Ok(Self::Profile),
             "data-dir" | "data_dir" => Ok(Self::DataDir),
             "password-env" | "password_env" => Ok(Self::PasswordEnv),
-            "json" => Ok(Self::Json),
             "quiet" => Ok(Self::Quiet),
             "network" => Ok(Self::Network),
             "scheme" => Ok(Self::Scheme),
@@ -155,11 +149,6 @@ pub(crate) fn set_config_field(
             config.password_env = Some(value.to_string());
             Ok(Value::String(value.to_string()))
         }
-        ConfigField::Json => {
-            let parsed = parse_bool_value(value, "config json").map_err(AppError::Invalid)?;
-            config.json = Some(parsed);
-            Ok(Value::Bool(parsed))
-        }
         ConfigField::Quiet => {
             let parsed = parse_bool_value(value, "config quiet").map_err(AppError::Invalid)?;
             config.quiet = Some(parsed);
@@ -196,7 +185,6 @@ pub(crate) fn unset_config_field(config: &mut PersistedConfig, key: ConfigField)
         ConfigField::Profile => config.profile.take().is_some(),
         ConfigField::DataDir => config.data_dir.take().is_some(),
         ConfigField::PasswordEnv => config.password_env.take().is_some(),
-        ConfigField::Json => config.json.take().is_some(),
         ConfigField::Quiet => config.quiet.take().is_some(),
         ConfigField::Network => config.network.take().is_some(),
         ConfigField::Scheme => config.scheme.take().is_some(),
@@ -213,7 +201,7 @@ pub struct ServiceConfig<'a> {
     pub password: Option<&'a str>,
     pub password_env: &'a str,
     pub password_stdin: bool,
-    pub json: bool,
+    pub agent: bool,
     pub network_override: Option<&'a str>,
     pub explicit_network: bool,
     pub scheme_override: Option<&'a str>,
@@ -236,6 +224,28 @@ pub enum NetworkArg {
 pub enum SchemeArg {
     Unified,
     Dual,
+}
+
+impl std::fmt::Display for NetworkArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            NetworkArg::Bitcoin => "bitcoin",
+            NetworkArg::Signet => "signet",
+            NetworkArg::Testnet => "testnet",
+            NetworkArg::Regtest => "regtest",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl std::fmt::Display for SchemeArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            SchemeArg::Unified => "unified",
+            SchemeArg::Dual => "dual",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 impl From<NetworkArg> for Network {

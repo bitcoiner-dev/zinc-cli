@@ -1,25 +1,40 @@
 use crate::cli::{Cli, InscriptionArgs};
 use crate::error::AppError;
-use crate::presenter::thumbnail::render_non_image_badge;
 use crate::load_wallet_session;
 use crate::output::{CommandOutput, InscriptionItemDisplay};
+use crate::presenter::thumbnail::render_non_image_badge;
 use zinc_core::{ordinals::Inscription, OrdClient};
 
 pub async fn run(cli: &Cli, _args: &InscriptionArgs) -> Result<CommandOutput, AppError> {
     let session = load_wallet_session(cli)?;
-    let inscriptions = session.wallet.inscriptions();
+    let sorted_inscriptions = sort_inscriptions_latest_first(session.wallet.inscriptions());
 
     let display_items = if !cli.thumb_enabled() {
         None
     } else {
-        Some(get_inscription_display_items(&session.profile.ord_url, &inscriptions).await)
+        Some(get_inscription_display_items(
+            &session.profile.ord_url,
+            &sorted_inscriptions,
+        )
+        .await)
     };
 
     Ok(CommandOutput::InscriptionList {
-        inscriptions: inscriptions.to_vec(),
+        inscriptions: sorted_inscriptions,
         display_items,
         thumb_mode_enabled: cli.thumb_enabled(),
     })
+}
+
+fn sort_inscriptions_latest_first(inscriptions: &[Inscription]) -> Vec<Inscription> {
+    let mut sorted = inscriptions.to_vec();
+    sorted.sort_by(|a, b| {
+        b.timestamp
+            .cmp(&a.timestamp)
+            .then_with(|| b.number.cmp(&a.number))
+            .then_with(|| b.id.cmp(&a.id))
+    });
+    sorted
 }
 
 async fn get_inscription_display_items(
@@ -66,6 +81,49 @@ async fn get_inscription_display_items(
             image_bytes,
         });
     }
-    
+
     items
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sort_inscriptions_latest_first;
+    use zinc_core::ordinals::{Inscription, Satpoint};
+
+    fn sample(id: &str, number: i64, timestamp: Option<u64>) -> Inscription {
+        Inscription {
+            id: id.to_string(),
+            number,
+            satpoint: Satpoint::default(),
+            content_type: None,
+            value: None,
+            content_length: None,
+            timestamp,
+        }
+    }
+
+    #[test]
+    fn sorts_newest_timestamp_first_then_number() {
+        let inscriptions = vec![
+            sample("old", 10, Some(100)),
+            sample("new", 1, Some(300)),
+            sample("mid-high-number", 99, Some(200)),
+            sample("no-ts", 500, None),
+            sample("same-ts-lower-number", 5, Some(200)),
+        ];
+
+        let sorted = sort_inscriptions_latest_first(&inscriptions);
+        let ids: Vec<&str> = sorted.iter().map(|i| i.id.as_str()).collect();
+
+        assert_eq!(
+            ids,
+            vec![
+                "new",
+                "mid-high-number",
+                "same-ts-lower-number",
+                "old",
+                "no-ts"
+            ]
+        );
+    }
 }

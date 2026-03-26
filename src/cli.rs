@@ -15,7 +15,7 @@ pub enum PolicyMode {
 #[command(
     name = "zinc-cli",
     version,
-    about = "CLI wallet for Zinc Bitcoin + Ordinals workflows"
+    about = "CLI wallet for Zinc Bitcoin + Ordinals"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -171,6 +171,7 @@ pub enum Command {
     Lock(LockArgs),
     Scenario(ScenarioArgs),
     Inscription(InscriptionArgs),
+    Version,
     #[cfg(feature = "ui")]
     Dashboard,
     Doctor,

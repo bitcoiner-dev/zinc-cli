@@ -109,6 +109,7 @@ const COMMAND_LIST: &[&str] = &[
     "scenario fund",
     "scenario reset",
     "doctor",
+    "version",
 ];
 
 #[tokio::main]
@@ -916,6 +917,7 @@ pub(crate) async fn dispatch(cli: &Cli) -> Result<crate::output::CommandOutput, 
         Command::Lock(args) => crate::commands::lock::run(cli, args).await,
         Command::Scenario(args) => crate::commands::scenario::run(cli, args).await,
         Command::Inscription(args) => crate::commands::inscription::run(cli, args).await,
+        Command::Version => crate::commands::version::run(cli).await,
         Command::Doctor => crate::commands::doctor::run(cli).await,
         #[cfg(feature = "ui")]
         Command::Dashboard => crate::dashboard::run(cli).await.map(crate::output::CommandOutput::Generic),
@@ -924,7 +926,7 @@ pub(crate) async fn dispatch(cli: &Cli) -> Result<crate::output::CommandOutput, 
 
 fn is_non_json_rendered_command(command: &Command) -> bool {
     match command {
-        Command::Scenario(_) | Command::Doctor => true,
+        Command::Scenario(_) | Command::Doctor | Command::Version => true,
         #[cfg(feature = "ui")]
         Command::Dashboard => true,
         _ => false,

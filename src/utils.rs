@@ -104,6 +104,20 @@ pub fn run_bitcoin_cli(
     profile: &Profile,
     args: &[String],
 ) -> Result<String, crate::error::AppError> {
+    // SECURITY 🛡️: Validate binary name to prevent arbitrary command execution via configuration.
+    // The profile is untrusted input. We must ensure the command is exactly the expected binary.
+    let bin_name = std::path::Path::new(&profile.bitcoin_cli)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+
+    if bin_name != "bitcoin-cli" && bin_name != "bitcoin-cli.exe" {
+        return Err(crate::error::AppError::Config(format!(
+            "security violation: execution of arbitrary binaries is blocked. Expected 'bitcoin-cli', got '{}'",
+            profile.bitcoin_cli
+        )));
+    }
+
     let mut cmd = std::process::Command::new(&profile.bitcoin_cli);
     for arg in &profile.bitcoin_cli_args {
         cmd.arg(arg);

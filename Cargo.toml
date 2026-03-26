@@ -76,7 +76,7 @@ tui-big-text = { version = "0.8.2", optional = true }
 figlet-rs = { version = "0.1.5", optional = true }
 supports-unicode = "3.0.0"
 
-zinc-core = { version = "=0.1.0", path = "../zinc-core-public" }
+zinc-core = { version = "=0.1.0" }
 rand = { version = "0.8", optional = true }
 bip39 = { version = "2.1.0", optional = true }
 image = { version = "0.25.10", features = ["avif", "webp"] }

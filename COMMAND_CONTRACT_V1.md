@@ -8,7 +8,7 @@ This document defines the active `v1` command contract. It is additive with curr
 ## 1) Design Goals
 
 1. One wallet engine and one command model for both humans and agents.
-2. Stable machine-readable responses in `--json` mode.
+2. Stable machine-readable responses in `--agent` mode.
 3. Strict, typed error taxonomy for automation reliability.
 4. Backward-compatible rollout from current `SCHEMAS.md` behavior.
 
@@ -25,7 +25,7 @@ This document defines the active `v1` command contract. It is additive with curr
 
 ## 3) Global Flags (Supported)
 
-`--agent`, `--quiet`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
+`--agent`, `--quiet`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--thumb`, `--no-thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
 
 Global flags are supported both before and after command tokens.
 
@@ -38,7 +38,9 @@ Reliability defaults:
 - `--policy-mode` defaults to `warn`.
 
 Human-output defaults:
-- `--thumb` defaults to `none`.
+- Thumbnails are enabled by default in human mode.
+- `--no-thumb` or `--no-images` disables thumbnails.
+- In `--agent` mode thumbnails are disabled by default unless `--thumb` is set.
 
 ## 4) JSON Envelope
 
@@ -119,7 +121,7 @@ Idempotency for mutating commands:
 
 ## 7) Command Contracts
 
-All commands below describe `--json` response payloads.
+All commands below describe `--agent` response payloads.
 
 ## 7.1 wallet init
 
@@ -335,7 +337,7 @@ Command:
 `scenario mine [--blocks N] [--address <addr>]`
 
 Success fields:
-`action`, `blocks`, `address`, `raw`
+`blocks`, `address`, `raw_output`
 
 ## 7.24 scenario fund
 
@@ -343,7 +345,7 @@ Command:
 `scenario fund [--amount-btc <decimal>] [--address <addr>] [--mine-blocks N]`
 
 Success fields:
-`action`, `address`, `amount_btc`, `txid`, `mine_blocks`, `mine_address`, `generated_blocks`
+`address`, `amount_btc`, `txid`, `mine_blocks`, `mine_address`, `generated_blocks`
 
 ## 7.25 scenario reset
 
@@ -351,7 +353,7 @@ Command:
 `scenario reset [--remove-profile] [--remove-snapshots]`
 
 Success fields:
-`action`, `removed`
+`removed`
 
 ## 7.26 doctor
 
@@ -359,13 +361,7 @@ Command:
 `doctor`
 
 Success fields:
-`healthy`, `esplora`, `ord`
-
-`esplora` shape:
-`{ url: string, reachable: bool }`
-
-`ord` shape:
-`{ url: string, reachable: bool, indexing_height: u32 | null, error: string | null }`
+`healthy`, `esplora_url`, `esplora_reachable`, `ord_url`, `ord_reachable`, `ord_indexing_height`, `ord_error`
 
 ## 7.27 offer create
 
@@ -378,7 +374,7 @@ Notes:
 - `--seller-payout-address` overrides payout destination output while preserving seller input metadata from ord inscription output.
 
 Success fields:
-`inscription`, `seller_address`, `seller_outpoint`, `postage_sats`, `ask_sats`, `fee_rate_sat_vb`, `seller_input_index`, `buyer_input_count`, `psbt`, `offer`, `submitted_ord`, `ord_url`
+`inscription`, `ask_sats`, `fee_rate_sat_vb`, `seller_address`, `seller_outpoint`, `seller_pubkey_hex`, `expires_at_unix`, `thumbnail_lines?`, `hide_inscription_ids`, `raw_response`
 
 ## 7.28 offer publish
 
@@ -386,7 +382,7 @@ Command:
 `offer publish [--offer-json <json> | --offer-file <path> | --offer-stdin] --secret-key-hex <hex> --relay <url>... [--created-at-unix <unix>] [--timeout-ms N]`
 
 Success fields:
-`event`, `publish_results`, `accepted_relays`, `total_relays`
+`event_id`, `accepted_relays`, `total_relays`, `publish_results`, `raw_response`
 
 ## 7.29 offer discover
 
@@ -394,7 +390,7 @@ Command:
 `offer discover --relay <url>... [--limit N] [--timeout-ms N]`
 
 Success fields:
-`events`, `offers`, `event_count`, `offer_count`
+`event_count`, `offer_count`, `offers`, `thumbnail_lines?`, `hide_inscription_ids`, `raw_response`
 
 ## 7.30 offer submit-ord
 
@@ -402,7 +398,7 @@ Command:
 `offer submit-ord [--psbt <base64> | --psbt-file <path> | --psbt-stdin]`
 
 Success fields:
-`submitted`, `ord_url`
+`ord_url`, `submitted`, `raw_response`
 
 ## 7.31 offer list-ord
 
@@ -410,7 +406,7 @@ Command:
 `offer list-ord`
 
 Success fields:
-`ord_url`, `offers`, `count`
+`ord_url`, `count`, `offers`, `raw_response`
 
 ## 7.32 offer accept
 
@@ -418,7 +414,7 @@ Command:
 `offer accept [--offer-json <json> | --offer-file <path> | --offer-stdin] [--expect-inscription <id>] [--expect-ask-sats <u64>] [--dry-run]`
 
 Success fields:
-`accepted`, `dry_run`, `offer_id`, `seller_input_index`, `input_count`, `inscription_id`, `ask_sats`, `safe_to_send`, `inscription_risk`, `policy_reasons`, `analysis`, `txid?`
+`inscription`, `ask_sats`, `txid`, `dry_run`, `inscription_risk`, `thumbnail_lines?`, `hide_inscription_ids`, `raw_response`
 
 ## 8) Input Source Rules (PSBT and Offer Commands)
 
@@ -457,7 +453,7 @@ When `--policy-mode strict` is set, `psbt sign`, `psbt broadcast`, and `offer ac
 
 ## 10) Security Contract for Agent Usage
 
-1. Agents should always use `--json`.
+1. Agents should always use `--agent`.
 2. Agents should prefer password env variables over plaintext flags.
 3. Policy/ordinals failures must be surfaced as `error.type = "policy"` with actionable messages.
 4. Commands that mutate wallet state should remain explicit and single-purpose.

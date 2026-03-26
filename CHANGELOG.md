@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 - No changes yet.
 
+## [0.2.0] - 2026-03-26
+
+### Added
+- ANSI logo asset and branded `version` command output.
+
+### Changed
+- `inscription list` now shows newest received inscriptions first.
+- `offer` commands remain available via `zinc-cli offer ...` but are hidden from top-level help output.
+- Improved human-output inscription thumbnail rendering fidelity in terminal-friendly output modes.
+
+### Docs
+- Aligned README/usage/contract/schema docs with the current CLI surface, including `--agent` output mode and thumbnail toggles (`--thumb`, `--no-thumb`).
+
 ## [0.1.1] - 2026-03-21
 
 ### Fixed
@@ -15,7 +28,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Initial standalone public packaging for `zinc-cli`.
-- Human-friendly command output plus stable `--json` agent envelope.
+- Human-friendly command output plus stable agent envelope.
 - Wallet profile management with profile lock and atomic writes.
 - PSBT create/analyze/sign/broadcast command family.
 - Snapshot, account switching, and diagnostic command support.

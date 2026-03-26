@@ -81,47 +81,46 @@ Optional output files:
 
 - `offer create`:
   - `inscription`
-  - `seller_address`
-  - `seller_outpoint`
-  - `postage_sats`
   - `ask_sats`
   - `fee_rate_sat_vb`
-  - `seller_input_index`
-  - `buyer_input_count`
-  - `psbt`
-  - `offer` (offer envelope)
-  - `submitted_ord`
-  - `ord_url`
+  - `seller_address`
+  - `seller_outpoint`
+  - `seller_pubkey_hex`
+  - `expires_at_unix`
+  - `thumbnail_lines` (optional)
+  - `hide_inscription_ids`
+  - `raw_response` (canonical full response payload)
 - `offer publish`:
-  - `event` (signed nostr event)
-  - `publish_results` (per-relay acceptance/message rows)
+  - `event_id`
   - `accepted_relays` (count)
   - `total_relays` (count)
+  - `publish_results` (per-relay acceptance/message rows)
+  - `raw_response`
 - `offer discover`:
-  - `events` (decoded nostr events)
-  - `offers` (decoded offer envelopes with event metadata)
   - `event_count`
   - `offer_count`
+  - `offers`
+  - `thumbnail_lines` (optional)
+  - `hide_inscription_ids`
+  - `raw_response`
 - `offer submit-ord`:
-  - `submitted` (bool)
   - `ord_url`
+  - `submitted` (bool)
+  - `raw_response`
 - `offer list-ord`:
   - `ord_url`
-  - `offers` (array of base64 PSBT strings)
   - `count`
+  - `offers`
+  - `raw_response`
 - `offer accept`:
-  - `accepted` (bool)
-  - `dry_run` (bool)
-  - `offer_id`
-  - `seller_input_index`
-  - `input_count`
-  - `inscription_id`
+  - `inscription`
   - `ask_sats`
-  - `safe_to_send`
+  - `txid`
+  - `dry_run` (bool)
   - `inscription_risk`
-  - `policy_reasons`
-  - `analysis`
-  - `txid` (present when `dry_run=false`)
+  - `thumbnail_lines` (optional)
+  - `hide_inscription_ids`
+  - `raw_response`
 
 Input modes and rules:
 
@@ -145,9 +144,9 @@ Input modes and rules:
 ## Account/Wait/Snapshot
 
 - `account list`: `accounts`
-- `account use`: `account_index`
-- `wait tx-confirmed`: `txid`, `confirmation_time`
-- `wait balance`: `confirmed`
+- `account use`: `previous_account_index`, `account_index`, `taproot_address`, `payment_address?`
+- `wait tx-confirmed`: `txid`, `confirmation_time`, `confirmed`, `waited_secs`
+- `wait balance`: `confirmed`, `confirmed_balance`, `target`, `waited_secs`
 - `snapshot save`: `snapshot`
 - `snapshot restore`: `restored`
 - `snapshot list`: `snapshots`
@@ -156,13 +155,17 @@ Input modes and rules:
 
 ## Scenario (Regtest)
 
-- `scenario mine`: `action`, `blocks`, `address`, `raw`
-- `scenario fund`: `action`, `address`, `amount_btc`, `txid`, `mine_blocks`, `mine_address`, `generated_blocks`
-- `scenario reset`: `action`, `removed` (paths)
+- `scenario mine`: `blocks`, `address`, `raw_output`
+- `scenario fund`: `address`, `amount_btc`, `txid`, `mine_blocks`, `mine_address`, `generated_blocks`
+- `scenario reset`: `removed` (paths)
 
 ## Doctor
 
 - `doctor`:
   - `healthy`
-  - `esplora` (`url`, `reachable`)
-  - `ord` (`url`, `reachable`, `indexing_height`, `error`)
+  - `esplora_url`
+  - `esplora_reachable`
+  - `ord_url`
+  - `ord_reachable`
+  - `ord_indexing_height`
+  - `ord_error`

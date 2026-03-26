@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 - No changes yet.
 
+## [0.2.1] - 2026-03-26
+
+### Fixed
+- Updated `zinc-core` dependency pin to `=0.1.1` for compatibility with current CLI features.
+- Removed local `path` dependency override for release packaging so `cargo package`/`cargo publish` resolve from crates.io in CI.
+
 ## [0.2.0] - 2026-03-26
 
 ### Added

@@ -4,11 +4,11 @@ use crate::commands::psbt::{analyze_psbt_with_policy, enforce_policy_mode};
 use crate::config::NetworkArg;
 use crate::error::AppError;
 use crate::network_retry::with_network_retry;
-use crate::presenter::thumbnail::{render_non_image_badge, print_thumbnail};
+use crate::output::CommandOutput;
+use crate::presenter::thumbnail::{print_thumbnail, render_non_image_badge};
 use crate::utils::{maybe_write_text, resolve_psbt_source};
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
-use crate::output::CommandOutput;
 use serde_json::{json, Value};
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -345,66 +345,132 @@ async fn finalize_offer_output(
     let hide_inscription_ids = cli.thumb_enabled();
 
     match action {
-        OfferAction::Create { inscription, .. } => {
-            Ok(CommandOutput::OfferCreate {
-                inscription: inscription.clone(),
-                ask_sats: response.get("ask_sats").and_then(Value::as_u64).unwrap_or(0),
-                fee_rate_sat_vb: response.get("fee_rate_sat_vb").and_then(Value::as_u64).unwrap_or(0),
-                seller_address: response.get("seller_address").and_then(Value::as_str).unwrap_or("").to_string(),
-                seller_outpoint: response.get("seller_outpoint").and_then(Value::as_str).unwrap_or("").to_string(),
-                seller_pubkey_hex: response.get("offer").and_then(|o| o.get("seller_pubkey_hex")).and_then(Value::as_str).unwrap_or("").to_string(),
-                expires_at_unix: response.get("offer").and_then(|o| o.get("expires_at_unix")).and_then(Value::as_i64).unwrap_or(0),
-                thumbnail_lines,
-                hide_inscription_ids,
-                raw_response: response,
-            })
-        }
-        OfferAction::Publish { .. } => {
-            Ok(CommandOutput::OfferPublish {
-                event_id: response.get("event").and_then(|v| v.get("id")).and_then(Value::as_str).unwrap_or("").to_string(),
-                accepted_relays: response.get("accepted_relays").and_then(Value::as_u64).unwrap_or(0),
-                total_relays: response.get("total_relays").and_then(Value::as_u64).unwrap_or(0),
-                publish_results: response.get("publish_results").and_then(Value::as_array).unwrap_or(&vec![]).clone(),
-                raw_response: response,
-            })
-        }
-        OfferAction::Discover { .. } => {
-            Ok(CommandOutput::OfferDiscover {
-                event_count: response.get("event_count").and_then(Value::as_u64).unwrap_or(0),
-                offer_count: response.get("offer_count").and_then(Value::as_u64).unwrap_or(0),
-                offers: response.get("offers").and_then(Value::as_array).unwrap_or(&vec![]).clone(),
-                thumbnail_lines,
-                hide_inscription_ids,
-                raw_response: response,
-            })
-        }
-        OfferAction::SubmitOrd { .. } => {
-            Ok(CommandOutput::OfferSubmitOrd {
-                ord_url: response.get("ord_url").and_then(Value::as_str).unwrap_or("").to_string(),
-                submitted: true,
-                raw_response: response,
-            })
-        }
-        OfferAction::ListOrd => {
-            Ok(CommandOutput::OfferListOrd {
-                ord_url: response.get("ord_url").and_then(Value::as_str).unwrap_or("").to_string(),
-                count: response.get("count").and_then(Value::as_u64).unwrap_or(0),
-                offers: response.get("offers").and_then(Value::as_array).unwrap_or(&vec![]).clone(),
-                raw_response: response,
-            })
-        }
-        OfferAction::Accept { .. } => {
-            Ok(CommandOutput::OfferAccept {
-                inscription: response.get("inscription_id").and_then(Value::as_str).unwrap_or("").to_string(),
-                ask_sats: response.get("ask_sats").and_then(Value::as_u64).unwrap_or(0),
-                txid: response.get("txid").and_then(Value::as_str).unwrap_or("-").to_string(),
-                dry_run: response.get("dry_run").and_then(Value::as_bool).unwrap_or(false),
-                inscription_risk: response.get("inscription_risk").and_then(Value::as_str).unwrap_or("").to_string(),
-                thumbnail_lines,
-                hide_inscription_ids,
-                raw_response: response,
-            })
-        }
+        OfferAction::Create { inscription, .. } => Ok(CommandOutput::OfferCreate {
+            inscription: inscription.clone(),
+            ask_sats: response
+                .get("ask_sats")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            fee_rate_sat_vb: response
+                .get("fee_rate_sat_vb")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            seller_address: response
+                .get("seller_address")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            seller_outpoint: response
+                .get("seller_outpoint")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            seller_pubkey_hex: response
+                .get("offer")
+                .and_then(|o| o.get("seller_pubkey_hex"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            expires_at_unix: response
+                .get("offer")
+                .and_then(|o| o.get("expires_at_unix"))
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
+            thumbnail_lines,
+            hide_inscription_ids,
+            raw_response: response,
+        }),
+        OfferAction::Publish { .. } => Ok(CommandOutput::OfferPublish {
+            event_id: response
+                .get("event")
+                .and_then(|v| v.get("id"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            accepted_relays: response
+                .get("accepted_relays")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            total_relays: response
+                .get("total_relays")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            publish_results: response
+                .get("publish_results")
+                .and_then(Value::as_array)
+                .unwrap_or(&vec![])
+                .clone(),
+            raw_response: response,
+        }),
+        OfferAction::Discover { .. } => Ok(CommandOutput::OfferDiscover {
+            event_count: response
+                .get("event_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            offer_count: response
+                .get("offer_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            offers: response
+                .get("offers")
+                .and_then(Value::as_array)
+                .unwrap_or(&vec![])
+                .clone(),
+            thumbnail_lines,
+            hide_inscription_ids,
+            raw_response: response,
+        }),
+        OfferAction::SubmitOrd { .. } => Ok(CommandOutput::OfferSubmitOrd {
+            ord_url: response
+                .get("ord_url")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            submitted: true,
+            raw_response: response,
+        }),
+        OfferAction::ListOrd => Ok(CommandOutput::OfferListOrd {
+            ord_url: response
+                .get("ord_url")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            count: response.get("count").and_then(Value::as_u64).unwrap_or(0),
+            offers: response
+                .get("offers")
+                .and_then(Value::as_array)
+                .unwrap_or(&vec![])
+                .clone(),
+            raw_response: response,
+        }),
+        OfferAction::Accept { .. } => Ok(CommandOutput::OfferAccept {
+            inscription: response
+                .get("inscription_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            ask_sats: response
+                .get("ask_sats")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            txid: response
+                .get("txid")
+                .and_then(Value::as_str)
+                .unwrap_or("-")
+                .to_string(),
+            dry_run: response
+                .get("dry_run")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            inscription_risk: response
+                .get("inscription_risk")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            thumbnail_lines,
+            hide_inscription_ids,
+            raw_response: response,
+        }),
     }
 }
 
@@ -418,9 +484,12 @@ async fn maybe_offer_thumbnail_lines(
     }
 
     let inscription_id = offer_thumbnail_inscription_id(action, response)?;
-    let ord_url = resolve_ord_url(cli)
-        .ok()
-        .or_else(|| response.get("ord_url").and_then(Value::as_str).map(ToString::to_string))?;
+    let ord_url = resolve_ord_url(cli).ok().or_else(|| {
+        response
+            .get("ord_url")
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+    })?;
 
     let client = OrdClient::new(ord_url);
     let details = client.get_inscription_details(&inscription_id).await.ok()?;
@@ -469,8 +538,6 @@ fn offer_thumbnail_inscription_id(action: &OfferAction, response: &Value) -> Opt
         OfferAction::Publish { .. } | OfferAction::SubmitOrd { .. } | OfferAction::ListOrd => None,
     }
 }
-
-
 
 pub fn abbreviate(value: &str, prefix: usize, suffix: usize) -> String {
     if value.chars().count() <= prefix + suffix + 3 {
@@ -614,9 +681,7 @@ fn map_offer_error<E: ToString>(err: E) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        abbreviate, assert_offer_expectations, map_offer_error, resolve_offer_source,
-    };
+    use super::{abbreviate, assert_offer_expectations, map_offer_error, resolve_offer_source};
     use crate::error::AppError;
     use zinc_core::OfferEnvelopeV1;
 
@@ -691,6 +756,4 @@ mod tests {
         let short = abbreviate(value, 6, 4);
         assert_eq!(short, "123456...cdef");
     }
-
-
 }

@@ -608,7 +608,9 @@ fn test_unknown_command_has_suggestion() {
 #[test]
 fn test_unknown_global_flag_has_suggestion() {
     let mut cmd = cargo_cmd();
-    cmd.args(&["run", "--quiet", "--", "--agent", "--jons", "wallet", "info"]);
+    cmd.args(&[
+        "run", "--quiet", "--", "--agent", "--jons", "wallet", "info",
+    ]);
 
     let output = cmd.output().expect("failed to execute process");
     assert!(!output.status.success());

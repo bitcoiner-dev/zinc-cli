@@ -9,8 +9,6 @@ pub enum PolicyMode {
     Strict,
 }
 
-
-
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "zinc-cli",
@@ -21,8 +19,11 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 
-
-    #[arg(long, global = true, help = "Agent mode (machine-readable JSON output)")]
+    #[arg(
+        long,
+        global = true,
+        help = "Agent mode (machine-readable JSON output)"
+    )]
     pub agent: bool,
 
     #[arg(long, global = true, help = "Suppress all non-error output")]
@@ -118,11 +119,7 @@ pub struct Cli {
     )]
     pub network_retries: u32,
 
-    #[arg(
-        long,
-        global = true,
-        help = "Disable inscription thumbnails"
-    )]
+    #[arg(long, global = true, help = "Disable inscription thumbnails")]
     pub no_thumb: bool,
 
     #[arg(
@@ -195,7 +192,7 @@ pub struct SetupArgs {
     pub default_ord_url: Option<String>,
     #[arg(long)]
     pub quiet_default: Option<bool>,
-    
+
     #[arg(long)]
     pub restore_mnemonic: Option<String>,
     #[arg(long)]

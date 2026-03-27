@@ -35,7 +35,12 @@ pub async fn run(cli: &Cli, args: &ConfigArgs) -> Result<CommandOutput, AppError
             save_persisted_config(&config)?;
             Ok(CommandOutput::ConfigSet {
                 key: field.as_str().to_string(),
-                value: applied.as_str().unwrap_or("").to_string().replace("\"", "").to_string(),
+                value: applied
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string()
+                    .replace("\"", "")
+                    .to_string(),
                 saved: true,
             })
         }

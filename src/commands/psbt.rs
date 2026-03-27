@@ -1,10 +1,10 @@
 use crate::cli::{Cli, PolicyMode, PsbtAction, PsbtArgs};
 use crate::error::AppError;
 use crate::network_retry::with_network_retry;
+use crate::output::CommandOutput;
 use crate::utils::{maybe_write_text, parse_indices, resolve_psbt_source};
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
-use crate::output::CommandOutput;
 use serde_json::{json, Value};
 use zinc_core::*;
 
@@ -61,7 +61,7 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<CommandOutput, AppError> 
                     "safe_to_send": policy.safe_to_send,
                     "inscription_risk": policy.inscription_risk,
                     "reasons": policy.policy_reasons
-                })
+                }),
             })
         }
         PsbtAction::Sign {

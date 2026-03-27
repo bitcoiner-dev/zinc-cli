@@ -104,6 +104,19 @@ pub fn run_bitcoin_cli(
     profile: &Profile,
     args: &[String],
 ) -> Result<String, crate::error::AppError> {
+    // SECURITY: Prevent arbitrary command execution.
+    // Ensure the configured binary is exactly bitcoin-cli (or .exe).
+    // The user can specify a path (e.g., /usr/local/bin/bitcoin-cli), but the filename must match.
+    let bin_path = std::path::Path::new(&profile.bitcoin_cli);
+    let file_name = bin_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+    if file_name != "bitcoin-cli" && file_name != "bitcoin-cli.exe" {
+        return Err(crate::error::AppError::Config(format!(
+            "Security violation: configured bitcoin_cli must be 'bitcoin-cli' or 'bitcoin-cli.exe', found: '{}'",
+            file_name
+        )));
+    }
+
     let mut cmd = std::process::Command::new(&profile.bitcoin_cli);
     for arg in &profile.bitcoin_cli_args {
         cmd.arg(arg);

@@ -268,6 +268,60 @@ pub trait Presenter {
     fn render(&self, output: &CommandOutput) -> String;
 }
 
+fn pluralize(value: u64, unit: &str) -> String {
+    if value == 1 {
+        format!("1 {unit}")
+    } else {
+        format!("{value} {unit}s")
+    }
+}
+
+fn format_relative_age(updated_at_unix: u64) -> String {
+    let now_unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    if updated_at_unix > now_unix {
+        let diff = updated_at_unix - now_unix;
+        let future = if diff < 60 {
+            pluralize(diff, "second")
+        } else if diff < 3_600 {
+            pluralize(diff / 60, "minute")
+        } else if diff < 86_400 {
+            pluralize(diff / 3_600, "hour")
+        } else if diff < 604_800 {
+            pluralize(diff / 86_400, "day")
+        } else if diff < 2_592_000 {
+            pluralize(diff / 604_800, "week")
+        } else if diff < 31_536_000 {
+            pluralize(diff / 2_592_000, "month")
+        } else {
+            pluralize(diff / 31_536_000, "year")
+        };
+        return format!("in {future}");
+    }
+
+    let diff = now_unix - updated_at_unix;
+    if diff < 5 {
+        "just now".to_string()
+    } else if diff < 60 {
+        format!("{} ago", pluralize(diff, "second"))
+    } else if diff < 3_600 {
+        format!("{} ago", pluralize(diff / 60, "minute"))
+    } else if diff < 86_400 {
+        format!("{} ago", pluralize(diff / 3_600, "hour"))
+    } else if diff < 604_800 {
+        format!("{} ago", pluralize(diff / 86_400, "day"))
+    } else if diff < 2_592_000 {
+        format!("{} ago", pluralize(diff / 604_800, "week"))
+    } else if diff < 31_536_000 {
+        format!("{} ago", pluralize(diff / 2_592_000, "month"))
+    } else {
+        format!("{} ago", pluralize(diff / 31_536_000, "year"))
+    }
+}
+
 pub struct AgentPresenter;
 
 impl AgentPresenter {
@@ -636,11 +690,7 @@ impl Presenter for HumanPresenter {
                 let dash = style("-").dim();
                 out.push_str(&format!("  {:<12} {}\n", style("Storage").dim(), if *has_persistence { &check } else { &dash }));
                 out.push_str(&format!("  {:<12} {}\n", style("Inscriptions").dim(), if *has_inscriptions { &check } else { &dash }));
-                let time_str = {
-                    let d = std::time::UNIX_EPOCH + std::time::Duration::from_secs(*updated_at_unix);
-                    let datetime: chrono::DateTime<chrono::Utc> = d.into();
-                    datetime.format("%Y-%m-%d %H:%M:%S UTC").to_string()
-                };
+                let time_str = format_relative_age(*updated_at_unix);
                 out.push_str(&format!("  {:<12} {}\n", style("Updated").dim(), time_str));
                 out
             }

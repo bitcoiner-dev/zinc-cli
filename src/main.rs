@@ -441,6 +441,7 @@ fn resolve_effective_cli(mut cli: Cli) -> Result<Cli, AppError> {
     }
     if let Some(val) = env_non_empty("ZINC_CLI_NETWORK") {
         cli.network = Some(val);
+        cli.explicit_network = true;
     }
     if let Some(val) = env_non_empty("ZINC_CLI_SCHEME") {
         cli.scheme = Some(val);

@@ -1042,6 +1042,84 @@ fn test_network_config_switch_updates_address_prefix_and_cached_wallet_state() {
 }
 
 #[test]
+fn test_wallet_info_reflects_config_network_switch_without_unlock() {
+    let home = unique_data_dir("zinc_test_wallet_info_network_home");
+    fs::create_dir_all(&home).expect("failed to create test home");
+    let data_dir = unique_data_dir("zinc_test_wallet_info_network_data");
+    let _ = fs::remove_dir_all(&data_dir);
+
+    let mut init_cmd = cargo_cmd();
+    init_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "wallet",
+        "init",
+        "--network",
+        "signet",
+        "--scheme",
+        "dual",
+        "--overwrite",
+    ]);
+    init_cmd.env("HOME", &home);
+    let init_output = init_cmd.output().expect("failed to execute process");
+    assert!(
+        init_output.status.success(),
+        "wallet init failed: {}",
+        String::from_utf8_lossy(&init_output.stdout)
+    );
+
+    let mut set_cmd = cargo_cmd();
+    set_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--profile",
+        "presto",
+        "config",
+        "set",
+        "network",
+        "mainnet",
+    ]);
+    set_cmd.env("HOME", &home);
+    let set_output = set_cmd.output().expect("failed to execute process");
+    assert!(
+        set_output.status.success(),
+        "config set failed: {}",
+        String::from_utf8_lossy(&set_output.stdout)
+    );
+
+    let mut info_cmd = cargo_cmd();
+    info_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "wallet",
+        "info",
+    ]);
+    info_cmd.env("HOME", &home);
+    let info_output = info_cmd.output().expect("failed to execute process");
+    assert!(info_output.status.success());
+    let info_json = parse_json_from_output(&String::from_utf8_lossy(&info_output.stdout));
+    assert_eq!(info_json["network"], "bitcoin");
+    assert_eq!(info_json["esplora_url"], "https://m.exittheloop.com/api");
+    assert_eq!(info_json["ord_url"], "https://o.exittheloop.com");
+}
+
+#[test]
 fn test_setup_persists_defaults_and_wallet_uses_them() {
     let home = unique_data_dir("zinc_test_setup_home");
     fs::create_dir_all(&home).expect("failed to create test home");

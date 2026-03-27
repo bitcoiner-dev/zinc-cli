@@ -1,5 +1,7 @@
 use crate::cli::{Cli, WalletAction, WalletArgs};
+use crate::config::load_persisted_config;
 use crate::error::AppError;
+use crate::output::CommandOutput;
 use crate::utils::{parse_network, parse_scheme};
 use crate::wallet_service::{
     decrypt_wallet_internal, default_bitcoin_cli, default_bitcoin_cli_args, default_esplora_url,
@@ -8,7 +10,6 @@ use crate::wallet_service::{
 };
 use crate::{now_unix, profile_path, read_profile, wallet_password, write_profile};
 use std::collections::BTreeMap;
-use crate::output::CommandOutput;
 
 pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError> {
     match &args.action {
@@ -136,7 +137,35 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
             })
         }
         WalletAction::Info => {
-            let profile = read_profile(&profile_path(cli)?)?;
+            let mut profile = read_profile(&profile_path(cli)?)?;
+
+            // Match runtime resolution used by wallet session loading so
+            // wallet info reflects effective config/default overrides.
+            let service_cfg = crate::service_config(cli);
+            let persisted = load_persisted_config().unwrap_or_default();
+            let resolver = crate::config_resolver::ConfigResolver::new(&persisted, &service_cfg);
+
+            let resolved_network: crate::config::NetworkArg =
+                resolver.resolve_network(Some(&profile)).value.into();
+            let resolved_scheme: crate::config::SchemeArg =
+                resolver.resolve_scheme(Some(&profile)).value.into();
+
+            let network_changed = profile.network.to_string() != resolved_network.to_string();
+            if network_changed {
+                profile.esplora_url = default_esplora_url(resolved_network).to_string();
+                profile.ord_url = default_ord_url(resolved_network).to_string();
+            }
+
+            profile.network = resolved_network;
+            profile.scheme = resolved_scheme;
+
+            if let Some(e) = service_cfg.esplora_url_override {
+                profile.esplora_url = e.to_string();
+            }
+            if let Some(url) = service_cfg.ord_url_override {
+                profile.ord_url = url.to_string();
+            }
+
             let state = profile.account_state();
             Ok(CommandOutput::WalletInfo {
                 profile: cli.profile.clone(),

@@ -116,8 +116,27 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
     let persisted = load_persisted_config().unwrap_or_default();
     let resolver = crate::config_resolver::ConfigResolver::new(&persisted, config);
 
-    profile.network = resolver.resolve_network(Some(&profile)).value.into();
-    profile.scheme = resolver.resolve_scheme(Some(&profile)).value.into();
+    let new_network: crate::config::NetworkArg =
+        resolver.resolve_network(Some(&profile)).value.into();
+    let new_scheme: crate::config::SchemeArg = resolver.resolve_scheme(Some(&profile)).value.into();
+
+    let network_changed = profile.network.to_string() != new_network.to_string();
+    let scheme_changed = profile.scheme.to_string() != new_scheme.to_string();
+
+    if network_changed || scheme_changed {
+        for state in profile.accounts.values_mut() {
+            state.persistence_json = None;
+            state.inscriptions_json = None;
+        }
+    }
+
+    if network_changed {
+        profile.esplora_url = crate::config::default_esplora_url(new_network).to_string();
+        profile.ord_url = crate::config::default_ord_url(new_network).to_string();
+    }
+
+    profile.network = new_network;
+    profile.scheme = new_scheme;
 
     if let Some(e) = config.esplora_url_override {
         profile.esplora_url = e.to_string();

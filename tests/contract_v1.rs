@@ -824,6 +824,141 @@ fn test_config_set_and_unset_roundtrip() {
 }
 
 #[test]
+fn test_network_config_switch_updates_address_prefix_and_cached_wallet_state() {
+    let home = unique_data_dir("zinc_test_network_switch_home");
+    fs::create_dir_all(&home).expect("failed to create test home");
+    let data_dir = unique_data_dir("zinc_test_network_switch_data");
+    let _ = fs::remove_dir_all(&data_dir);
+
+    let mut init_cmd = cargo_cmd();
+    init_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "wallet",
+        "init",
+        "--network",
+        "signet",
+        "--scheme",
+        "dual",
+        "--overwrite",
+    ]);
+    init_cmd.env("HOME", &home);
+    let init_output = init_cmd.output().expect("failed to execute process");
+    assert!(
+        init_output.status.success(),
+        "wallet init failed: {}",
+        String::from_utf8_lossy(&init_output.stdout)
+    );
+
+    let mut warm_cache_cmd = cargo_cmd();
+    warm_cache_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "address",
+        "payment",
+    ]);
+    warm_cache_cmd.env("HOME", &home);
+    let warm_cache_output = warm_cache_cmd.output().expect("failed to execute process");
+    assert!(warm_cache_output.status.success());
+    let warm_cache_json =
+        parse_json_from_output(&String::from_utf8_lossy(&warm_cache_output.stdout));
+    let warm_address = warm_cache_json["address"]
+        .as_str()
+        .expect("address should be present");
+    assert!(
+        warm_address.starts_with("tb1"),
+        "expected initial signet/testnet payment address, got {warm_address}"
+    );
+
+    let mut set_cmd = cargo_cmd();
+    set_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--profile",
+        "presto",
+        "config",
+        "set",
+        "network",
+        "mainnet",
+    ]);
+    set_cmd.env("HOME", &home);
+    let set_output = set_cmd.output().expect("failed to execute process");
+    assert!(
+        set_output.status.success(),
+        "config set failed: {}",
+        String::from_utf8_lossy(&set_output.stdout)
+    );
+
+    let mut address_cmd = cargo_cmd();
+    address_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "address",
+        "payment",
+    ]);
+    address_cmd.env("HOME", &home);
+    let address_output = address_cmd.output().expect("failed to execute process");
+    assert!(address_output.status.success());
+    let address_json = parse_json_from_output(&String::from_utf8_lossy(&address_output.stdout));
+    let payment_address = address_json["address"]
+        .as_str()
+        .expect("address should be present");
+    assert!(
+        payment_address.starts_with("bc1"),
+        "expected mainnet payment address after config switch, got {payment_address}"
+    );
+
+    let mut info_cmd = cargo_cmd();
+    info_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "wallet",
+        "info",
+    ]);
+    info_cmd.env("HOME", &home);
+    let info_output = info_cmd.output().expect("failed to execute process");
+    assert!(info_output.status.success());
+    let info_json = parse_json_from_output(&String::from_utf8_lossy(&info_output.stdout));
+    assert_eq!(info_json["network"], "bitcoin");
+    assert_eq!(info_json["esplora_url"], "https://m.exittheloop.com/api");
+    assert_eq!(info_json["ord_url"], "https://o.exittheloop.com");
+}
+
+#[test]
 fn test_setup_persists_defaults_and_wallet_uses_them() {
     let home = unique_data_dir("zinc_test_setup_home");
     fs::create_dir_all(&home).expect("failed to create test home");

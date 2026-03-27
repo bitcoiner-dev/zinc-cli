@@ -29,7 +29,7 @@ impl Default for PersistedConfig {
             data_dir: None,
             password_env: None,
             quiet: None,
-            network: Some("regtest".to_string()),
+            network: None,
             scheme: None,
             esplora_url: None,
             ord_url: None,

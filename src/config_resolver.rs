@@ -52,15 +52,7 @@ impl<'a> ConfigResolver<'a> {
             }
         }
 
-        // Priority 2: Profile
-        if let Some(profile) = profile {
-            return ResolvedValue {
-                value: profile.network.into(),
-                source: ConfigSource::Profile,
-            };
-        }
-
-        // Priority 3: Global Config
+        // Priority 2: Global Config
         if let Some(net_str) = self.persisted.network.as_deref() {
             if let Ok(net) = crate::utils::parse_network(net_str) {
                 return ResolvedValue {
@@ -68,6 +60,14 @@ impl<'a> ConfigResolver<'a> {
                     source: ConfigSource::GlobalConfig,
                 };
             }
+        }
+
+        // Priority 3: Profile
+        if let Some(profile) = profile {
+            return ResolvedValue {
+                value: profile.network.into(),
+                source: ConfigSource::Profile,
+            };
         }
 
         // Priority 4: Default fallback
@@ -88,13 +88,6 @@ impl<'a> ConfigResolver<'a> {
             }
         }
 
-        if let Some(profile) = profile {
-            return ResolvedValue {
-                value: profile.scheme.into(),
-                source: ConfigSource::Profile,
-            };
-        }
-
         if let Some(scheme_str) = self.persisted.scheme.as_deref() {
             if let Ok(scheme) = crate::utils::parse_scheme(scheme_str) {
                 return ResolvedValue {
@@ -102,6 +95,13 @@ impl<'a> ConfigResolver<'a> {
                     source: ConfigSource::GlobalConfig,
                 };
             }
+        }
+
+        if let Some(profile) = profile {
+            return ResolvedValue {
+                value: profile.scheme.into(),
+                source: ConfigSource::Profile,
+            };
         }
 
         ResolvedValue {

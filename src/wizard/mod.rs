@@ -14,7 +14,6 @@ pub struct SetupValues {
     pub default_scheme: Option<String>,
     pub default_esplora_url: Option<String>,
     pub default_ord_url: Option<String>,
-    pub quiet_default: bool,
     pub initialize_wallet: bool,
     pub restore_mnemonic: Option<String>,
     pub words: Option<u8>,
@@ -40,12 +39,6 @@ pub(crate) fn resolve_setup_values(cli: &Cli, args: &SetupArgs) -> Result<SetupV
     let default_esplora_url = args.default_esplora_url.clone().or(cli.esplora_url.clone());
     let default_ord_url = args.default_ord_url.clone().or(cli.ord_url.clone());
 
-
-    let quiet_default = match &args.quiet_default {
-        Some(value) => *value,
-        None => cli.quiet,
-    };
-
     Ok(SetupValues {
         profile,
         data_dir,
@@ -54,7 +47,6 @@ pub(crate) fn resolve_setup_values(cli: &Cli, args: &SetupArgs) -> Result<SetupV
         default_scheme,
         default_esplora_url,
         default_ord_url,
-        quiet_default,
         initialize_wallet: args.restore_mnemonic.is_some() || args.words.is_some(),
         restore_mnemonic: args.restore_mnemonic.clone(),
         words: args.words,
@@ -82,7 +74,6 @@ pub(crate) fn should_run_setup_wizard(
             && args.password_env.is_none()
             && args.default_esplora_url.is_none()
             && args.default_ord_url.is_none()
-            && args.quiet_default.is_none()
             && args.restore_mnemonic.is_none()
             && args.words.is_none();
 

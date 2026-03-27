@@ -40,7 +40,6 @@ expression: json_output
   "global_flags": [
     "--json",
     "--agent",
-    "--quiet",
     "--yes",
     "--password",
     "--password-env",

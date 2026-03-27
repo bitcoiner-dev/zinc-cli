@@ -25,7 +25,7 @@ This document defines the active `v1` command contract. It is additive with curr
 
 ## 3) Global Flags (Supported)
 
-`--agent`, `--quiet`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--thumb`, `--no-thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
+`--agent`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--thumb`, `--no-thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
 
 Global flags are supported both before and after command tokens.
 

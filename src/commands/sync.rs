@@ -1,13 +1,13 @@
 use crate::cli::{Cli, SyncArgs, SyncTarget};
 use crate::error::AppError;
 use crate::network_retry::with_network_retry;
+use crate::output::CommandOutput;
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
 use indicatif::{ProgressBar, ProgressStyle};
-use crate::output::CommandOutput;
 
 pub async fn run(cli: &Cli, args: &SyncArgs) -> Result<CommandOutput, AppError> {
-    let spinner = if !cli.agent && !cli.quiet {
+    let spinner = if !cli.agent {
         let pb = ProgressBar::new_spinner();
         pb.set_style(
             ProgressStyle::default_spinner()
@@ -45,7 +45,9 @@ pub async fn run(cli: &Cli, args: &SyncArgs) -> Result<CommandOutput, AppError> 
             })
             .await?;
             persist_wallet_session(&mut session)?;
-            CommandOutput::SyncOrdinals { inscriptions: count }
+            CommandOutput::SyncOrdinals {
+                inscriptions: count,
+            }
         }
     };
 

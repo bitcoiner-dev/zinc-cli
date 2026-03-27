@@ -37,7 +37,6 @@ Environment defaults (optional):
 - `ZINC_CLI_DATA_DIR`
 - `ZINC_CLI_PASSWORD_ENV`
 - `ZINC_CLI_OUTPUT` (`human|agent`)
-- `ZINC_CLI_QUIET` (`1|true|yes|on`)
 - `ZINC_CLI_NETWORK`
 - `ZINC_CLI_SCHEME`
 - `ZINC_CLI_ESPLORA_URL`

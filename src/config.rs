@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::paths::write_bytes_atomic;
-use crate::utils::{parse_bool_value, unknown_with_hint};
+use crate::utils::{parse_bool_value, parse_network, parse_scheme, unknown_with_hint};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -14,7 +14,6 @@ pub struct PersistedConfig {
     pub profile: Option<String>,
     pub data_dir: Option<String>,
     pub password_env: Option<String>,
-    pub quiet: Option<bool>,
     pub network: Option<String>,
     pub scheme: Option<String>,
     pub esplora_url: Option<String>,
@@ -28,7 +27,6 @@ impl Default for PersistedConfig {
             profile: None,
             data_dir: None,
             password_env: None,
-            quiet: None,
             network: None,
             scheme: None,
             esplora_url: None,
@@ -68,7 +66,6 @@ pub enum ConfigField {
     Profile,
     DataDir,
     PasswordEnv,
-    Quiet,
     Network,
     Scheme,
     EsploraUrl,
@@ -80,7 +77,6 @@ pub const CONFIG_KEYS: &[&str] = &[
     "profile",
     "data-dir",
     "password-env",
-    "quiet",
     "network",
     "scheme",
     "esplora-url",
@@ -94,7 +90,6 @@ impl ConfigField {
             Self::Profile => "profile",
             Self::DataDir => "data-dir",
             Self::PasswordEnv => "password-env",
-            Self::Quiet => "quiet",
             Self::Network => "network",
             Self::Scheme => "scheme",
             Self::EsploraUrl => "esplora-url",
@@ -108,7 +103,6 @@ impl ConfigField {
             "profile" => Ok(Self::Profile),
             "data-dir" | "data_dir" => Ok(Self::DataDir),
             "password-env" | "password_env" => Ok(Self::PasswordEnv),
-            "quiet" => Ok(Self::Quiet),
             "network" => Ok(Self::Network),
             "scheme" => Ok(Self::Scheme),
             "esplora-url" | "esplora_url" => Ok(Self::EsploraUrl),
@@ -149,20 +143,17 @@ pub(crate) fn set_config_field(
             config.password_env = Some(value.to_string());
             Ok(Value::String(value.to_string()))
         }
-        ConfigField::Quiet => {
-            let parsed = parse_bool_value(value, "config quiet").map_err(AppError::Invalid)?;
-            config.quiet = Some(parsed);
-            Ok(Value::Bool(parsed))
-        }
         ConfigField::Network => {
-            // Note: we'll need to expose parse_network if we keep manual parsing,
-            // but for now we just store the string.
-            config.network = Some(value.to_string());
-            Ok(Value::String(value.to_string()))
+            let parsed = parse_network(value)?;
+            let canonical = parsed.to_string();
+            config.network = Some(canonical.clone());
+            Ok(Value::String(canonical))
         }
         ConfigField::Scheme => {
-            config.scheme = Some(value.to_string());
-            Ok(Value::String(value.to_string()))
+            let parsed = parse_scheme(value)?;
+            let canonical = parsed.to_string();
+            config.scheme = Some(canonical.clone());
+            Ok(Value::String(canonical))
         }
         ConfigField::EsploraUrl => {
             config.esplora_url = Some(value.to_string());
@@ -185,7 +176,6 @@ pub(crate) fn unset_config_field(config: &mut PersistedConfig, key: ConfigField)
         ConfigField::Profile => config.profile.take().is_some(),
         ConfigField::DataDir => config.data_dir.take().is_some(),
         ConfigField::PasswordEnv => config.password_env.take().is_some(),
-        ConfigField::Quiet => config.quiet.take().is_some(),
         ConfigField::Network => config.network.take().is_some(),
         ConfigField::Scheme => config.scheme.take().is_some(),
         ConfigField::EsploraUrl => config.esplora_url.take().is_some(),
@@ -377,4 +367,27 @@ pub fn read_profile(path: &Path) -> Result<Profile, AppError> {
         .map_err(|e| AppError::Config(format!("failed to read profile: {e}")))?;
     serde_json::from_str::<Profile>(&data)
         .map_err(|e| AppError::Config(format!("failed to parse profile: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{set_config_field, ConfigField, PersistedConfig};
+    use crate::error::AppError;
+
+    #[test]
+    fn set_config_network_validates_and_canonicalizes() {
+        let mut cfg = PersistedConfig::default();
+        let value = set_config_field(&mut cfg, ConfigField::Network, "mainnet")
+            .expect("mainnet should parse");
+        assert_eq!(value.as_str(), Some("bitcoin"));
+        assert_eq!(cfg.network.as_deref(), Some("bitcoin"));
+    }
+
+    #[test]
+    fn set_config_scheme_validates() {
+        let mut cfg = PersistedConfig::default();
+        let err = set_config_field(&mut cfg, ConfigField::Scheme, "legacy")
+            .expect_err("invalid scheme should be rejected");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
 }

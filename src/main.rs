@@ -7,9 +7,9 @@ mod dashboard;
 mod error;
 mod lock;
 mod network_retry;
+mod output;
 mod paths;
 mod presenter;
-mod output;
 #[cfg(feature = "ui")]
 mod ui;
 mod utils;
@@ -118,7 +118,9 @@ async fn main() -> miette::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let started_at_unix_ms = now_unix_ms();
     let is_agent = args.iter().any(|a| a == "--agent")
-        || std::env::var("ZINC_CLI_OUTPUT").map(|v| v.to_lowercase() == "agent").unwrap_or(false);
+        || std::env::var("ZINC_CLI_OUTPUT")
+            .map(|v| v.to_lowercase() == "agent")
+            .unwrap_or(false);
     let preparse_log_json =
         args.iter().any(|a| a == "--log-json") || env_bool("ZINC_CLI_LOG_JSON").unwrap_or(false);
     let preparse_correlation_id =
@@ -320,7 +322,8 @@ async fn main() -> miette::Result<()> {
                     .is_some_and(|k| !k.trim().is_empty())
             {
                 if let Some(key) = cli_final.idempotency_key.as_deref() {
-                    let recorded_at = record_idempotent_result(&cli_final, &command_name, &val_json)?;
+                    let recorded_at =
+                        record_idempotent_result(&cli_final, &command_name, &val_json)?;
                     val_json = attach_idempotency_metadata(val_json, key, false, recorded_at);
                 }
             }
@@ -388,7 +391,7 @@ fn resolve_effective_cli(mut cli: Cli) -> Result<Cli, AppError> {
             cli.ascii = true;
         }
     }
-    
+
     if !cli.quiet {
         cli.quiet = persisted.quiet.unwrap_or(false);
     }
@@ -920,7 +923,9 @@ pub(crate) async fn dispatch(cli: &Cli) -> Result<crate::output::CommandOutput, 
         Command::Version => crate::commands::version::run(cli).await,
         Command::Doctor => crate::commands::doctor::run(cli).await,
         #[cfg(feature = "ui")]
-        Command::Dashboard => crate::dashboard::run(cli).await.map(crate::output::CommandOutput::Generic),
+        Command::Dashboard => crate::dashboard::run(cli)
+            .await
+            .map(crate::output::CommandOutput::Generic),
     }
 }
 
@@ -932,8 +937,6 @@ fn is_non_json_rendered_command(command: &Command) -> bool {
         _ => false,
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

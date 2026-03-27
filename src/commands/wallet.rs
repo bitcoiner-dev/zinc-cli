@@ -1,5 +1,6 @@
 use crate::cli::{Cli, WalletAction, WalletArgs};
 use crate::error::AppError;
+use crate::output::CommandOutput;
 use crate::utils::{parse_network, parse_scheme};
 use crate::wallet_service::{
     decrypt_wallet_internal, default_bitcoin_cli, default_bitcoin_cli_args, default_esplora_url,
@@ -8,7 +9,6 @@ use crate::wallet_service::{
 };
 use crate::{now_unix, profile_path, read_profile, wallet_password, write_profile};
 use std::collections::BTreeMap;
-use crate::output::CommandOutput;
 
 pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError> {
     match &args.action {
@@ -78,7 +78,11 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 bitcoin_cli: default_bitcoin_cli(),
                 bitcoin_cli_args: default_bitcoin_cli_args().join(" "),
                 phrase,
-                words: if cli.reveal || !cli.agent { Some(wallet.words.len()) } else { None },
+                words: if cli.reveal || !cli.agent {
+                    Some(wallet.words.len())
+                } else {
+                    None
+                },
             })
         }
         WalletAction::Import {
@@ -132,7 +136,11 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 scheme: scheme_arg.to_string(),
                 account_index: 0,
                 imported: true,
-                phrase: if cli.reveal || !cli.agent { Some(mnemonic.to_string()) } else { None },
+                phrase: if cli.reveal || !cli.agent {
+                    Some(mnemonic.to_string())
+                } else {
+                    None
+                },
             })
         }
         WalletAction::Info => {

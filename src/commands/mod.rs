@@ -12,6 +12,6 @@ pub mod setup;
 pub mod snapshot;
 pub mod sync;
 pub mod tx;
+pub mod version;
 pub mod wait;
 pub mod wallet;
-pub mod version;

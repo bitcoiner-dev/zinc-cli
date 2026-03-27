@@ -342,23 +342,52 @@ pub struct HumanPresenter {
 
 impl HumanPresenter {
     pub fn new(use_color: bool) -> Self {
-        Self {
-            use_color,
-        }
+        Self { use_color }
     }
 
     fn print_doctor(&self, output: &CommandOutput) -> String {
-        if let CommandOutput::Doctor { healthy, esplora_url, esplora_reachable, ord_url, ord_reachable, ord_indexing_height, ord_error } = output {
+        if let CommandOutput::Doctor {
+            healthy,
+            esplora_url,
+            esplora_reachable,
+            ord_url,
+            ord_reachable,
+            ord_indexing_height,
+            ord_error,
+        } = output
+        {
             use console::style;
             let mut out = String::new();
-            let status = if *healthy { style("Healthy").green() } else { style("Unhealthy").red() };
+            let status = if *healthy {
+                style("Healthy").green()
+            } else {
+                style("Unhealthy").red()
+            };
             out.push_str(&format!("{} {}\n\n", style("Status:").bold(), status));
-            
-            out.push_str(&format!("{} {}\n", style("Esplora RPC:").bold(), esplora_url));
-            out.push_str(&format!("  Reachable: {}\n", if *esplora_reachable { style("Yes").green() } else { style("No").red() }));
-            
+
+            out.push_str(&format!(
+                "{} {}\n",
+                style("Esplora RPC:").bold(),
+                esplora_url
+            ));
+            out.push_str(&format!(
+                "  Reachable: {}\n",
+                if *esplora_reachable {
+                    style("Yes").green()
+                } else {
+                    style("No").red()
+                }
+            ));
+
             out.push_str(&format!("{} {}\n", style("Ord RPC:").bold(), ord_url));
-            out.push_str(&format!("  Reachable: {}\n", if *ord_reachable { style("Yes").green() } else { style("No").red() }));
+            out.push_str(&format!(
+                "  Reachable: {}\n",
+                if *ord_reachable {
+                    style("Yes").green()
+                } else {
+                    style("No").red()
+                }
+            ));
             if let Some(h) = ord_indexing_height {
                 out.push_str(&format!("  Height:    {}\n", h));
             }
@@ -371,15 +400,24 @@ impl HumanPresenter {
         }
     }
 
-    fn print_inscription_list(&self, inscriptions: &[zinc_core::ordinals::Inscription], display_items: &Option<Vec<InscriptionItemDisplay>>, thumb_mode_enabled: bool) -> String {
-        use console::style;
+    fn print_inscription_list(
+        &self,
+        inscriptions: &[zinc_core::ordinals::Inscription],
+        display_items: &Option<Vec<InscriptionItemDisplay>>,
+        thumb_mode_enabled: bool,
+    ) -> String {
         use crate::presenter::thumbnail::print_thumbnail_at;
+        use console::style;
 
         let mut out = String::new();
         if let Some(items) = display_items {
             let term_width = {
                 let (_, cols) = console::Term::stdout().size();
-                if cols > 0 { cols as usize } else { 120 }
+                if cols > 0 {
+                    cols as usize
+                } else {
+                    120
+                }
             };
 
             let card_width: u32 = 24;
@@ -391,7 +429,7 @@ impl HumanPresenter {
                 for (col, item) in row_items.iter().enumerate() {
                     let x_offset = col * (card_width as usize + gutter);
                     let header = format!("{}", style(format!("#{}", item.number)).bold().cyan());
-                    
+
                     if col > 0 {
                         print!("\x1b[{}G{header}", x_offset + 1);
                     } else {
@@ -400,13 +438,13 @@ impl HumanPresenter {
                 }
                 println!();
 
-                // 2. Pre-allocate vertical space 
+                // 2. Pre-allocate vertical space
                 // Printing images near the bottom of the terminal triggers scrolling.
-                // The ANSI Save Cursor (\x1b[s) uses absolute screen row. If the screen scrolls 
+                // The ANSI Save Cursor (\x1b[s) uses absolute screen row. If the screen scrolls
                 // between Image 1 and Image 2, Image 2's restored Y-coordinate is physically lower!
                 // We pre-allocate space by printing newlines, then returning up, to guarantee
                 // the viewport won't scroll while viuer prints the row of images.
-                let space_to_reserve = 14; 
+                let space_to_reserve = 14;
                 for _ in 0..space_to_reserve {
                     println!();
                 }
@@ -432,7 +470,11 @@ impl HumanPresenter {
                 }
 
                 // 4. Print all badge lines for the row
-                let max_badge_lines = row_items.iter().map(|i| i.badge_lines.len()).max().unwrap_or(0);
+                let max_badge_lines = row_items
+                    .iter()
+                    .map(|i| i.badge_lines.len())
+                    .max()
+                    .unwrap_or(0);
                 for line_idx in 0..max_badge_lines {
                     for (col, item) in row_items.iter().enumerate() {
                         if let Some(line) = item.badge_lines.get(line_idx) {
@@ -452,7 +494,10 @@ impl HumanPresenter {
             }
 
             if inscriptions.len() > items.len() {
-                out.push_str(&format!("... and {} more inscriptions\n", inscriptions.len() - items.len()));
+                out.push_str(&format!(
+                    "... and {} more inscriptions\n",
+                    inscriptions.len() - items.len()
+                ));
             }
         } else if !thumb_mode_enabled {
             let table = crate::presenter::inscription::format_inscriptions(inscriptions);
@@ -462,7 +507,19 @@ impl HumanPresenter {
     }
 
     fn print_offer_create(&self, output: &CommandOutput) -> String {
-        if let CommandOutput::OfferCreate { inscription, ask_sats, fee_rate_sat_vb, seller_address, seller_outpoint, seller_pubkey_hex, expires_at_unix, thumbnail_lines, hide_inscription_ids, .. } = output {
+        if let CommandOutput::OfferCreate {
+            inscription,
+            ask_sats,
+            fee_rate_sat_vb,
+            seller_address,
+            seller_outpoint,
+            seller_pubkey_hex,
+            expires_at_unix,
+            thumbnail_lines,
+            hide_inscription_ids,
+            ..
+        } = output
+        {
             let mut out = String::new();
             if let Some(lines) = thumbnail_lines {
                 for line in lines {
@@ -473,12 +530,24 @@ impl HumanPresenter {
             if *hide_inscription_ids {
                 lines.push("inscription: [thumbnail shown above]".to_string());
             } else {
-                lines.push(format!("inscription: {}", crate::commands::offer::abbreviate(inscription, 12, 8)));
+                lines.push(format!(
+                    "inscription: {}",
+                    crate::commands::offer::abbreviate(inscription, 12, 8)
+                ));
             }
-            lines.push(format!("ask: {} sats @ {} sat/vB", ask_sats, fee_rate_sat_vb));
-            lines.push(format!("seller input: {}", crate::commands::offer::abbreviate(seller_address, 12, 8)));
-            lines.push(format!("outpoint: {}", crate::commands::offer::abbreviate(seller_outpoint, 16, 6)));
-            
+            lines.push(format!(
+                "ask: {} sats @ {} sat/vB",
+                ask_sats, fee_rate_sat_vb
+            ));
+            lines.push(format!(
+                "seller input: {}",
+                crate::commands::offer::abbreviate(seller_address, 12, 8)
+            ));
+            lines.push(format!(
+                "outpoint: {}",
+                crate::commands::offer::abbreviate(seller_outpoint, 16, 6)
+            ));
+
             lines.push(format!(
                 "seller pubkey: {}",
                 crate::commands::offer::abbreviate(seller_pubkey_hex, 10, 6)
@@ -492,16 +561,32 @@ impl HumanPresenter {
     }
 
     fn print_offer_publish(&self, output: &CommandOutput) -> String {
-        if let CommandOutput::OfferPublish { event_id, accepted_relays, total_relays, publish_results, .. } = output {
+        if let CommandOutput::OfferPublish {
+            event_id,
+            accepted_relays,
+            total_relays,
+            publish_results,
+            ..
+        } = output
+        {
             let mut out = String::new();
             let mut lines = vec![
                 "OFFER PUBLISH".to_string(),
-                format!("event: {}", crate::commands::offer::abbreviate(event_id, 12, 8)),
+                format!(
+                    "event: {}",
+                    crate::commands::offer::abbreviate(event_id, 12, 8)
+                ),
                 format!("accepted relays: {accepted_relays}/{total_relays}"),
             ];
             for result in publish_results.iter().take(3) {
-                let relay = result.get("relay_url").and_then(serde_json::Value::as_str).unwrap_or("-");
-                let accepted = result.get("accepted").and_then(serde_json::Value::as_bool).unwrap_or(false);
+                let relay = result
+                    .get("relay_url")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("-");
+                let accepted = result
+                    .get("accepted")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
                 let status = if accepted { "ok" } else { "reject" };
                 lines.push(format!("{status}: {relay}"));
             }
@@ -516,7 +601,15 @@ impl HumanPresenter {
     }
 
     fn print_offer_discover(&self, output: &CommandOutput) -> String {
-        if let CommandOutput::OfferDiscover { event_count, offer_count, offers, thumbnail_lines, hide_inscription_ids, .. } = output {
+        if let CommandOutput::OfferDiscover {
+            event_count,
+            offer_count,
+            offers,
+            thumbnail_lines,
+            hide_inscription_ids,
+            ..
+        } = output
+        {
             let mut out = String::new();
             if let Some(lines) = thumbnail_lines {
                 for line in lines {
@@ -528,11 +621,23 @@ impl HumanPresenter {
                 format!("decoded offers: {offer_count} (events: {event_count})"),
             ];
             for (idx, entry) in offers.iter().take(8).enumerate() {
-                let event_id = entry.get("event_id").and_then(serde_json::Value::as_str).unwrap_or("-");
+                let event_id = entry
+                    .get("event_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("-");
                 let offer = entry.get("offer").and_then(serde_json::Value::as_object);
-                let inscription = offer.and_then(|o| o.get("inscription_id")).and_then(serde_json::Value::as_str).unwrap_or("-");
-                let ask_sats = offer.and_then(|o| o.get("ask_sats")).and_then(serde_json::Value::as_u64).unwrap_or(0);
-                let seller = offer.and_then(|o| o.get("seller_pubkey_hex")).and_then(serde_json::Value::as_str).unwrap_or("-");
+                let inscription = offer
+                    .and_then(|o| o.get("inscription_id"))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("-");
+                let ask_sats = offer
+                    .and_then(|o| o.get("ask_sats"))
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0);
+                let seller = offer
+                    .and_then(|o| o.get("seller_pubkey_hex"))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("-");
 
                 if *hide_inscription_ids {
                     lines.push(format!(
@@ -572,7 +677,13 @@ impl HumanPresenter {
     }
 
     fn print_offer_list_ord(&self, output: &CommandOutput) -> String {
-        if let CommandOutput::OfferListOrd { ord_url, count, offers, .. } = output {
+        if let CommandOutput::OfferListOrd {
+            ord_url,
+            count,
+            offers,
+            ..
+        } = output
+        {
             let mut out = String::new();
             let mut lines = vec![
                 "OFFER LIST-ORD".to_string(),
@@ -581,7 +692,11 @@ impl HumanPresenter {
             ];
             for (idx, psbt) in offers.iter().take(3).enumerate() {
                 if let Some(psbt_str) = psbt.as_str() {
-                    lines.push(format!("{:>2}. {}", idx + 1, crate::commands::offer::abbreviate(psbt_str, 14, 8)));
+                    lines.push(format!(
+                        "{:>2}. {}",
+                        idx + 1,
+                        crate::commands::offer::abbreviate(psbt_str, 14, 8)
+                    ));
                 }
             }
             out.push_str(&format!("{}\n", lines.join("\n")));
@@ -592,7 +707,17 @@ impl HumanPresenter {
     }
 
     fn print_offer_accept(&self, output: &CommandOutput) -> String {
-        if let CommandOutput::OfferAccept { inscription, ask_sats, txid, dry_run, inscription_risk, thumbnail_lines, hide_inscription_ids, .. } = output {
+        if let CommandOutput::OfferAccept {
+            inscription,
+            ask_sats,
+            txid,
+            dry_run,
+            inscription_risk,
+            thumbnail_lines,
+            hide_inscription_ids,
+            ..
+        } = output
+        {
             let mut out = String::new();
             if let Some(lines) = thumbnail_lines {
                 for line in lines {
@@ -603,13 +728,22 @@ impl HumanPresenter {
             if *hide_inscription_ids {
                 lines.push("inscription: [thumbnail shown above]".to_string());
             } else {
-                lines.push(format!("inscription: {}", crate::commands::offer::abbreviate(inscription, 12, 8)));
+                lines.push(format!(
+                    "inscription: {}",
+                    crate::commands::offer::abbreviate(inscription, 12, 8)
+                ));
             }
             lines.push(format!("ask: {ask_sats} sats"));
-            lines.push(format!("mode: {}", if *dry_run { "dry-run" } else { "broadcast" }));
+            lines.push(format!(
+                "mode: {}",
+                if *dry_run { "dry-run" } else { "broadcast" }
+            ));
             lines.push(format!("inscription risk: {inscription_risk}"));
             if txid != "-" {
-                lines.push(format!("txid: {}", crate::commands::offer::abbreviate(txid, 12, 8)));
+                lines.push(format!(
+                    "txid: {}",
+                    crate::commands::offer::abbreviate(txid, 12, 8)
+                ));
             }
             out.push_str(&format!("{}\n", lines.join("\n")));
             out
@@ -623,43 +757,110 @@ impl Presenter for HumanPresenter {
     fn render(&self, output: &CommandOutput) -> String {
         use console::style;
         match output {
-            CommandOutput::WalletInfo { profile, network, scheme, account_index, esplora_url, ord_url, has_persistence, has_inscriptions, updated_at_unix, .. } => {
+            CommandOutput::WalletInfo {
+                profile,
+                network,
+                scheme,
+                account_index,
+                esplora_url,
+                ord_url,
+                has_persistence,
+                has_inscriptions,
+                updated_at_unix,
+                ..
+            } => {
                 let mut out = String::new();
-                out.push_str(&format!("  {:<12} {}\n", style("Profile").dim(), profile.as_deref().unwrap_or("default")));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Profile").dim(),
+                    profile.as_deref().unwrap_or("default")
+                ));
                 out.push_str(&format!("  {:<12} {}\n", style("Network").dim(), network));
                 out.push_str(&format!("  {:<12} {}\n", style("Scheme").dim(), scheme));
-                out.push_str(&format!("  {:<12} {}\n", style("Account").dim(), account_index));
-                out.push_str(&format!("  {:<12} {}\n", style("Esplora").dim(), esplora_url));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Account").dim(),
+                    account_index
+                ));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Esplora").dim(),
+                    esplora_url
+                ));
                 out.push_str(&format!("  {:<12} {}\n", style("Ord").dim(), ord_url));
-                
+
                 let check = style("✓").green();
                 let dash = style("-").dim();
-                out.push_str(&format!("  {:<12} {}\n", style("Storage").dim(), if *has_persistence { &check } else { &dash }));
-                out.push_str(&format!("  {:<12} {}\n", style("Inscriptions").dim(), if *has_inscriptions { &check } else { &dash }));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Storage").dim(),
+                    if *has_persistence { &check } else { &dash }
+                ));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Inscriptions").dim(),
+                    if *has_inscriptions { &check } else { &dash }
+                ));
                 let time_str = {
-                    let d = std::time::UNIX_EPOCH + std::time::Duration::from_secs(*updated_at_unix);
+                    let d =
+                        std::time::UNIX_EPOCH + std::time::Duration::from_secs(*updated_at_unix);
                     let datetime: chrono::DateTime<chrono::Utc> = d.into();
                     datetime.format("%Y-%m-%d %H:%M:%S UTC").to_string()
                 };
                 out.push_str(&format!("  {:<12} {}\n", style("Updated").dim(), time_str));
                 out
             }
-            CommandOutput::WalletInit { profile, network, phrase, words, .. } => {
+            CommandOutput::WalletInit {
+                profile,
+                network,
+                phrase,
+                words,
+                ..
+            } => {
                 let mut out = format!("{}  {}\n", style("✓").green().bold(), "Wallet initialized");
-                out.push_str(&format!("  {:<12} {}\n", style("Profile").dim(), profile.as_deref().unwrap_or("default")));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Profile").dim(),
+                    profile.as_deref().unwrap_or("default")
+                ));
                 out.push_str(&format!("  {:<12} {}\n", style("Network").dim(), network));
-                out.push_str(&format!("  {:<12} {}\n", style("Phrase").dim(), if phrase.contains("<hidden") { style(phrase).dim() } else { style(phrase) }));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Phrase").dim(),
+                    if phrase.contains("<hidden") {
+                        style(phrase).dim()
+                    } else {
+                        style(phrase)
+                    }
+                ));
                 if let Some(w) = words {
                     out.push_str(&format!("  {:<12} {}\n", style("Words").dim(), w));
                 }
                 out
             }
-            CommandOutput::WalletImport { profile, network, phrase, .. } => {
+            CommandOutput::WalletImport {
+                profile,
+                network,
+                phrase,
+                ..
+            } => {
                 let mut out = format!("{}  {}\n", style("✓").green().bold(), "Wallet imported");
-                out.push_str(&format!("  {:<12} {}\n", style("Profile").dim(), profile.as_deref().unwrap_or("default")));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Profile").dim(),
+                    profile.as_deref().unwrap_or("default")
+                ));
                 out.push_str(&format!("  {:<12} {}\n", style("Network").dim(), network));
                 if let Some(p) = phrase {
-                    out.push_str(&format!("  {:<12} {}\n", style("Phrase").dim(), if p.contains("<hidden") { style(p).dim() } else { style(p) }));
+                    out.push_str(&format!(
+                        "  {:<12} {}\n",
+                        style("Phrase").dim(),
+                        if p.contains("<hidden") {
+                            style(p).dim()
+                        } else {
+                            style(p)
+                        }
+                    ));
                 }
                 out
             }
@@ -675,16 +876,24 @@ impl Presenter for HumanPresenter {
                     comfy_table::Cell::new("Type").fg(comfy_table::Color::Cyan),
                     comfy_table::Cell::new("Address").fg(comfy_table::Color::Green),
                 ]);
-                table.add_row(vec![comfy_table::Cell::new(kind), comfy_table::Cell::new(address)]);
+                table.add_row(vec![
+                    comfy_table::Cell::new(kind),
+                    comfy_table::Cell::new(address),
+                ]);
                 format!("{table}")
             }
-            CommandOutput::Balance { total, spendable, inscribed_sats } => {
+            CommandOutput::Balance {
+                total,
+                spendable,
+                inscribed_sats,
+            } => {
                 let mut table = comfy_table::Table::new();
                 table.set_header(vec![
                     comfy_table::Cell::new("Type").fg(comfy_table::Color::Cyan),
                     comfy_table::Cell::new("Confirmed (sats)").fg(comfy_table::Color::Green),
                     comfy_table::Cell::new("Trusted Pending (sats)").fg(comfy_table::Color::Yellow),
-                    comfy_table::Cell::new("Untrusted Pending (sats)").fg(comfy_table::Color::Magenta),
+                    comfy_table::Cell::new("Untrusted Pending (sats)")
+                        .fg(comfy_table::Color::Magenta),
                 ]);
                 table.add_row(vec![
                     comfy_table::Cell::new("Total (Combined)"),
@@ -722,10 +931,23 @@ impl Presenter for HumanPresenter {
                 }
                 format!("{table}")
             }
-            CommandOutput::AccountUse { account_index, taproot_address, payment_address, .. } => {
+            CommandOutput::AccountUse {
+                account_index,
+                taproot_address,
+                payment_address,
+                ..
+            } => {
                 let mut out = format!("{}  {}\n", style("✓").green().bold(), "Switched account");
-                out.push_str(&format!("  {:<12} {}\n", style("Index").dim(), account_index));
-                out.push_str(&format!("  {:<12} {}\n", style("Taproot").dim(), taproot_address));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Index").dim(),
+                    account_index
+                ));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Taproot").dim(),
+                    taproot_address
+                ));
                 if let Some(payment) = payment_address {
                     out.push_str(&format!("  {:<12} {}\n", style("Payment").dim(), payment));
                 }
@@ -779,10 +1001,23 @@ impl Presenter for HumanPresenter {
                 out.push_str(&format!("  {:<12} {}\n", style("PSBT").dim(), psbt));
                 out
             }
-            CommandOutput::PsbtAnalyze { safe_to_send, inscription_risk, policy_reasons, .. } => {
+            CommandOutput::PsbtAnalyze {
+                safe_to_send,
+                inscription_risk,
+                policy_reasons,
+                ..
+            } => {
                 let mut out = format!("{}  {}\n", style("ℹ").blue().bold(), "PSBT Analysis");
-                let risk_style = if *safe_to_send { style(inscription_risk.as_str()).green() } else { style(inscription_risk.as_str()).red() };
-                out.push_str(&format!("  {:<12} {}\n", style("Safe").dim(), if *safe_to_send { "yes" } else { "no" }));
+                let risk_style = if *safe_to_send {
+                    style(inscription_risk.as_str()).green()
+                } else {
+                    style(inscription_risk.as_str()).red()
+                };
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Safe").dim(),
+                    if *safe_to_send { "yes" } else { "no" }
+                ));
                 out.push_str(&format!("  {:<12} {}\n", style("Risk").dim(), risk_style));
                 if !policy_reasons.is_empty() {
                     out.push_str(&format!("  {:<12}\n", style("Reasons").dim()));
@@ -792,39 +1027,99 @@ impl Presenter for HumanPresenter {
                 }
                 out
             }
-            CommandOutput::PsbtSign { psbt, safe_to_send, inscription_risk, .. } => {
+            CommandOutput::PsbtSign {
+                psbt,
+                safe_to_send,
+                inscription_risk,
+                ..
+            } => {
                 let mut out = format!("{}  {}\n", style("✓").green().bold(), "PSBT Signed");
-                let risk_style = if *safe_to_send { style(inscription_risk.as_str()).green() } else { style(inscription_risk.as_str()).red() };
-                out.push_str(&format!("  {:<12} {}\n", style("Safe").dim(), if *safe_to_send { "yes" } else { "no" }));
+                let risk_style = if *safe_to_send {
+                    style(inscription_risk.as_str()).green()
+                } else {
+                    style(inscription_risk.as_str()).red()
+                };
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Safe").dim(),
+                    if *safe_to_send { "yes" } else { "no" }
+                ));
                 out.push_str(&format!("  {:<12} {}\n", style("Risk").dim(), risk_style));
                 out.push_str(&format!("  {:<12} {}\n", style("PSBT").dim(), psbt));
                 out
             }
-            CommandOutput::PsbtBroadcast { txid, safe_to_send, inscription_risk, .. } => {
+            CommandOutput::PsbtBroadcast {
+                txid,
+                safe_to_send,
+                inscription_risk,
+                ..
+            } => {
                 let mut out = format!("{}  {}\n", style("✓").green().bold(), "PSBT Broadcasted");
-                let risk_style = if *safe_to_send { style(inscription_risk.as_str()).green() } else { style(inscription_risk.as_str()).red() };
-                out.push_str(&format!("  {:<12} {}\n", style("Safe").dim(), if *safe_to_send { "yes" } else { "no" }));
+                let risk_style = if *safe_to_send {
+                    style(inscription_risk.as_str()).green()
+                } else {
+                    style(inscription_risk.as_str()).red()
+                };
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Safe").dim(),
+                    if *safe_to_send { "yes" } else { "no" }
+                ));
                 out.push_str(&format!("  {:<12} {}\n", style("Risk").dim(), risk_style));
                 out.push_str(&format!("  {:<12} {}\n", style("TxID").dim(), txid));
                 out
             }
             CommandOutput::SyncChain { events } => {
-                format!("{}  Synced {} events\n", style("✓").green().bold(), events.len())
+                format!(
+                    "{}  Synced {} events\n",
+                    style("✓").green().bold(),
+                    events.len()
+                )
             }
             CommandOutput::SyncOrdinals { inscriptions } => {
-                format!("{}  Synced {} inscriptions\n", style("✓").green().bold(), inscriptions)
+                format!(
+                    "{}  Synced {} inscriptions\n",
+                    style("✓").green().bold(),
+                    inscriptions
+                )
             }
-            CommandOutput::WaitTxConfirmed { txid, waited_secs, .. } => {
-                format!("{}  Tx {} confirmed after {}s\n", style("✓").green().bold(), txid, waited_secs)
+            CommandOutput::WaitTxConfirmed {
+                txid, waited_secs, ..
+            } => {
+                format!(
+                    "{}  Tx {} confirmed after {}s\n",
+                    style("✓").green().bold(),
+                    txid,
+                    waited_secs
+                )
             }
-            CommandOutput::WaitBalance { confirmed_balance, target, waited_secs, .. } => {
-                format!("{}  Target balance {} reached (current: {}) after {}s\n", style("✓").green().bold(), target, confirmed_balance, waited_secs)
+            CommandOutput::WaitBalance {
+                confirmed_balance,
+                target,
+                waited_secs,
+                ..
+            } => {
+                format!(
+                    "{}  Target balance {} reached (current: {}) after {}s\n",
+                    style("✓").green().bold(),
+                    target,
+                    confirmed_balance,
+                    waited_secs
+                )
             }
             CommandOutput::SnapshotSave { snapshot } => {
-                format!("{}  Saved snapshot to {}\n", style("✓").green().bold(), snapshot)
+                format!(
+                    "{}  Saved snapshot to {}\n",
+                    style("✓").green().bold(),
+                    snapshot
+                )
             }
             CommandOutput::SnapshotRestore { restored } => {
-                format!("{}  Restored snapshot from {}\n", style("✓").green().bold(), restored)
+                format!(
+                    "{}  Restored snapshot from {}\n",
+                    style("✓").green().bold(),
+                    restored
+                )
             }
             CommandOutput::SnapshotList { snapshots } => {
                 let mut table = comfy_table::Table::new();
@@ -839,7 +1134,10 @@ impl Presenter for HumanPresenter {
                         .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or(path_str);
-                    table.add_row(vec![comfy_table::Cell::new(name), comfy_table::Cell::new(path_str)]);
+                    table.add_row(vec![
+                        comfy_table::Cell::new(name),
+                        comfy_table::Cell::new(path_str),
+                    ]);
                 }
                 format!("{table}")
             }
@@ -859,7 +1157,10 @@ impl Presenter for HumanPresenter {
                             Value::Null => "-".to_string(),
                             _ => v.to_string(),
                         };
-                        table.add_row(vec![comfy_table::Cell::new(k), comfy_table::Cell::new(val_str)]);
+                        table.add_row(vec![
+                            comfy_table::Cell::new(k),
+                            comfy_table::Cell::new(val_str),
+                        ]);
                     }
                 }
                 format!("{table}")
@@ -874,9 +1175,19 @@ impl Presenter for HumanPresenter {
                     format!("{}  {} was not set\n", style("ℹ").blue().bold(), key)
                 }
             }
-            CommandOutput::LockInfo { lock_path, locked, owner_pid, age_secs, .. } => {
+            CommandOutput::LockInfo {
+                lock_path,
+                locked,
+                owner_pid,
+                age_secs,
+                ..
+            } => {
                 let mut out = format!("{}  {}\n", style("ℹ").blue().bold(), "Lock Status");
-                let status = if *locked { style("Locked").red() } else { style("Unlocked").green() };
+                let status = if *locked {
+                    style("Locked").red()
+                } else {
+                    style("Unlocked").green()
+                };
                 out.push_str(&format!("  {:<12} {}\n", style("Status").dim(), status));
                 out.push_str(&format!("  {:<12} {}\n", style("Path").dim(), lock_path));
                 if let Some(pid) = owner_pid {
@@ -887,30 +1198,78 @@ impl Presenter for HumanPresenter {
                 }
                 out
             }
-            CommandOutput::LockClear { lock_path, cleared, .. } => {
+            CommandOutput::LockClear {
+                lock_path, cleared, ..
+            } => {
                 if *cleared {
-                    format!("{}  Cleared lock at {}\n", style("✓").green().bold(), lock_path)
+                    format!(
+                        "{}  Cleared lock at {}\n",
+                        style("✓").green().bold(),
+                        lock_path
+                    )
                 } else {
-                    format!("{}  No lock to clear at {}\n", style("ℹ").blue().bold(), lock_path)
+                    format!(
+                        "{}  No lock to clear at {}\n",
+                        style("ℹ").blue().bold(),
+                        lock_path
+                    )
                 }
             }
             CommandOutput::Doctor { .. } => self.print_doctor(output),
-            CommandOutput::Setup { config_saved, wizard_used, profile, default_network, default_scheme, wallet_initialized, wallet_mode, wallet_phrase, .. } => {
+            CommandOutput::Setup {
+                config_saved,
+                wizard_used,
+                profile,
+                default_network,
+                default_scheme,
+                wallet_initialized,
+                wallet_mode,
+                wallet_phrase,
+                ..
+            } => {
                 let mut out = String::new();
                 out.push_str(&format!("{}  Setup complete\n", style("✓").green().bold()));
-                out.push_str(&format!("  {:<15} {}\n", style("Config Saved:").dim(), config_saved));
-                out.push_str(&format!("  {:<15} {}\n", style("Wizard Used:").dim(), wizard_used));
-                out.push_str(&format!("  {:<15} {}\n", style("Profile:").dim(), profile.as_deref().unwrap_or("default")));
-                out.push_str(&format!("  {:<15} {}\n", style("Network:").dim(), default_network));
-                out.push_str(&format!("  {:<15} {}\n", style("Scheme:").dim(), default_scheme));
+                out.push_str(&format!(
+                    "  {:<15} {}\n",
+                    style("Config Saved:").dim(),
+                    config_saved
+                ));
+                out.push_str(&format!(
+                    "  {:<15} {}\n",
+                    style("Wizard Used:").dim(),
+                    wizard_used
+                ));
+                out.push_str(&format!(
+                    "  {:<15} {}\n",
+                    style("Profile:").dim(),
+                    profile.as_deref().unwrap_or("default")
+                ));
+                out.push_str(&format!(
+                    "  {:<15} {}\n",
+                    style("Network:").dim(),
+                    default_network
+                ));
+                out.push_str(&format!(
+                    "  {:<15} {}\n",
+                    style("Scheme:").dim(),
+                    default_scheme
+                ));
                 if *wallet_initialized {
-                    out.push_str(&format!("  {:<15} {}\n", style("Wallet:").dim(), "Initialized"));
+                    out.push_str(&format!(
+                        "  {:<15} {}\n",
+                        style("Wallet:").dim(),
+                        "Initialized"
+                    ));
                     if let Some(mode) = wallet_mode {
                         out.push_str(&format!("  {:<15} {}\n", style("Mode:").dim(), mode));
                     }
                     if let Some(phrase) = wallet_phrase {
                         if phrase != "<hidden; use --reveal to show>" {
-                            out.push_str(&format!("\n{}\n{}\n", style("Mnemonic Phrase (keep this safe!):").red().bold(), phrase));
+                            out.push_str(&format!(
+                                "\n{}\n{}\n",
+                                style("Mnemonic Phrase (keep this safe!):").red().bold(),
+                                phrase
+                            ));
                         } else {
                             out.push_str(&format!("  {:<15} {}\n", style("Phrase:").dim(), phrase));
                         }
@@ -918,11 +1277,38 @@ impl Presenter for HumanPresenter {
                 }
                 out
             }
-            CommandOutput::ScenarioMine { blocks, address, raw_output } => {
-                format!("{}  Mined {} blocks to {}\nOutput:\n{}\n", style("✓").green().bold(), blocks, address, raw_output)
+            CommandOutput::ScenarioMine {
+                blocks,
+                address,
+                raw_output,
+            } => {
+                format!(
+                    "{}  Mined {} blocks to {}\nOutput:\n{}\n",
+                    style("✓").green().bold(),
+                    blocks,
+                    address,
+                    raw_output
+                )
             }
-            CommandOutput::ScenarioFund { address, amount_btc, txid, mine_blocks, mine_address, generated_blocks } => {
-                format!("{}  Funded {} with {} BTC\nTxID: {}\n{}  Mined {} blocks to {}\nOutput:\n{}\n", style("✓").green().bold(), address, amount_btc, txid, style("✓").green().bold(), mine_blocks, mine_address, generated_blocks)
+            CommandOutput::ScenarioFund {
+                address,
+                amount_btc,
+                txid,
+                mine_blocks,
+                mine_address,
+                generated_blocks,
+            } => {
+                format!(
+                    "{}  Funded {} with {} BTC\nTxID: {}\n{}  Mined {} blocks to {}\nOutput:\n{}\n",
+                    style("✓").green().bold(),
+                    address,
+                    amount_btc,
+                    txid,
+                    style("✓").green().bold(),
+                    mine_blocks,
+                    mine_address,
+                    generated_blocks
+                )
             }
             CommandOutput::ScenarioReset { removed } => {
                 let mut out = format!("{}  Scenario Reset\n", style("✓").green().bold());
@@ -931,7 +1317,11 @@ impl Presenter for HumanPresenter {
                 }
                 out
             }
-            CommandOutput::InscriptionList { inscriptions, display_items, thumb_mode_enabled } => self.print_inscription_list(inscriptions, display_items, *thumb_mode_enabled),
+            CommandOutput::InscriptionList {
+                inscriptions,
+                display_items,
+                thumb_mode_enabled,
+            } => self.print_inscription_list(inscriptions, display_items, *thumb_mode_enabled),
             CommandOutput::OfferCreate { .. } => self.print_offer_create(output),
             CommandOutput::OfferPublish { .. } => self.print_offer_publish(output),
             CommandOutput::OfferDiscover { .. } => self.print_offer_discover(output),

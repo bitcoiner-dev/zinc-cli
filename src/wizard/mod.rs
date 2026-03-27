@@ -40,7 +40,6 @@ pub(crate) fn resolve_setup_values(cli: &Cli, args: &SetupArgs) -> Result<SetupV
     let default_esplora_url = args.default_esplora_url.clone().or(cli.esplora_url.clone());
     let default_ord_url = args.default_ord_url.clone().or(cli.ord_url.clone());
 
-
     let quiet_default = match &args.quiet_default {
         Some(value) => *value,
         None => cli.quiet,

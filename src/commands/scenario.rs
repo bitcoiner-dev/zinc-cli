@@ -1,9 +1,9 @@
 use crate::cli::{Cli, ScenarioAction, ScenarioArgs};
 use crate::error::AppError;
+use crate::output::CommandOutput;
 use crate::utils::run_bitcoin_cli;
 use crate::wallet_service::NetworkArg;
 use crate::{confirm, load_wallet_session, persist_wallet_session, snapshot_dir};
-use crate::output::CommandOutput;
 use std::fs;
 
 pub async fn run(cli: &Cli, args: &ScenarioArgs) -> Result<CommandOutput, AppError> {
@@ -121,9 +121,7 @@ pub async fn run(cli: &Cli, args: &ScenarioArgs) -> Result<CommandOutput, AppErr
                 }
             }
 
-            CommandOutput::ScenarioReset {
-                removed,
-            }
+            CommandOutput::ScenarioReset { removed }
         }
     };
 

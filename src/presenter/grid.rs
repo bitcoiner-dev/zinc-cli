@@ -73,11 +73,7 @@ pub fn render_grid(cards: &[GridCard], max_cols: usize, gutter: usize) -> String
 
         for line_idx in 0..max_height {
             for (card_idx, card) in row_cards.iter().enumerate() {
-                let line = card
-                    .lines
-                    .get(line_idx)
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
+                let line = card.lines.get(line_idx).map(|s| s.as_str()).unwrap_or("");
 
                 // Pad every card to cell_width so columns stay aligned.
                 out.push_str(&pad_to_visible(line, cell_width));
@@ -119,9 +115,15 @@ mod tests {
     #[test]
     fn grid_arranges_cards_side_by_side() {
         let cards = vec![
-            GridCard { lines: vec!["AAAA".into(), "AAAA".into()] },
-            GridCard { lines: vec!["BBBB".into(), "BBBB".into()] },
-            GridCard { lines: vec!["CCCC".into()] }, // shorter card
+            GridCard {
+                lines: vec!["AAAA".into(), "AAAA".into()],
+            },
+            GridCard {
+                lines: vec!["BBBB".into(), "BBBB".into()],
+            },
+            GridCard {
+                lines: vec!["CCCC".into()],
+            }, // shorter card
         ];
         let output = render_grid(&cards, 20, 2);
         // With cell_width=4, gutter=2, cols_per_row = (20+2)/(4+2) = 3
@@ -138,9 +140,15 @@ mod tests {
     #[test]
     fn grid_wraps_to_multiple_rows() {
         let cards = vec![
-            GridCard { lines: vec!["AAAA".into()] },
-            GridCard { lines: vec!["BBBB".into()] },
-            GridCard { lines: vec!["CCCC".into()] },
+            GridCard {
+                lines: vec!["AAAA".into()],
+            },
+            GridCard {
+                lines: vec!["BBBB".into()],
+            },
+            GridCard {
+                lines: vec!["CCCC".into()],
+            },
         ];
         // max_cols=10, gutter=2 → cell_width=4, cols_per_row = (10+2)/(4+2) = 2
         let output = render_grid(&cards, 10, 2);

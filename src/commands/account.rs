@@ -1,8 +1,8 @@
 use crate::cli::{AccountAction, AccountArgs, Cli};
 use crate::error::AppError;
+use crate::output::CommandOutput;
 use crate::wallet_service::{now_unix, AccountState};
 use crate::{load_wallet_session, profile_path, read_profile, write_profile};
-use crate::output::CommandOutput;
 use zinc_core::Account;
 
 pub async fn run(cli: &Cli, args: &AccountArgs) -> Result<CommandOutput, AppError> {

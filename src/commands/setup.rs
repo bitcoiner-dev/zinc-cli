@@ -1,6 +1,7 @@
 use crate::cli::{Cli, SetupArgs};
 use crate::config::{load_persisted_config, save_persisted_config};
 use crate::error::AppError;
+use crate::output::CommandOutput;
 use crate::utils::parse_network;
 use crate::utils::parse_scheme;
 use crate::wallet_service::{
@@ -9,7 +10,6 @@ use crate::wallet_service::{
 };
 use crate::wizard::{resolve_setup_values, run_tui_setup_wizard, should_run_setup_wizard};
 use crate::{now_unix, profile_path, wallet_password, write_profile};
-use crate::output::CommandOutput;
 use serde_json::json;
 use std::io::IsTerminal;
 use zinc_core::{encrypt_wallet_internal, generate_wallet_internal};
@@ -182,11 +182,33 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
         config_saved: true,
         wizard_used: is_tui,
         profile: Some(values.profile),
-        data_dir: crate::wallet_service::data_dir(&crate::service_config(cli)).display().to_string(),
-        default_network: values.default_network.as_deref().or(cli.network.as_deref()).unwrap_or("regtest").to_string(),
-        default_scheme: values.default_scheme.as_deref().or(cli.scheme.as_deref()).unwrap_or("dual").to_string(),
-        default_esplora_url: values.default_esplora_url.as_deref().or(cli.esplora_url.as_deref()).unwrap_or_else(|| default_esplora_url(parse_network("regtest").unwrap())).to_string(),
-        default_ord_url: values.default_ord_url.as_deref().or(cli.ord_url.as_deref()).unwrap_or_else(|| default_ord_url(parse_network("regtest").unwrap())).to_string(),
+        data_dir: crate::wallet_service::data_dir(&crate::service_config(cli))
+            .display()
+            .to_string(),
+        default_network: values
+            .default_network
+            .as_deref()
+            .or(cli.network.as_deref())
+            .unwrap_or("regtest")
+            .to_string(),
+        default_scheme: values
+            .default_scheme
+            .as_deref()
+            .or(cli.scheme.as_deref())
+            .unwrap_or("dual")
+            .to_string(),
+        default_esplora_url: values
+            .default_esplora_url
+            .as_deref()
+            .or(cli.esplora_url.as_deref())
+            .unwrap_or_else(|| default_esplora_url(parse_network("regtest").unwrap()))
+            .to_string(),
+        default_ord_url: values
+            .default_ord_url
+            .as_deref()
+            .or(cli.ord_url.as_deref())
+            .unwrap_or_else(|| default_ord_url(parse_network("regtest").unwrap()))
+            .to_string(),
         quiet_default: values.quiet_default,
         password_env: values.password_env.clone(),
         wallet_requested: values.initialize_wallet,

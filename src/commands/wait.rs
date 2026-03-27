@@ -2,9 +2,9 @@ use crate::cli::{Cli, WaitAction, WaitArgs};
 use crate::error::AppError;
 use crate::load_wallet_session;
 use crate::network_retry::with_network_retry;
+use crate::output::CommandOutput;
 use crate::wallet_service::map_wallet_error;
 use indicatif::{ProgressBar, ProgressStyle};
-use crate::output::CommandOutput;
 use std::time::Duration;
 use tokio::time::sleep;
 

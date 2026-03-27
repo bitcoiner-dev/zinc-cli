@@ -25,10 +25,11 @@ pub async fn run(cli: &Cli, args: &AccountArgs) -> Result<CommandOutput, AppErro
             write_profile(&path, &profile)?;
 
             let session = load_wallet_session(cli)?;
-            let taproot_addr = session.wallet.peek_taproot_address(*index).to_string();
+            // Display the first receive address for the active account.
+            let taproot_addr = session.wallet.peek_taproot_address(0).to_string();
             let payment_addr = session
                 .wallet
-                .peek_payment_address(*index)
+                .peek_payment_address(0)
                 .map(|s| s.to_string());
 
             Ok(CommandOutput::AccountUse {

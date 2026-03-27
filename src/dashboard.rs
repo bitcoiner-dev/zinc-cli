@@ -178,11 +178,11 @@ fn activate_session(
     state.ordinals_address = Some(
         session
             .wallet
-            .peek_taproot_address(state.account_index)
+            .peek_taproot_address(0)
             .to_string(),
     );
     state.payment_address = session
         .wallet
-        .peek_payment_address(state.account_index)
+        .peek_payment_address(0)
         .map(|s| s.to_string());
 }

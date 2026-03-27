@@ -541,6 +541,89 @@ fn test_atomic_write_ignores_corrupt_temp_file() {
 }
 
 #[test]
+fn test_account_use_reports_same_addresses_as_address_commands() {
+    let data_dir = unique_data_dir("zinc_test_account_use_addresses");
+    let _ = fs::remove_dir_all(&data_dir);
+    init_wallet(&data_dir, "testpass");
+
+    let mut switch_cmd = cargo_cmd();
+    switch_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "account",
+        "use",
+        "--index",
+        "1",
+    ]);
+    let switch_output = switch_cmd.output().expect("failed to execute process");
+    assert!(
+        switch_output.status.success(),
+        "account use failed: {}",
+        String::from_utf8_lossy(&switch_output.stdout)
+    );
+    let switch_json = parse_json_from_output(&String::from_utf8_lossy(&switch_output.stdout));
+    assert_eq!(switch_json["account_index"], 1);
+
+    let switched_taproot = switch_json["taproot_address"]
+        .as_str()
+        .expect("taproot_address should be present")
+        .to_string();
+    let switched_payment = switch_json["payment_address"]
+        .as_str()
+        .expect("payment_address should be present")
+        .to_string();
+
+    let mut taproot_cmd = cargo_cmd();
+    taproot_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "address",
+        "taproot",
+    ]);
+    let taproot_output = taproot_cmd.output().expect("failed to execute process");
+    assert!(taproot_output.status.success());
+    let taproot_json = parse_json_from_output(&String::from_utf8_lossy(&taproot_output.stdout));
+    let taproot_address = taproot_json["address"]
+        .as_str()
+        .expect("taproot address should be present");
+
+    let mut payment_cmd = cargo_cmd();
+    payment_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "address",
+        "payment",
+    ]);
+    let payment_output = payment_cmd.output().expect("failed to execute process");
+    assert!(payment_output.status.success());
+    let payment_json = parse_json_from_output(&String::from_utf8_lossy(&payment_output.stdout));
+    let payment_address = payment_json["address"]
+        .as_str()
+        .expect("payment address should be present");
+
+    assert_eq!(switched_taproot, taproot_address);
+    assert_eq!(switched_payment, payment_address);
+}
+
+#[test]
 fn test_corrupt_profile_json_maps_to_config_error() {
     let data_dir = unique_data_dir("zinc_test_corrupt_profile");
     let _ = fs::remove_dir_all(&data_dir);

@@ -1,10 +1,10 @@
 use crate::cli::{Cli, PolicyMode, PsbtAction, PsbtArgs};
 use crate::error::AppError;
 use crate::network_retry::with_network_retry;
+use crate::output::CommandOutput;
 use crate::utils::{maybe_write_text, parse_indices, resolve_psbt_source};
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
-use crate::output::CommandOutput;
 use serde_json::{json, Value};
 use zinc_core::*;
 
@@ -45,11 +45,7 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<CommandOutput, AppError> 
             psbt_file,
             psbt_stdin,
         } => {
-            let source = resolve_psbt_source(
-                psbt.as_deref(),
-                psbt_file.as_ref().map(|p| p.to_str().unwrap()),
-                *psbt_stdin,
-            )?;
+            let source = resolve_psbt_source(psbt.as_deref(), psbt_file.as_deref(), *psbt_stdin)?;
             let session = load_wallet_session(cli)?;
             let (parsed, policy) = analyze_psbt_with_policy(&session.wallet, &source)?;
             Ok(CommandOutput::PsbtAnalyze {
@@ -61,7 +57,7 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<CommandOutput, AppError> 
                     "safe_to_send": policy.safe_to_send,
                     "inscription_risk": policy.inscription_risk,
                     "reasons": policy.policy_reasons
-                })
+                }),
             })
         }
         PsbtAction::Sign {
@@ -73,11 +69,7 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<CommandOutput, AppError> 
             finalize,
             out_file,
         } => {
-            let source = resolve_psbt_source(
-                psbt.as_deref(),
-                psbt_file.as_ref().map(|p| p.to_str().unwrap()),
-                *psbt_stdin,
-            )?;
+            let source = resolve_psbt_source(psbt.as_deref(), psbt_file.as_deref(), *psbt_stdin)?;
             let mut session = load_wallet_session(cli)?;
             let (analysis, policy) = analyze_psbt_with_policy(&session.wallet, &source)?;
             enforce_policy_mode(cli, &policy)?;
@@ -111,11 +103,7 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<CommandOutput, AppError> 
             psbt_file,
             psbt_stdin,
         } => {
-            let source = resolve_psbt_source(
-                psbt.as_deref(),
-                psbt_file.as_ref().map(|p| p.to_str().unwrap()),
-                *psbt_stdin,
-            )?;
+            let source = resolve_psbt_source(psbt.as_deref(), psbt_file.as_deref(), *psbt_stdin)?;
             let mut session = load_wallet_session(cli)?;
             let (analysis, policy) = analyze_psbt_with_policy(&session.wallet, &source)?;
             enforce_policy_mode(cli, &policy)?;

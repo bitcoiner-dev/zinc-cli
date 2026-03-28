@@ -2,16 +2,16 @@ use crate::cli::{Cli, WaitAction, WaitArgs};
 use crate::error::AppError;
 use crate::load_wallet_session;
 use crate::network_retry::with_network_retry;
+use crate::output::CommandOutput;
 use crate::wallet_service::map_wallet_error;
 use indicatif::{ProgressBar, ProgressStyle};
-use crate::output::CommandOutput;
 use std::time::Duration;
 use tokio::time::sleep;
 
 pub async fn run(cli: &Cli, args: &WaitArgs) -> Result<CommandOutput, AppError> {
     let mut session = load_wallet_session(cli)?;
 
-    let spinner = if !cli.agent && !cli.quiet {
+    let spinner = if !cli.agent {
         let pb = ProgressBar::new_spinner();
         pb.set_style(
             ProgressStyle::default_spinner()

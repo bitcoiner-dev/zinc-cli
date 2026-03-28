@@ -78,7 +78,7 @@ impl<'a> ConfigResolver<'a> {
     }
 
     pub fn resolve_scheme(&self, profile: Option<&Profile>) -> ResolvedValue<AddressScheme> {
-        // Implementation for scheme...
+        // Priority 1: Explicit CLI
         if let Some(scheme_str) = self.service.scheme_override {
             if let Ok(scheme) = crate::utils::parse_scheme(scheme_str) {
                 return ResolvedValue {
@@ -88,6 +88,7 @@ impl<'a> ConfigResolver<'a> {
             }
         }
 
+        // Priority 2: Profile
         if let Some(profile) = profile {
             return ResolvedValue {
                 value: profile.scheme.into(),
@@ -95,6 +96,7 @@ impl<'a> ConfigResolver<'a> {
             };
         }
 
+        // Priority 3: Global Config
         if let Some(scheme_str) = self.persisted.scheme.as_deref() {
             if let Ok(scheme) = crate::utils::parse_scheme(scheme_str) {
                 return ResolvedValue {
@@ -104,6 +106,7 @@ impl<'a> ConfigResolver<'a> {
             }
         }
 
+        // Priority 4: Default fallback
         ResolvedValue {
             value: AddressScheme::Dual,
             source: ConfigSource::Default,

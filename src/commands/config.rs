@@ -17,7 +17,6 @@ pub async fn run(cli: &Cli, args: &ConfigArgs) -> Result<CommandOutput, AppError
                 "data_dir": cli.data_dir.as_ref().map(|p| p.display().to_string()).or(config.data_dir.clone()).unwrap_or_else(|| "~/.zinc-cli".to_string()),
                 "password_env": cli.password_env.as_ref().or(config.password_env.as_ref()).cloned().unwrap_or_else(|| "ZINC_WALLET_PASSWORD".to_string()),
                 "agent": cli.agent,
-                "quiet": cli.quiet || config.quiet.unwrap_or(false),
                 "defaults": {
                     "network": config.network.clone(),
                     "scheme": config.scheme.clone(),
@@ -35,7 +34,12 @@ pub async fn run(cli: &Cli, args: &ConfigArgs) -> Result<CommandOutput, AppError
             save_persisted_config(&config)?;
             Ok(CommandOutput::ConfigSet {
                 key: field.as_str().to_string(),
-                value: applied.as_str().unwrap_or("").to_string().replace("\"", "").to_string(),
+                value: applied
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string()
+                    .replace("\"", "")
+                    .to_string(),
                 saved: true,
             })
         }

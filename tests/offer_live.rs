@@ -32,7 +32,6 @@ fn cargo_cmd() -> Command {
         "ZINC_CLI_DATA_DIR",
         "ZINC_CLI_PASSWORD_ENV",
         "ZINC_CLI_JSON",
-        "ZINC_CLI_QUIET",
         "ZINC_CLI_NETWORK",
         "ZINC_CLI_SCHEME",
         "ZINC_CLI_ESPLORA_URL",

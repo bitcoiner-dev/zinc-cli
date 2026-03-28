@@ -21,7 +21,6 @@ fn cargo_cmd() -> Command {
         "ZINC_CLI_DATA_DIR",
         "ZINC_CLI_PASSWORD_ENV",
         "ZINC_CLI_JSON",
-        "ZINC_CLI_QUIET",
         "ZINC_CLI_NETWORK",
         "ZINC_CLI_SCHEME",
         "ZINC_CLI_ESPLORA_URL",
@@ -541,6 +540,89 @@ fn test_atomic_write_ignores_corrupt_temp_file() {
 }
 
 #[test]
+fn test_account_use_reports_same_addresses_as_address_commands() {
+    let data_dir = unique_data_dir("zinc_test_account_use_addresses");
+    let _ = fs::remove_dir_all(&data_dir);
+    init_wallet(&data_dir, "testpass");
+
+    let mut switch_cmd = cargo_cmd();
+    switch_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "account",
+        "use",
+        "--index",
+        "1",
+    ]);
+    let switch_output = switch_cmd.output().expect("failed to execute process");
+    assert!(
+        switch_output.status.success(),
+        "account use failed: {}",
+        String::from_utf8_lossy(&switch_output.stdout)
+    );
+    let switch_json = parse_json_from_output(&String::from_utf8_lossy(&switch_output.stdout));
+    assert_eq!(switch_json["account_index"], 1);
+
+    let switched_taproot = switch_json["taproot_address"]
+        .as_str()
+        .expect("taproot_address should be present")
+        .to_string();
+    let switched_payment = switch_json["payment_address"]
+        .as_str()
+        .expect("payment_address should be present")
+        .to_string();
+
+    let mut taproot_cmd = cargo_cmd();
+    taproot_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "address",
+        "taproot",
+    ]);
+    let taproot_output = taproot_cmd.output().expect("failed to execute process");
+    assert!(taproot_output.status.success());
+    let taproot_json = parse_json_from_output(&String::from_utf8_lossy(&taproot_output.stdout));
+    let taproot_address = taproot_json["address"]
+        .as_str()
+        .expect("taproot address should be present");
+
+    let mut payment_cmd = cargo_cmd();
+    payment_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "address",
+        "payment",
+    ]);
+    let payment_output = payment_cmd.output().expect("failed to execute process");
+    assert!(payment_output.status.success());
+    let payment_json = parse_json_from_output(&String::from_utf8_lossy(&payment_output.stdout));
+    let payment_address = payment_json["address"]
+        .as_str()
+        .expect("payment address should be present");
+
+    assert_eq!(switched_taproot, taproot_address);
+    assert_eq!(switched_payment, payment_address);
+}
+
+#[test]
 fn test_corrupt_profile_json_maps_to_config_error() {
     let data_dir = unique_data_dir("zinc_test_corrupt_profile");
     let _ = fs::remove_dir_all(&data_dir);
@@ -608,7 +690,9 @@ fn test_unknown_command_has_suggestion() {
 #[test]
 fn test_unknown_global_flag_has_suggestion() {
     let mut cmd = cargo_cmd();
-    cmd.args(&["run", "--quiet", "--", "--agent", "--jons", "wallet", "info"]);
+    cmd.args(&[
+        "run", "--quiet", "--", "--agent", "--jons", "wallet", "info",
+    ]);
 
     let output = cmd.output().expect("failed to execute process");
     assert!(!output.status.success());
@@ -692,7 +776,6 @@ fn test_config_show_reflects_env_defaults() {
     cmd.env("ZINC_CLI_DATA_DIR", &data_dir);
     cmd.env("ZINC_CLI_PASSWORD_ENV", "BOT_PASS_ENV");
     cmd.env("ZINC_CLI_OUTPUT", "agent");
-    cmd.env("ZINC_CLI_QUIET", "true");
 
     let output = cmd.output().expect("failed to execute process");
     assert!(output.status.success());
@@ -704,7 +787,6 @@ fn test_config_show_reflects_env_defaults() {
     assert_eq!(json["data_dir"], data_dir);
     assert_eq!(json["password_env"], "BOT_PASS_ENV");
     assert_eq!(json["agent"], true);
-    assert_eq!(json["quiet"], true);
 }
 
 #[test]
@@ -824,6 +906,449 @@ fn test_config_set_and_unset_roundtrip() {
 }
 
 #[test]
+fn test_profile_network_wins_over_global_config_network() {
+    let home = unique_data_dir("zinc_test_network_switch_home");
+    fs::create_dir_all(&home).expect("failed to create test home");
+    let data_dir = unique_data_dir("zinc_test_network_switch_data");
+    let _ = fs::remove_dir_all(&data_dir);
+
+    let mut init_cmd = cargo_cmd();
+    init_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "wallet",
+        "init",
+        "--network",
+        "signet",
+        "--scheme",
+        "dual",
+        "--overwrite",
+    ]);
+    init_cmd.env("HOME", &home);
+    let init_output = init_cmd.output().expect("failed to execute process");
+    assert!(
+        init_output.status.success(),
+        "wallet init failed: {}",
+        String::from_utf8_lossy(&init_output.stdout)
+    );
+
+    let mut warm_cache_cmd = cargo_cmd();
+    warm_cache_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "address",
+        "payment",
+    ]);
+    warm_cache_cmd.env("HOME", &home);
+    let warm_cache_output = warm_cache_cmd.output().expect("failed to execute process");
+    assert!(warm_cache_output.status.success());
+    let warm_cache_json =
+        parse_json_from_output(&String::from_utf8_lossy(&warm_cache_output.stdout));
+    let warm_address = warm_cache_json["address"]
+        .as_str()
+        .expect("address should be present");
+    assert!(
+        warm_address.starts_with("tb1"),
+        "expected initial signet/testnet payment address, got {warm_address}"
+    );
+
+    let mut set_cmd = cargo_cmd();
+    set_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--profile",
+        "presto",
+        "config",
+        "set",
+        "network",
+        "mainnet",
+    ]);
+    set_cmd.env("HOME", &home);
+    let set_output = set_cmd.output().expect("failed to execute process");
+    assert!(
+        set_output.status.success(),
+        "config set failed: {}",
+        String::from_utf8_lossy(&set_output.stdout)
+    );
+
+    let mut address_cmd = cargo_cmd();
+    address_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "address",
+        "payment",
+    ]);
+    address_cmd.env("HOME", &home);
+    let address_output = address_cmd.output().expect("failed to execute process");
+    assert!(address_output.status.success());
+    let address_json = parse_json_from_output(&String::from_utf8_lossy(&address_output.stdout));
+    let payment_address = address_json["address"]
+        .as_str()
+        .expect("address should be present");
+    assert!(
+        payment_address.starts_with("tb1"),
+        "expected signet/testnet payment address after global config switch, got {payment_address}"
+    );
+
+    let mut info_cmd = cargo_cmd();
+    info_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "wallet",
+        "info",
+    ]);
+    info_cmd.env("HOME", &home);
+    let info_output = info_cmd.output().expect("failed to execute process");
+    assert!(info_output.status.success());
+    let info_json = parse_json_from_output(&String::from_utf8_lossy(&info_output.stdout));
+    assert_eq!(info_json["network"], "signet");
+    assert_eq!(info_json["esplora_url"], "https://mutinynet.com/api");
+    assert_eq!(info_json["ord_url"], "https://signet.ordinals.com");
+}
+
+#[test]
+fn test_wallet_info_keeps_profile_network_when_global_config_changes() {
+    let home = unique_data_dir("zinc_test_wallet_info_network_home");
+    fs::create_dir_all(&home).expect("failed to create test home");
+    let data_dir = unique_data_dir("zinc_test_wallet_info_network_data");
+    let _ = fs::remove_dir_all(&data_dir);
+
+    let mut init_cmd = cargo_cmd();
+    init_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "wallet",
+        "init",
+        "--network",
+        "signet",
+        "--scheme",
+        "dual",
+        "--overwrite",
+    ]);
+    init_cmd.env("HOME", &home);
+    let init_output = init_cmd.output().expect("failed to execute process");
+    assert!(
+        init_output.status.success(),
+        "wallet init failed: {}",
+        String::from_utf8_lossy(&init_output.stdout)
+    );
+
+    let mut set_cmd = cargo_cmd();
+    set_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--profile",
+        "presto",
+        "config",
+        "set",
+        "network",
+        "mainnet",
+    ]);
+    set_cmd.env("HOME", &home);
+    let set_output = set_cmd.output().expect("failed to execute process");
+    assert!(
+        set_output.status.success(),
+        "config set failed: {}",
+        String::from_utf8_lossy(&set_output.stdout)
+    );
+
+    let mut info_cmd = cargo_cmd();
+    info_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "wallet",
+        "info",
+    ]);
+    info_cmd.env("HOME", &home);
+    let info_output = info_cmd.output().expect("failed to execute process");
+    assert!(info_output.status.success());
+    let info_json = parse_json_from_output(&String::from_utf8_lossy(&info_output.stdout));
+    assert_eq!(info_json["network"], "signet");
+    assert_eq!(info_json["esplora_url"], "https://mutinynet.com/api");
+    assert_eq!(info_json["ord_url"], "https://signet.ordinals.com");
+}
+
+#[test]
+fn test_env_network_override_applies_to_wallet_info_and_address() {
+    let data_dir = unique_data_dir("zinc_test_env_network_override_data");
+    let _ = fs::remove_dir_all(&data_dir);
+    init_wallet(&data_dir, "testpass");
+
+    let mut baseline_info_cmd = cargo_cmd();
+    baseline_info_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "wallet",
+        "info",
+    ]);
+    let baseline_info_output = baseline_info_cmd
+        .output()
+        .expect("failed to execute process");
+    assert!(baseline_info_output.status.success());
+    let baseline_info_json =
+        parse_json_from_output(&String::from_utf8_lossy(&baseline_info_output.stdout));
+    assert_eq!(baseline_info_json["network"], "regtest");
+
+    let mut overridden_info_cmd = cargo_cmd();
+    overridden_info_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "wallet",
+        "info",
+    ]);
+    overridden_info_cmd.env("ZINC_CLI_NETWORK", "mainnet");
+    let overridden_info_output = overridden_info_cmd
+        .output()
+        .expect("failed to execute process");
+    assert!(overridden_info_output.status.success());
+    let overridden_info_json =
+        parse_json_from_output(&String::from_utf8_lossy(&overridden_info_output.stdout));
+    assert_eq!(overridden_info_json["network"], "bitcoin");
+    assert_eq!(
+        overridden_info_json["esplora_url"],
+        "https://m.exittheloop.com/api"
+    );
+    assert_eq!(overridden_info_json["ord_url"], "https://o.exittheloop.com");
+
+    let mut overridden_address_cmd = cargo_cmd();
+    overridden_address_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "address",
+        "payment",
+    ]);
+    overridden_address_cmd.env("ZINC_CLI_NETWORK", "mainnet");
+    let overridden_address_output = overridden_address_cmd
+        .output()
+        .expect("failed to execute process");
+    assert!(overridden_address_output.status.success());
+    let overridden_address_json =
+        parse_json_from_output(&String::from_utf8_lossy(&overridden_address_output.stdout));
+    let payment_address = overridden_address_json["address"]
+        .as_str()
+        .expect("address should be present");
+    assert!(
+        payment_address.starts_with("bc1"),
+        "expected mainnet payment address via env override, got {payment_address}"
+    );
+}
+
+#[test]
+fn test_scheme_config_switch_updates_wallet_info_and_payment_branch() {
+    let home = unique_data_dir("zinc_test_scheme_switch_home");
+    fs::create_dir_all(&home).expect("failed to create test home");
+    let data_dir = unique_data_dir("zinc_test_scheme_switch_data");
+    let _ = fs::remove_dir_all(&data_dir);
+
+    let mut init_cmd = cargo_cmd();
+    init_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "wallet",
+        "init",
+        "--network",
+        "regtest",
+        "--scheme",
+        "dual",
+        "--overwrite",
+    ]);
+    init_cmd.env("HOME", &home);
+    let init_output = init_cmd.output().expect("failed to execute process");
+    assert!(init_output.status.success());
+
+    let mut baseline_payment_cmd = cargo_cmd();
+    baseline_payment_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "address",
+        "payment",
+    ]);
+    baseline_payment_cmd.env("HOME", &home);
+    let baseline_payment_output = baseline_payment_cmd
+        .output()
+        .expect("failed to execute process");
+    assert!(baseline_payment_output.status.success());
+    let baseline_payment_json =
+        parse_json_from_output(&String::from_utf8_lossy(&baseline_payment_output.stdout));
+    let baseline_payment = baseline_payment_json["address"]
+        .as_str()
+        .expect("address should be present");
+    assert!(
+        baseline_payment.starts_with("bcrt1q"),
+        "expected dual-scheme payment branch address, got {baseline_payment}"
+    );
+
+    let mut set_scheme_cmd = cargo_cmd();
+    set_scheme_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--profile",
+        "presto",
+        "config",
+        "set",
+        "scheme",
+        "unified",
+    ]);
+    set_scheme_cmd.env("HOME", &home);
+    let set_scheme_output = set_scheme_cmd.output().expect("failed to execute process");
+    assert!(set_scheme_output.status.success());
+
+    let mut info_cmd = cargo_cmd();
+    info_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "wallet",
+        "info",
+    ]);
+    info_cmd.env("HOME", &home);
+    let info_output = info_cmd.output().expect("failed to execute process");
+    assert!(info_output.status.success());
+    let info_json = parse_json_from_output(&String::from_utf8_lossy(&info_output.stdout));
+    assert_eq!(info_json["scheme"], "unified");
+
+    let mut payment_cmd = cargo_cmd();
+    payment_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "address",
+        "payment",
+    ]);
+    payment_cmd.env("HOME", &home);
+    let payment_output = payment_cmd.output().expect("failed to execute process");
+    assert!(payment_output.status.success());
+    let payment_json = parse_json_from_output(&String::from_utf8_lossy(&payment_output.stdout));
+    let payment_address = payment_json["address"]
+        .as_str()
+        .expect("payment address should be present")
+        .to_string();
+    assert!(
+        payment_address.starts_with("bcrt1p"),
+        "expected unified payment to be taproot branch, got {payment_address}"
+    );
+
+    let mut taproot_cmd = cargo_cmd();
+    taproot_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--profile",
+        "presto",
+        "--password",
+        "testpass",
+        "address",
+        "taproot",
+    ]);
+    taproot_cmd.env("HOME", &home);
+    let taproot_output = taproot_cmd.output().expect("failed to execute process");
+    assert!(taproot_output.status.success());
+    let taproot_json = parse_json_from_output(&String::from_utf8_lossy(&taproot_output.stdout));
+    let taproot_address = taproot_json["address"]
+        .as_str()
+        .expect("taproot address should be present");
+
+    assert_eq!(payment_address, taproot_address);
+}
+
+#[test]
 fn test_setup_persists_defaults_and_wallet_uses_them() {
     let home = unique_data_dir("zinc_test_setup_home");
     fs::create_dir_all(&home).expect("failed to create test home");
@@ -847,8 +1372,6 @@ fn test_setup_persists_defaults_and_wallet_uses_them() {
         "signet",
         "--default-scheme",
         "unified",
-        "--quiet-default",
-        "true",
     ]);
     setup_cmd.env("HOME", &home);
     let setup_output = setup_cmd.output().expect("failed to execute process");

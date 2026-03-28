@@ -83,11 +83,10 @@ pub fn handle_dashboard_event(
                 if let Some(ref w_mutex) = wallet_mutex {
                     let w_clone = Arc::clone(w_mutex);
                     let event_tx_clone = event_tx.clone();
-                    let account_index = state.account_index;
                     tokio::spawn(async move {
                         let w = w_clone.lock().await;
-                        let ordinals = w.peek_taproot_address(account_index).to_string();
-                        let payment = w.peek_payment_address(account_index).map(|s| s.to_string());
+                        let ordinals = w.peek_taproot_address(0).to_string();
+                        let payment = w.peek_payment_address(0).map(|s| s.to_string());
                         let _ = event_tx_clone
                             .send(DashboardEvent::AddressesUpdated { ordinals, payment })
                             .await;

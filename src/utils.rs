@@ -1,7 +1,7 @@
 use crate::config::{NetworkArg, Profile, SchemeArg};
 use crate::error::AppError;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn home_dir() -> PathBuf {
     if let Some(home) = std::env::var_os("HOME") {
@@ -162,7 +162,7 @@ pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
 }
 pub fn resolve_psbt_source(
     psbt: Option<&str>,
-    psbt_file: Option<&str>,
+    psbt_file: Option<&Path>,
     psbt_stdin: bool,
 ) -> Result<String, AppError> {
     let count = (psbt.is_some() as u8) + (psbt_file.is_some() as u8) + (psbt_stdin as u8);
@@ -175,8 +175,9 @@ pub fn resolve_psbt_source(
         return Ok(psbt.to_string());
     }
     if let Some(path) = psbt_file {
-        return std::fs::read_to_string(path)
-            .map_err(|e| AppError::Io(format!("failed to read psbt file {path}: {e}")));
+        return std::fs::read_to_string(path).map_err(|e| {
+            AppError::Io(format!("failed to read psbt file {}: {e}", path.display()))
+        });
     }
     if psbt_stdin {
         use std::io::Read;

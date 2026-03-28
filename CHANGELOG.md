@@ -6,6 +6,23 @@ All notable changes to this project will be documented in this file.
 
 - No changes yet.
 
+## [0.3.0] - 2026-03-27
+
+### Changed
+- Removed `quiet` mode from CLI surface and config plumbing:
+  - removed `--quiet` global flag,
+  - removed `ZINC_CLI_QUIET` env handling,
+  - removed persisted config key `quiet`,
+  - removed setup `--quiet-default`.
+- Updated command contract/docs to reflect the current global flag set.
+- Improved wallet/account config resolution and wallet-info consistency with effective runtime network/scheme values.
+- Improved wallet-info recency presentation in human output.
+
+### Fixed
+- Fixed account-switch address preview paths to use receive index `0` consistently.
+- Refined offer/PSBT input-source handling and stdin conflict validation.
+- Updated dependency pin to `zinc-core = =0.1.2`.
+
 ## [0.2.1] - 2026-03-26
 
 ### Fixed

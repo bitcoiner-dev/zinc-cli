@@ -175,12 +175,7 @@ fn activate_session(
     state.network = Some(resolved_network.value);
     state.profile_name = Some(resolved_profile);
 
-    state.ordinals_address = Some(
-        session
-            .wallet
-            .peek_taproot_address(0)
-            .to_string(),
-    );
+    state.ordinals_address = Some(session.wallet.peek_taproot_address(0).to_string());
     state.payment_address = session
         .wallet
         .peek_payment_address(0)

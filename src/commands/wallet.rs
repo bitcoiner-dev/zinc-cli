@@ -79,7 +79,11 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 bitcoin_cli: default_bitcoin_cli(),
                 bitcoin_cli_args: default_bitcoin_cli_args().join(" "),
                 phrase,
-                words: if cli.reveal || !cli.agent { Some(wallet.words.len()) } else { None },
+                words: if cli.reveal || !cli.agent {
+                    Some(wallet.words.len())
+                } else {
+                    None
+                },
             })
         }
         WalletAction::Import {
@@ -133,7 +137,11 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 scheme: scheme_arg.to_string(),
                 account_index: 0,
                 imported: true,
-                phrase: if cli.reveal || !cli.agent { Some(mnemonic.to_string()) } else { None },
+                phrase: if cli.reveal || !cli.agent {
+                    Some(mnemonic.to_string())
+                } else {
+                    None
+                },
             })
         }
         WalletAction::Info => {

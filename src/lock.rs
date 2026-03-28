@@ -22,14 +22,21 @@ impl ProfileLock {
         let lock_path = profile_path.with_extension("lock");
 
         if let Some(parent) = lock_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
+            crate::paths::create_secure_dir_all(parent).map_err(|e| {
                 crate::error::AppError::Config(format!("failed to create lock dir: {e}"))
             })?;
         }
 
-        let file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+
+        let file = options
             .open(&lock_path)
             .map_err(|_| AppError::Config("profile is locked by another instance".to_string()))?;
 

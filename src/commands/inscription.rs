@@ -12,11 +12,7 @@ pub async fn run(cli: &Cli, _args: &InscriptionArgs) -> Result<CommandOutput, Ap
     let display_items = if !cli.thumb_enabled() {
         None
     } else {
-        Some(get_inscription_display_items(
-            &session.profile.ord_url,
-            &sorted_inscriptions,
-        )
-        .await)
+        Some(get_inscription_display_items(&session.profile.ord_url, &sorted_inscriptions).await)
     };
 
     Ok(CommandOutput::InscriptionList {

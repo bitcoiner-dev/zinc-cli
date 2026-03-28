@@ -1,8 +1,8 @@
 use crate::cli::{AddressArgs, AddressKind, Cli};
 use crate::error::AppError;
+use crate::output::CommandOutput;
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
-use crate::output::CommandOutput;
 
 pub async fn run(cli: &Cli, args: &AddressArgs) -> Result<CommandOutput, AppError> {
     let mut session = load_wallet_session(cli)?;

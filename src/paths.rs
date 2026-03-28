@@ -25,8 +25,8 @@ pub fn write_secure_file<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::R
     let path = path.as_ref();
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
         use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
         let mut options = fs::OpenOptions::new();
         options.write(true).create(true).truncate(true).mode(0o600);
         let mut file = options.open(path)?;

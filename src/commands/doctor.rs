@@ -1,7 +1,7 @@
 use crate::cli::Cli;
 use crate::error::AppError;
-use crate::{profile_path, read_profile};
 use crate::output::CommandOutput;
+use crate::{profile_path, read_profile};
 use zinc_core::{OrdClient, ZincWallet};
 
 pub async fn run(cli: &Cli) -> Result<CommandOutput, AppError> {

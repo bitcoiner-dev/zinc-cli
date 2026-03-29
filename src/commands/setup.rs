@@ -129,6 +129,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
 
         let profile = Profile {
             version: 1,
+            scan_policy_version: crate::config::SCAN_POLICY_VERSION_MAIN_ONLY,
             network,
             scheme,
             account_index: 0,

@@ -49,6 +49,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
 
             let profile = Profile {
                 version: 1,
+                scan_policy_version: crate::config::SCAN_POLICY_VERSION_MAIN_ONLY,
                 network: network_arg,
                 scheme: scheme_arg,
                 account_index: 0,
@@ -79,7 +80,11 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 bitcoin_cli: default_bitcoin_cli(),
                 bitcoin_cli_args: default_bitcoin_cli_args().join(" "),
                 phrase,
-                words: if cli.reveal || !cli.agent { Some(wallet.words.len()) } else { None },
+                words: if cli.reveal || !cli.agent {
+                    Some(wallet.words.len())
+                } else {
+                    None
+                },
             })
         }
         WalletAction::Import {
@@ -114,6 +119,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 .map_err(|e| AppError::Internal(format!("failed to encrypt mnemonic: {e}")))?;
             let profile = Profile {
                 version: 1,
+                scan_policy_version: crate::config::SCAN_POLICY_VERSION_MAIN_ONLY,
                 network: network_arg,
                 scheme: scheme_arg,
                 account_index: 0,
@@ -133,7 +139,11 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 scheme: scheme_arg.to_string(),
                 account_index: 0,
                 imported: true,
-                phrase: if cli.reveal || !cli.agent { Some(mnemonic.to_string()) } else { None },
+                phrase: if cli.reveal || !cli.agent {
+                    Some(mnemonic.to_string())
+                } else {
+                    None
+                },
             })
         }
         WalletAction::Info => {

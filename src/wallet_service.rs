@@ -111,6 +111,9 @@ pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<String, AppError> {
 pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, AppError> {
     let path = profile_path(config)?;
     let mut profile = read_profile(&path)?;
+    if apply_scan_policy_migration(&mut profile) {
+        write_profile(&path, &profile)?;
+    }
 
     // Use ConfigResolver to apply overrides correctly
     let persisted = load_persisted_config().unwrap_or_default();
@@ -188,6 +191,20 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
     })
 }
 
+fn apply_scan_policy_migration(profile: &mut Profile) -> bool {
+    if profile.scan_policy_version >= SCAN_POLICY_VERSION_MAIN_ONLY {
+        return false;
+    }
+
+    for state in profile.accounts.values_mut() {
+        state.persistence_json = None;
+        state.inscriptions_json = None;
+    }
+    profile.scan_policy_version = SCAN_POLICY_VERSION_MAIN_ONLY;
+    profile.updated_at_unix = now_unix();
+    true
+}
+
 pub fn persist_wallet_session(session: &mut WalletSession) -> Result<(), AppError> {
     let persistence = session
         .wallet
@@ -231,4 +248,54 @@ pub fn run_bitcoin_cli(profile: &Profile, args: &[String]) -> Result<String, App
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use crate::config::{AccountState, NetworkArg, Profile, SchemeArg};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn scan_policy_migration_clears_cached_account_state_once() {
+        let mut accounts = BTreeMap::new();
+        accounts.insert(
+            0,
+            AccountState {
+                persistence_json: Some("{\"mock\":true}".to_string()),
+                inscriptions_json: Some("[{\"id\":\"i0\"}]".to_string()),
+            },
+        );
+        accounts.insert(
+            1,
+            AccountState {
+                persistence_json: Some("{\"mock\":true}".to_string()),
+                inscriptions_json: None,
+            },
+        );
+
+        let mut profile = Profile {
+            version: 1,
+            scan_policy_version: 0,
+            network: NetworkArg::Regtest,
+            scheme: SchemeArg::Dual,
+            account_index: 0,
+            esplora_url: "https://regtest.exittheloop.com/api".to_string(),
+            ord_url: "https://ord-regtest.exittheloop.com".to_string(),
+            bitcoin_cli: "bitcoin-cli".to_string(),
+            bitcoin_cli_args: vec!["-regtest".to_string()],
+            encrypted_mnemonic: "encrypted".to_string(),
+            accounts,
+            updated_at_unix: 123,
+        };
+
+        assert!(apply_scan_policy_migration(&mut profile));
+        assert_eq!(profile.scan_policy_version, SCAN_POLICY_VERSION_MAIN_ONLY);
+        assert!(profile
+            .accounts
+            .values()
+            .all(|state| state.persistence_json.is_none() && state.inscriptions_json.is_none()));
+
+        let migrated_updated_at = profile.updated_at_unix;
+        assert!(!apply_scan_policy_migration(&mut profile));
+        assert_eq!(profile.scan_policy_version, SCAN_POLICY_VERSION_MAIN_ONLY);
+        assert_eq!(profile.updated_at_unix, migrated_updated_at);
+    }
+}

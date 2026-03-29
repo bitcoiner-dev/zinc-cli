@@ -279,6 +279,8 @@ impl From<AddressScheme> for SchemeArg {
     }
 }
 
+pub const SCAN_POLICY_VERSION_MAIN_ONLY: u32 = 1;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AccountState {
     pub persistence_json: Option<String>,
@@ -288,6 +290,8 @@ pub struct AccountState {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Profile {
     pub version: u32,
+    #[serde(default)]
+    pub scan_policy_version: u32,
     pub network: NetworkArg,
     pub scheme: SchemeArg,
     pub account_index: u32,

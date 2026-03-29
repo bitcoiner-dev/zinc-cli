@@ -7,23 +7,10 @@ use crate::{load_wallet_session, persist_wallet_session};
 use indicatif::{ProgressBar, ProgressStyle};
 
 pub async fn run(cli: &Cli, args: &SyncArgs) -> Result<CommandOutput, AppError> {
-    let spinner = if !cli.agent {
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .template("{spinner:.green} {msg}")
-                .unwrap(),
-        );
-        pb.set_message("Syncing wallet...");
-        pb.enable_steady_tick(std::time::Duration::from_millis(100));
-        Some(pb)
-    } else {
-        None
-    };
-
-    let result = match &args.target {
+    match &args.target {
         SyncTarget::Chain => {
             let mut session = load_wallet_session(cli)?;
+            let spinner = make_spinner(cli, "Syncing wallet...");
             let esplora_url = session.profile.esplora_url.clone();
             let events = with_network_retry(cli, "sync chain", &mut session.wallet, |wallet| {
                 let url = esplora_url.clone();
@@ -31,13 +18,14 @@ pub async fn run(cli: &Cli, args: &SyncArgs) -> Result<CommandOutput, AppError> 
             })
             .await?;
             persist_wallet_session(&mut session)?;
-            CommandOutput::SyncChain { events }
+            if let Some(pb) = spinner {
+                pb.finish_and_clear();
+            }
+            Ok(CommandOutput::SyncChain { events })
         }
         SyncTarget::Ordinals => {
             let mut session = load_wallet_session(cli)?;
-            if let Some(ref pb) = spinner {
-                pb.set_message("Syncing ordinals...");
-            }
+            let spinner = make_spinner(cli, "Syncing ordinals...");
             let ord_url = session.profile.ord_url.clone();
             let count = with_network_retry(cli, "sync ordinals", &mut session.wallet, |wallet| {
                 let url = ord_url.clone();
@@ -45,15 +33,28 @@ pub async fn run(cli: &Cli, args: &SyncArgs) -> Result<CommandOutput, AppError> 
             })
             .await?;
             persist_wallet_session(&mut session)?;
-            CommandOutput::SyncOrdinals {
-                inscriptions: count,
+            if let Some(pb) = spinner {
+                pb.finish_and_clear();
             }
+            Ok(CommandOutput::SyncOrdinals {
+                inscriptions: count,
+            })
         }
-    };
+    }
+}
 
-    if let Some(pb) = spinner {
-        pb.finish_with_message("Sync complete!");
+fn make_spinner(cli: &Cli, message: &str) -> Option<ProgressBar> {
+    if cli.agent {
+        return None;
     }
 
-    Ok(result)
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {msg}")
+            .unwrap(),
+    );
+    pb.set_message(message.to_string());
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    Some(pb)
 }

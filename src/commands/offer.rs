@@ -92,14 +92,23 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<CommandOutput, AppError>
                 })?;
             let expires_unix = i64::try_from(expires_u64)
                 .map_err(|_| AppError::Invalid("expires_at_unix is out of range".to_string()))?;
+            let main_payment_address = session
+                .wallet
+                .peek_payment_address(0)
+                .map(|address| address.to_string())
+                .ok_or_else(|| {
+                    AppError::Internal("wallet main payment address unavailable".to_string())
+                })?;
+            let resolved_seller_payout_address = resolve_seller_payout_address(
+                &main_payment_address,
+                seller_payout_address.as_deref(),
+            )?;
 
             let request = CreateOfferRequest {
                 inscription_id: inscription.clone(),
                 seller_outpoint: inscription_details.satpoint.outpoint,
                 seller_input_address: output_details.address.clone(),
-                seller_payout_address: seller_payout_address
-                    .clone()
-                    .unwrap_or_else(|| output_details.address.clone()),
+                seller_payout_address: resolved_seller_payout_address,
                 seller_output_value_sats: postage_sats,
                 ask_sats: *amount,
                 fee_rate_sat_vb: *fee_rate,
@@ -639,6 +648,21 @@ fn assert_offer_expectations(
     Ok(())
 }
 
+fn resolve_seller_payout_address(
+    main_payment_address: &str,
+    provided: Option<&str>,
+) -> Result<String, AppError> {
+    if let Some(provided) = provided {
+        if !provided.eq_ignore_ascii_case(main_payment_address) {
+            return Err(AppError::Invalid(format!(
+                "--seller-payout-address must match wallet main payment address {}",
+                main_payment_address
+            )));
+        }
+    }
+    Ok(main_payment_address.to_string())
+}
+
 fn assert_offer_network_matches_profile(
     offer: &OfferEnvelopeV1,
     network: NetworkArg,
@@ -685,7 +709,10 @@ fn map_offer_error<E: ToString>(err: E) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::{abbreviate, assert_offer_expectations, map_offer_error, resolve_offer_source};
+    use super::{
+        abbreviate, assert_offer_expectations, map_offer_error, resolve_offer_source,
+        resolve_seller_payout_address,
+    };
     use crate::error::AppError;
     use std::path::Path;
     use zinc_core::OfferEnvelopeV1;
@@ -760,5 +787,27 @@ mod tests {
         let value = "1234567890abcdef1234567890abcdef";
         let short = abbreviate(value, 6, 4);
         assert_eq!(short, "123456...cdef");
+    }
+
+    #[test]
+    fn resolve_seller_payout_address_defaults_to_main_payment() {
+        let resolved =
+            resolve_seller_payout_address("bcrt1pmainpayment", None).expect("should resolve");
+        assert_eq!(resolved, "bcrt1pmainpayment");
+    }
+
+    #[test]
+    fn resolve_seller_payout_address_rejects_non_main_address() {
+        let err =
+            resolve_seller_payout_address("bcrt1pmainpayment", Some("bcrt1pdifferentpayment"))
+                .expect_err("must reject");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn resolve_seller_payout_address_accepts_case_insensitive_match() {
+        let resolved = resolve_seller_payout_address("bc1pmainpayment", Some("BC1PMAINPAYMENT"))
+            .expect("should resolve");
+        assert_eq!(resolved, "bc1pmainpayment");
     }
 }

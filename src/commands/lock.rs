@@ -1,8 +1,8 @@
 use crate::cli::{Cli, LockAction, LockArgs};
 use crate::error::AppError;
+use crate::output::CommandOutput;
 use crate::wallet_service::now_unix;
 use crate::{confirm, profile_lock_path, read_lock_metadata};
-use crate::output::CommandOutput;
 use std::fs;
 
 pub async fn run(cli: &Cli, args: &LockArgs) -> Result<CommandOutput, AppError> {

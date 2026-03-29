@@ -93,7 +93,7 @@ pub(crate) fn best_match<'a>(needle: &str, candidates: &'a [&'a str]) -> Option<
 
 pub fn maybe_write_text(path: Option<&str>, text: &str) -> Result<(), crate::error::AppError> {
     if let Some(path) = path {
-        std::fs::write(path, text)
+        crate::paths::write_secure_file(path, text.as_bytes())
             .map_err(|e| crate::error::AppError::Io(format!("failed to write to {path}: {e}")))
     } else {
         Ok(())

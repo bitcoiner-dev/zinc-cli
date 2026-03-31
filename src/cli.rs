@@ -409,6 +409,29 @@ pub enum IntentPairAction {
         #[arg(long)]
         ack_code: Option<String>,
     },
+    List {},
+    Show {
+        #[arg(long)]
+        pairing_id: String,
+    },
+    Pause {
+        #[arg(long)]
+        pairing_id: String,
+        #[arg(long)]
+        now_unix: Option<u64>,
+    },
+    Resume {
+        #[arg(long)]
+        pairing_id: String,
+        #[arg(long)]
+        now_unix: Option<u64>,
+    },
+    Revoke {
+        #[arg(long)]
+        pairing_id: String,
+        #[arg(long)]
+        now_unix: Option<u64>,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -845,6 +868,69 @@ mod tests {
                     assert_eq!(ack_code, Some("zincack1_deadbeef".to_string()));
                 }
                 _ => panic!("expected pair finish action"),
+            },
+            _ => panic!("expected pair command"),
+        }
+    }
+
+    #[test]
+    fn parses_pair_list_alias_subcommand() {
+        let cli = Cli::try_parse_from(["zinc-cli", "pair", "list"]).expect("cli parse");
+
+        match cli.command {
+            Command::Pair(args) => match args.action {
+                IntentPairAction::List {} => {}
+                _ => panic!("expected pair list action"),
+            },
+            _ => panic!("expected pair command"),
+        }
+    }
+
+    #[test]
+    fn parses_pair_show_alias_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "pair",
+            "show",
+            "--pairing-id",
+            "deadbeef",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Pair(args) => match args.action {
+                IntentPairAction::Show { pairing_id } => {
+                    assert_eq!(pairing_id, "deadbeef".to_string());
+                }
+                _ => panic!("expected pair show action"),
+            },
+            _ => panic!("expected pair command"),
+        }
+    }
+
+    #[test]
+    fn parses_pair_revoke_alias_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "pair",
+            "revoke",
+            "--pairing-id",
+            "deadbeef",
+            "--now-unix",
+            "1710000000",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Pair(args) => match args.action {
+                IntentPairAction::Revoke {
+                    pairing_id,
+                    now_unix,
+                } => {
+                    assert_eq!(pairing_id, "deadbeef".to_string());
+                    assert_eq!(now_unix, Some(1_710_000_000));
+                }
+                _ => panic!("expected pair revoke action"),
             },
             _ => panic!("expected pair command"),
         }

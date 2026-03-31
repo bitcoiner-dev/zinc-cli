@@ -1,6 +1,6 @@
 use crate::cli::{Cli, IntentAction, IntentArgs, IntentPairAction, IntentPairArgs};
 use crate::error::AppError;
-use crate::output::CommandOutput;
+use crate::output::{CommandOutput, IntentPairLinkEntry};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,10 @@ const MAX_PAIRING_URI_CHARS: usize = 8 * 1024;
 const MAX_PAIRING_REQUEST_JSON_BYTES: usize = 16 * 1024;
 const MAX_PAIRING_ACK_JSON_BYTES: usize = 16 * 1024;
 const PAIRING_ACK_CODE_PREFIX: &str = "zincack1_";
+const LINK_STATUS_ACTIVE: &str = "active";
+const LINK_STATUS_PAUSED: &str = "paused";
+const LINK_STATUS_REVOKED: &str = "revoked";
+const LINK_STATUS_ROTATED: &str = "rotated";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,7 +71,20 @@ struct LinkedWalletV1 {
     request_expires_at_unix: i64,
     ack_expires_at_unix: i64,
     linked_at_unix: i64,
+    #[serde(default = "default_link_status")]
     status: String,
+    #[serde(default)]
+    status_updated_at_unix: Option<i64>,
+    #[serde(default)]
+    paused_at_unix: Option<i64>,
+    #[serde(default)]
+    revoked_at_unix: Option<i64>,
+    #[serde(default)]
+    rotated_by_pairing_id: Option<String>,
+}
+
+fn default_link_status() -> String {
+    LINK_STATUS_ACTIVE.to_string()
 }
 
 pub async fn run(cli: &Cli, args: &IntentArgs) -> Result<CommandOutput, AppError> {
@@ -240,6 +257,20 @@ fn run_pair_action(cli: &Cli, action: &IntentPairAction) -> Result<CommandOutput
             ack_file.as_deref(),
             ack_code.as_deref(),
         ),
+        IntentPairAction::List {} => run_pair_list(cli),
+        IntentPairAction::Show { pairing_id } => run_pair_show(cli, pairing_id),
+        IntentPairAction::Pause {
+            pairing_id,
+            now_unix,
+        } => run_pair_set_status(cli, pairing_id, LINK_STATUS_PAUSED, *now_unix),
+        IntentPairAction::Resume {
+            pairing_id,
+            now_unix,
+        } => run_pair_set_status(cli, pairing_id, LINK_STATUS_ACTIVE, *now_unix),
+        IntentPairAction::Revoke {
+            pairing_id,
+            now_unix,
+        } => run_pair_set_status(cli, pairing_id, LINK_STATUS_REVOKED, *now_unix),
     }
 }
 
@@ -387,6 +418,229 @@ fn run_pair_finish(
             links_path: links_path.display().to_string(),
         })
     }
+}
+
+fn run_pair_list(cli: &Cli) -> Result<CommandOutput, AppError> {
+    let links_path = intent_links_path(cli)?;
+    let store = load_link_store(&links_path)?;
+    let entries: Vec<IntentPairLinkEntry> = store.links.iter().map(link_to_entry).collect();
+
+    let active = entries
+        .iter()
+        .filter(|entry| entry.status == LINK_STATUS_ACTIVE)
+        .count();
+    let paused = entries
+        .iter()
+        .filter(|entry| entry.status == LINK_STATUS_PAUSED)
+        .count();
+    let revoked = entries
+        .iter()
+        .filter(|entry| entry.status == LINK_STATUS_REVOKED)
+        .count();
+    let rotated = entries
+        .iter()
+        .filter(|entry| entry.status == LINK_STATUS_ROTATED)
+        .count();
+
+    if cli.agent {
+        Ok(CommandOutput::Generic(json!({
+            "schemaVersion": "intent-links-v1",
+            "linksPath": links_path.display().to_string(),
+            "total": entries.len(),
+            "statusCounts": {
+                "active": active,
+                "paused": paused,
+                "revoked": revoked,
+                "rotated": rotated
+            },
+            "links": entries
+        })))
+    } else {
+        Ok(CommandOutput::IntentPairList {
+            links_path: links_path.display().to_string(),
+            total: entries.len(),
+            active,
+            paused,
+            revoked,
+            rotated,
+            links: entries,
+        })
+    }
+}
+
+fn run_pair_show(cli: &Cli, pairing_id_selector: &str) -> Result<CommandOutput, AppError> {
+    let links_path = intent_links_path(cli)?;
+    let store = load_link_store(&links_path)?;
+    let index = find_link_index(&store.links, pairing_id_selector)?;
+    let entry = link_to_entry(&store.links[index]);
+
+    if cli.agent {
+        Ok(CommandOutput::Generic(json!({
+            "schemaVersion": "intent-link-v1",
+            "linksPath": links_path.display().to_string(),
+            "link": entry
+        })))
+    } else {
+        Ok(CommandOutput::IntentPairShow {
+            links_path: links_path.display().to_string(),
+            link: entry,
+        })
+    }
+}
+
+fn run_pair_set_status(
+    cli: &Cli,
+    pairing_id_selector: &str,
+    requested_status: &str,
+    now_unix: Option<u64>,
+) -> Result<CommandOutput, AppError> {
+    let now_unix = i64::try_from(now_unix.unwrap_or_else(current_unix))
+        .map_err(|_| AppError::Invalid("now_unix is out of range".to_string()))?;
+    let target_status = normalize_link_status(requested_status).to_string();
+
+    let links_path = intent_links_path(cli)?;
+    let mut store = load_link_store(&links_path)?;
+    let index = find_link_index(&store.links, pairing_id_selector)?;
+    let link = store
+        .links
+        .get_mut(index)
+        .ok_or_else(|| AppError::Internal("link index out of bounds".to_string()))?;
+
+    let current_status = normalize_link_status(&link.status).to_string();
+    validate_status_transition(&current_status, &target_status)?;
+
+    link.status = target_status.clone();
+    link.status_updated_at_unix = Some(now_unix);
+    if target_status == LINK_STATUS_PAUSED {
+        link.paused_at_unix = Some(now_unix);
+    }
+    if target_status == LINK_STATUS_ACTIVE {
+        link.paused_at_unix = None;
+    }
+    if target_status == LINK_STATUS_REVOKED {
+        link.revoked_at_unix = Some(now_unix);
+    }
+
+    let updated_entry = link_to_entry(link);
+    save_link_store(&links_path, &store)?;
+
+    if cli.agent {
+        Ok(CommandOutput::Generic(json!({
+            "schemaVersion": "intent-link-status-v1",
+            "updated": true,
+            "linksPath": links_path.display().to_string(),
+            "link": updated_entry
+        })))
+    } else {
+        Ok(CommandOutput::IntentPairStatusUpdate {
+            links_path: links_path.display().to_string(),
+            pairing_id: updated_entry.pairing_id.clone(),
+            fingerprint: updated_entry.fingerprint.clone(),
+            status: updated_entry.status.clone(),
+            updated_at_unix: now_unix,
+        })
+    }
+}
+
+fn link_to_entry(link: &LinkedWalletV1) -> IntentPairLinkEntry {
+    IntentPairLinkEntry {
+        pairing_id: link.pairing_id.clone(),
+        fingerprint: pairing_fingerprint(&link.pairing_id),
+        agent_pubkey_hex: link.agent_pubkey_hex.clone(),
+        wallet_pubkey_hex: link.wallet_pubkey_hex.clone(),
+        status: normalize_link_status(&link.status).to_string(),
+        send_allowed: normalize_link_status(&link.status) == LINK_STATUS_ACTIVE,
+        linked_at_unix: link.linked_at_unix,
+        status_updated_at_unix: link.status_updated_at_unix,
+        request_expires_at_unix: link.request_expires_at_unix,
+        ack_expires_at_unix: link.ack_expires_at_unix,
+        granted_capabilities: serde_json::to_value(&link.granted_capabilities)
+            .unwrap_or_else(|_| json!({})),
+    }
+}
+
+fn normalize_link_status(status: &str) -> &'static str {
+    match status.trim().to_ascii_lowercase().as_str() {
+        LINK_STATUS_ACTIVE => LINK_STATUS_ACTIVE,
+        LINK_STATUS_PAUSED => LINK_STATUS_PAUSED,
+        LINK_STATUS_REVOKED => LINK_STATUS_REVOKED,
+        LINK_STATUS_ROTATED => LINK_STATUS_ROTATED,
+        _ => LINK_STATUS_PAUSED,
+    }
+}
+
+fn validate_status_transition(current: &str, next: &str) -> Result<(), AppError> {
+    if current == next {
+        return Ok(());
+    }
+
+    match (current, next) {
+        (LINK_STATUS_ACTIVE, LINK_STATUS_PAUSED)
+        | (LINK_STATUS_ACTIVE, LINK_STATUS_REVOKED)
+        | (LINK_STATUS_PAUSED, LINK_STATUS_ACTIVE)
+        | (LINK_STATUS_PAUSED, LINK_STATUS_REVOKED)
+        | (LINK_STATUS_ROTATED, LINK_STATUS_REVOKED) => Ok(()),
+        (LINK_STATUS_REVOKED, _) => Err(AppError::Invalid(
+            "revoked links cannot change state".to_string(),
+        )),
+        _ => Err(AppError::Invalid(format!(
+            "invalid status transition from `{current}` to `{next}`"
+        ))),
+    }
+}
+
+#[cfg(test)]
+fn assert_link_allows_intents(link: &LinkedWalletV1) -> Result<(), AppError> {
+    match normalize_link_status(&link.status) {
+        LINK_STATUS_ACTIVE => Ok(()),
+        LINK_STATUS_PAUSED => Err(AppError::Policy(
+            "linked agent is paused; resume it before sending intents".to_string(),
+        )),
+        LINK_STATUS_REVOKED => Err(AppError::Policy(
+            "linked agent is revoked; create a new pairing before sending intents".to_string(),
+        )),
+        LINK_STATUS_ROTATED => Err(AppError::Policy(
+            "linked agent was rotated by a newer pairing; use the latest active pairing".to_string(),
+        )),
+        _ => Err(AppError::Policy(
+            "linked agent is not in an active state".to_string(),
+        )),
+    }
+}
+
+fn find_link_index(links: &[LinkedWalletV1], pairing_id_selector: &str) -> Result<usize, AppError> {
+    let selector = pairing_id_selector.trim().to_ascii_lowercase();
+    if selector.is_empty() {
+        return Err(AppError::Invalid(
+            "--pairing-id must be a non-empty pairing id or prefix".to_string(),
+        ));
+    }
+
+    if let Some((index, _)) = links
+        .iter()
+        .enumerate()
+        .find(|(_, link)| link.pairing_id.eq_ignore_ascii_case(&selector))
+    {
+        return Ok(index);
+    }
+
+    let mut matches = links
+        .iter()
+        .enumerate()
+        .filter(|(_, link)| link.pairing_id.to_ascii_lowercase().starts_with(&selector))
+        .map(|(index, _)| index);
+
+    let first = matches.next().ok_or_else(|| {
+        AppError::NotFound(format!(
+            "no link found for pairing id selector `{pairing_id_selector}`"
+        ))
+    })?;
+    if matches.next().is_some() {
+        return Err(AppError::Invalid(format!(
+            "pairing id selector `{pairing_id_selector}` is ambiguous; provide more characters"
+        )));
+    }
+    Ok(first)
 }
 
 fn to_json_value<T: Serialize>(value: &T, label: &str) -> Result<Value, AppError> {
@@ -754,8 +1008,15 @@ fn load_link_store(path: &Path) -> Result<IntentLinkStoreV1, AppError> {
     }
     let raw = std::fs::read_to_string(path)
         .map_err(|e| AppError::Config(format!("failed to read intent links: {e}")))?;
-    serde_json::from_str(&raw)
-        .map_err(|e| AppError::Config(format!("failed to parse intent links json: {e}")))
+    let mut store: IntentLinkStoreV1 = serde_json::from_str(&raw)
+        .map_err(|e| AppError::Config(format!("failed to parse intent links json: {e}")))?;
+    if store.schema_version.trim().is_empty() {
+        store.schema_version = "intent-link-store-v1".to_string();
+    }
+    for link in &mut store.links {
+        link.status = normalize_link_status(&link.status).to_string();
+    }
+    Ok(store)
 }
 
 fn save_link_store(path: &Path, store: &IntentLinkStoreV1) -> Result<(), AppError> {
@@ -776,11 +1037,30 @@ fn build_link_from_approval(
         request_expires_at_unix: approval.request_expires_at_unix,
         ack_expires_at_unix: approval.ack_expires_at_unix,
         linked_at_unix,
-        status: "active".to_string(),
+        status: LINK_STATUS_ACTIVE.to_string(),
+        status_updated_at_unix: Some(linked_at_unix),
+        paused_at_unix: None,
+        revoked_at_unix: None,
+        rotated_by_pairing_id: None,
     }
 }
 
 fn upsert_link(store: &mut IntentLinkStoreV1, new_link: LinkedWalletV1) {
+    for existing in &mut store.links {
+        if existing.pairing_id == new_link.pairing_id {
+            continue;
+        }
+        let existing_status = normalize_link_status(&existing.status);
+        if existing.agent_pubkey_hex == new_link.agent_pubkey_hex
+            && existing.wallet_pubkey_hex == new_link.wallet_pubkey_hex
+            && existing_status != LINK_STATUS_REVOKED
+        {
+            existing.status = LINK_STATUS_ROTATED.to_string();
+            existing.status_updated_at_unix = Some(new_link.linked_at_unix);
+            existing.rotated_by_pairing_id = Some(new_link.pairing_id.clone());
+        }
+    }
+
     store
         .links
         .retain(|link| link.pairing_id != new_link.pairing_id);
@@ -819,12 +1099,14 @@ fn map_intent_error<E: ToString>(err: E) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_fixture_bundle, default_pairing_capabilities, latest_pairing_request_path,
-        map_intent_error, pairing_ack_code_from_json, pairing_ack_json_from_code,
-        pairing_request_json_from_uri, pairing_uri_from_request_json, parse_fixture_bundle,
-        resolve_fixture_source, resolve_json_source, run_pair_finish, run_pair_start, upsert_link,
+        assert_link_allows_intents, build_fixture_bundle, default_pairing_capabilities,
+        latest_pairing_request_path, map_intent_error, pairing_ack_code_from_json,
+        pairing_ack_json_from_code, pairing_request_json_from_uri, pairing_uri_from_request_json,
+        parse_fixture_bundle, resolve_fixture_source, resolve_json_source, run_pair_finish,
+        run_pair_list, run_pair_set_status, run_pair_show, run_pair_start, upsert_link,
         IntentLinkStoreV1, LinkedWalletV1, DEFAULT_AGENT_SECRET_KEY_HEX,
-        DEFAULT_WALLET_SECRET_KEY_HEX, MAX_PAIRING_URI_CHARS,
+        DEFAULT_WALLET_SECRET_KEY_HEX, LINK_STATUS_ACTIVE, LINK_STATUS_PAUSED,
+        LINK_STATUS_REVOKED, LINK_STATUS_ROTATED, MAX_PAIRING_URI_CHARS,
     };
     use crate::cli::Cli;
     use crate::error::AppError;
@@ -934,7 +1216,11 @@ mod tests {
                 request_expires_at_unix: 10,
                 ack_expires_at_unix: 11,
                 linked_at_unix: 1,
-                status: "active".to_string(),
+                status: LINK_STATUS_ACTIVE.to_string(),
+                status_updated_at_unix: Some(1),
+                paused_at_unix: None,
+                revoked_at_unix: None,
+                rotated_by_pairing_id: None,
             }],
         };
 
@@ -948,13 +1234,87 @@ mod tests {
                 request_expires_at_unix: 20,
                 ack_expires_at_unix: 21,
                 linked_at_unix: 2,
-                status: "active".to_string(),
+                status: LINK_STATUS_ACTIVE.to_string(),
+                status_updated_at_unix: Some(2),
+                paused_at_unix: None,
+                revoked_at_unix: None,
+                rotated_by_pairing_id: None,
             },
         );
 
         assert_eq!(store.links.len(), 1);
         assert_eq!(store.links[0].agent_pubkey_hex, "3".repeat(64));
         assert_eq!(store.links[0].linked_at_unix, 2);
+    }
+
+    #[test]
+    fn upsert_link_rotates_prior_active_link_for_same_agent_wallet() {
+        let capabilities = default_pairing_capabilities("regtest");
+        let mut store = IntentLinkStoreV1 {
+            schema_version: "intent-link-store-v1".to_string(),
+            links: vec![LinkedWalletV1 {
+                pairing_id: "a".repeat(64),
+                agent_pubkey_hex: "1".repeat(64),
+                wallet_pubkey_hex: "2".repeat(64),
+                granted_capabilities: capabilities.clone(),
+                request_expires_at_unix: 10,
+                ack_expires_at_unix: 11,
+                linked_at_unix: 1,
+                status: LINK_STATUS_ACTIVE.to_string(),
+                status_updated_at_unix: Some(1),
+                paused_at_unix: None,
+                revoked_at_unix: None,
+                rotated_by_pairing_id: None,
+            }],
+        };
+
+        upsert_link(
+            &mut store,
+            LinkedWalletV1 {
+                pairing_id: "b".repeat(64),
+                agent_pubkey_hex: "1".repeat(64),
+                wallet_pubkey_hex: "2".repeat(64),
+                granted_capabilities: capabilities,
+                request_expires_at_unix: 20,
+                ack_expires_at_unix: 21,
+                linked_at_unix: 2,
+                status: LINK_STATUS_ACTIVE.to_string(),
+                status_updated_at_unix: Some(2),
+                paused_at_unix: None,
+                revoked_at_unix: None,
+                rotated_by_pairing_id: None,
+            },
+        );
+
+        assert_eq!(store.links.len(), 2);
+        let rotated = store
+            .links
+            .iter()
+            .find(|link| link.pairing_id == "a".repeat(64))
+            .expect("rotated link");
+        assert_eq!(rotated.status, LINK_STATUS_ROTATED);
+        assert_eq!(rotated.rotated_by_pairing_id.as_deref(), Some("b".repeat(64).as_str()));
+    }
+
+    #[test]
+    fn paused_links_are_blocked_for_future_intents() {
+        let capabilities = default_pairing_capabilities("regtest");
+        let link = LinkedWalletV1 {
+            pairing_id: "a".repeat(64),
+            agent_pubkey_hex: "1".repeat(64),
+            wallet_pubkey_hex: "2".repeat(64),
+            granted_capabilities: capabilities,
+            request_expires_at_unix: 10,
+            ack_expires_at_unix: 11,
+            linked_at_unix: 1,
+            status: LINK_STATUS_PAUSED.to_string(),
+            status_updated_at_unix: Some(1),
+            paused_at_unix: Some(1),
+            revoked_at_unix: None,
+            rotated_by_pairing_id: None,
+        };
+        let err = assert_link_allows_intents(&link).expect_err("paused link should fail");
+        assert!(matches!(err, AppError::Policy(_)));
     }
 
     #[test]
@@ -1136,5 +1496,133 @@ mod tests {
             CommandOutput::IntentPairFinish { paired, .. } => assert!(paired),
             _ => panic!("expected intent pair finish output"),
         }
+    }
+
+    fn create_linked_profile(prefix: &str) -> Cli {
+        let data_dir = unique_data_dir(prefix);
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "pair".to_string(),
+            "start".to_string(),
+        ])
+        .expect("cli parse");
+        ensure_profile_parent_exists(&cli);
+
+        run_pair_start(&cli, Some(1_710_000_000), Some(600), None, "regtest", false)
+            .expect("pair start");
+
+        let request_json = std::fs::read_to_string(
+            latest_pairing_request_path(&cli).expect("latest request path"),
+        )
+        .expect("read latest request");
+        let signed_request: SignedPairingRequestV1 =
+            serde_json::from_str(&request_json).expect("signed request");
+
+        let pairing_id = signed_request.pairing_id_hex().expect("pairing id");
+        let wallet_pubkey_hex =
+            pubkey_hex_from_secret_key(DEFAULT_WALLET_SECRET_KEY_HEX).expect("wallet pubkey");
+        let ack = PairingAckV1 {
+            version: 1,
+            pairing_id,
+            challenge_nonce: signed_request.request.challenge_nonce.clone(),
+            agent_pubkey_hex: signed_request.request.agent_pubkey_hex.clone(),
+            wallet_pubkey_hex,
+            created_at_unix: 1_710_000_010,
+            expires_at_unix: 1_710_000_300,
+            decision: PairingAckDecisionV1::Approved,
+            granted_capabilities: Some(signed_request.request.requested_capabilities.clone()),
+            rejection_reason: None,
+        };
+        let signed_ack =
+            SignedPairingAckV1::new(ack, DEFAULT_WALLET_SECRET_KEY_HEX).expect("signed ack");
+        let ack_json = serde_json::to_string(&signed_ack).expect("ack json");
+        let ack_code = pairing_ack_code_from_json(&ack_json).expect("ack code");
+
+        run_pair_finish(
+            &cli,
+            Some(1_710_000_020),
+            None,
+            None,
+            None,
+            None,
+            Some(&ack_code),
+        )
+        .expect("pair finish");
+
+        cli
+    }
+
+    #[test]
+    fn pair_list_and_show_include_link_details() {
+        let cli = create_linked_profile("pair-list-show");
+
+        let list_output = run_pair_list(&cli).expect("pair list");
+        let pairing_id = match list_output {
+            CommandOutput::IntentPairList { total, links, .. } => {
+                assert_eq!(total, 1);
+                assert_eq!(links.len(), 1);
+                assert_eq!(links[0].status, LINK_STATUS_ACTIVE);
+                links[0].pairing_id.clone()
+            }
+            _ => panic!("expected intent pair list output"),
+        };
+
+        let show_output = run_pair_show(&cli, &pairing_id[..12]).expect("pair show");
+        match show_output {
+            CommandOutput::IntentPairShow { link, .. } => {
+                assert_eq!(link.pairing_id, pairing_id);
+                assert_eq!(link.status, LINK_STATUS_ACTIVE);
+            }
+            _ => panic!("expected intent pair show output"),
+        }
+    }
+
+    #[test]
+    fn pair_status_transitions_pause_resume_and_revoke() {
+        let cli = create_linked_profile("pair-status");
+        let pairing_id = match run_pair_list(&cli).expect("pair list") {
+            CommandOutput::IntentPairList { links, .. } => links[0].pairing_id.clone(),
+            _ => panic!("expected intent pair list output"),
+        };
+
+        let pause_output = run_pair_set_status(&cli, &pairing_id, LINK_STATUS_PAUSED, Some(1_710_000_030))
+            .expect("pause");
+        match pause_output {
+            CommandOutput::IntentPairStatusUpdate { status, .. } => {
+                assert_eq!(status, LINK_STATUS_PAUSED);
+            }
+            _ => panic!("expected status update output"),
+        }
+
+        let resume_output = run_pair_set_status(&cli, &pairing_id, LINK_STATUS_ACTIVE, Some(1_710_000_040))
+            .expect("resume");
+        match resume_output {
+            CommandOutput::IntentPairStatusUpdate { status, .. } => {
+                assert_eq!(status, LINK_STATUS_ACTIVE);
+            }
+            _ => panic!("expected status update output"),
+        }
+
+        let revoke_output = run_pair_set_status(&cli, &pairing_id, LINK_STATUS_REVOKED, Some(1_710_000_050))
+            .expect("revoke");
+        match revoke_output {
+            CommandOutput::IntentPairStatusUpdate { status, .. } => {
+                assert_eq!(status, LINK_STATUS_REVOKED);
+            }
+            _ => panic!("expected status update output"),
+        }
+
+        let err = match run_pair_set_status(
+            &cli,
+            &pairing_id,
+            LINK_STATUS_ACTIVE,
+            Some(1_710_000_060),
+        ) {
+            Ok(_) => panic!("revoked cannot resume"),
+            Err(err) => err,
+        };
+        assert!(matches!(err, AppError::Invalid(_)));
     }
 }

@@ -10,6 +10,22 @@ pub struct BtcBalance {
     pub confirmed: u64,
 }
 
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntentPairLinkEntry {
+    pub pairing_id: String,
+    pub fingerprint: String,
+    pub agent_pubkey_hex: String,
+    pub wallet_pubkey_hex: String,
+    pub status: String,
+    pub send_allowed: bool,
+    pub linked_at_unix: i64,
+    pub status_updated_at_unix: Option<i64>,
+    pub request_expires_at_unix: i64,
+    pub ack_expires_at_unix: i64,
+    pub granted_capabilities: serde_json::Value,
+}
+
 #[derive(Serialize)]
 #[serde(untagged)]
 #[allow(dead_code)]
@@ -253,6 +269,26 @@ pub enum CommandOutput {
         granted_capabilities: serde_json::Value,
         linked_at_unix: i64,
         links_path: String,
+    },
+    IntentPairList {
+        links_path: String,
+        total: usize,
+        active: usize,
+        paused: usize,
+        revoked: usize,
+        rotated: usize,
+        links: Vec<IntentPairLinkEntry>,
+    },
+    IntentPairShow {
+        links_path: String,
+        link: IntentPairLinkEntry,
+    },
+    IntentPairStatusUpdate {
+        links_path: String,
+        pairing_id: String,
+        fingerprint: String,
+        status: String,
+        updated_at_unix: i64,
     },
     Setup {
         config_saved: bool,
@@ -1031,6 +1067,162 @@ impl HumanPresenter {
             String::new()
         }
     }
+
+    fn print_intent_pair_list(&self, output: &CommandOutput) -> String {
+        if let CommandOutput::IntentPairList {
+            links_path,
+            total,
+            active,
+            paused,
+            revoked,
+            rotated,
+            links,
+        } = output
+        {
+            use console::style;
+            let mut out = String::new();
+            out.push_str(&format!("{} {}\n", style("INTENT LINKS").bold(), style(total).bold()));
+            out.push_str(&format!(
+                "  {:<14} active={} paused={} revoked={} rotated={}\n",
+                style("Status").dim(),
+                active,
+                paused,
+                revoked,
+                rotated
+            ));
+            if links.is_empty() {
+                out.push_str(&format!(
+                    "  {:<14} {}\n",
+                    style("Links").dim(),
+                    style("No linked agents yet.").dim()
+                ));
+            } else {
+                for link in links {
+                    out.push_str(&format!(
+                        "  {}  {:<8}  agent {}  wallet {}\n",
+                        crate::commands::offer::abbreviate(&link.pairing_id, 12, 8),
+                        link.status,
+                        crate::commands::offer::abbreviate(&link.agent_pubkey_hex, 8, 6),
+                        crate::commands::offer::abbreviate(&link.wallet_pubkey_hex, 8, 6),
+                    ));
+                }
+            }
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Links File").dim(),
+                links_path
+            ));
+            out
+        } else {
+            String::new()
+        }
+    }
+
+    fn print_intent_pair_show(&self, output: &CommandOutput) -> String {
+        if let CommandOutput::IntentPairShow { links_path, link } = output {
+            use console::style;
+            let mut out = String::new();
+            out.push_str(&format!("{}\n", style("INTENT LINK").bold()));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Pairing ID").dim(),
+                crate::commands::offer::abbreviate(&link.pairing_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Fingerprint").dim(),
+                link.fingerprint
+            ));
+            out.push_str(&format!("  {:<14} {}\n", style("Status").dim(), link.status));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Can Send").dim(),
+                if link.send_allowed { "yes" } else { "no" }
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Agent Key").dim(),
+                crate::commands::offer::abbreviate(&link.agent_pubkey_hex, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Wallet Key").dim(),
+                crate::commands::offer::abbreviate(&link.wallet_pubkey_hex, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Linked At").dim(),
+                link.linked_at_unix
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Status At").dim(),
+                link.status_updated_at_unix.unwrap_or(link.linked_at_unix)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Req Expires").dim(),
+                link.request_expires_at_unix
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Ack Expires").dim(),
+                link.ack_expires_at_unix
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Policy").dim(),
+                serde_json::to_string_pretty(&link.granted_capabilities).unwrap_or_default()
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Links File").dim(),
+                links_path
+            ));
+            out
+        } else {
+            String::new()
+        }
+    }
+
+    fn print_intent_pair_status_update(&self, output: &CommandOutput) -> String {
+        if let CommandOutput::IntentPairStatusUpdate {
+            links_path,
+            pairing_id,
+            fingerprint,
+            status,
+            updated_at_unix,
+        } = output
+        {
+            use console::style;
+            let mut out = String::new();
+            out.push_str(&format!("{}\n", style("INTENT LINK UPDATED").bold()));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Pairing ID").dim(),
+                crate::commands::offer::abbreviate(pairing_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Fingerprint").dim(),
+                fingerprint
+            ));
+            out.push_str(&format!("  {:<14} {}\n", style("Status").dim(), status));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Updated At").dim(),
+                updated_at_unix
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Links File").dim(),
+                links_path
+            ));
+            out
+        } else {
+            String::new()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1653,6 +1845,11 @@ impl Presenter for HumanPresenter {
             CommandOutput::IntentFixtureVerify { .. } => self.print_intent_fixture_verify(output),
             CommandOutput::IntentPairStart { .. } => self.print_intent_pair_start(output),
             CommandOutput::IntentPairFinish { .. } => self.print_intent_pair_finish(output),
+            CommandOutput::IntentPairList { .. } => self.print_intent_pair_list(output),
+            CommandOutput::IntentPairShow { .. } => self.print_intent_pair_show(output),
+            CommandOutput::IntentPairStatusUpdate { .. } => {
+                self.print_intent_pair_status_update(output)
+            }
             CommandOutput::Generic(val) => {
                 // Fallback for human mode when a command hasn't been fully refactored yet
                 serde_json::to_string_pretty(val).unwrap_or_default()

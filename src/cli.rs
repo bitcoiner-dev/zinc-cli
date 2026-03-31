@@ -158,6 +158,10 @@ pub enum Command {
     Tx(TxArgs),
     Psbt(PsbtArgs),
     #[command(hide = true)]
+    Intent(IntentArgs),
+    #[command(hide = true)]
+    Pair(IntentPairArgs),
+    #[command(hide = true)]
     Offer(OfferArgs),
     Account(AccountArgs),
     Wait(WaitArgs),
@@ -344,6 +348,69 @@ pub struct OfferArgs {
     pub action: OfferAction,
 }
 
+#[derive(Parser, Debug, Clone)]
+pub struct IntentArgs {
+    #[command(subcommand)]
+    pub action: IntentAction,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum IntentAction {
+    Pair(IntentPairArgs),
+    FixtureGenerate {
+        #[arg(long)]
+        now_unix: Option<u64>,
+        #[arg(long)]
+        agent_secret_key_hex: Option<String>,
+        #[arg(long)]
+        wallet_secret_key_hex: Option<String>,
+    },
+    FixtureVerify {
+        #[arg(long)]
+        fixture_json: Option<String>,
+        #[arg(long)]
+        fixture_file: Option<PathBuf>,
+        #[arg(long)]
+        fixture_stdin: bool,
+    },
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct IntentPairArgs {
+    #[command(subcommand)]
+    pub action: IntentPairAction,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum IntentPairAction {
+    Start {
+        #[arg(long)]
+        now_unix: Option<u64>,
+        #[arg(long)]
+        expires_in_secs: Option<u64>,
+        #[arg(long)]
+        agent_secret_key_hex: Option<String>,
+        #[arg(long, default_value = "regtest")]
+        network: String,
+        #[arg(long)]
+        show_json: bool,
+    },
+    Finish {
+        #[arg(long)]
+        now_unix: Option<u64>,
+        #[arg(long)]
+        request_json: Option<String>,
+        #[arg(long)]
+        request_file: Option<PathBuf>,
+        #[arg(long)]
+        ack_json: Option<String>,
+        #[arg(long)]
+        ack_file: Option<PathBuf>,
+        #[arg(long)]
+        ack_code: Option<String>,
+    },
+}
+
 #[derive(Subcommand, Debug, Clone)]
 pub enum OfferAction {
     Create {
@@ -528,7 +595,7 @@ pub enum ScenarioAction {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, OfferAction};
+    use super::{Cli, Command, IntentAction, IntentPairAction, OfferAction};
     use clap::Parser;
 
     #[test]
@@ -590,6 +657,196 @@ mod tests {
                 _ => panic!("expected offer publish action"),
             },
             _ => panic!("expected offer command"),
+        }
+    }
+
+    #[test]
+    fn parses_intent_fixture_generate_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "intent",
+            "fixture-generate",
+            "--now-unix",
+            "1710000000",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Intent(args) => match args.action {
+                IntentAction::FixtureGenerate { now_unix, .. } => {
+                    assert_eq!(now_unix, Some(1_710_000_000));
+                }
+                _ => panic!("expected intent fixture-generate action"),
+            },
+            _ => panic!("expected intent command"),
+        }
+    }
+
+    #[test]
+    fn parses_intent_pair_start_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "intent",
+            "pair",
+            "start",
+            "--network",
+            "signet",
+            "--expires-in-secs",
+            "900",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Intent(args) => match args.action {
+                IntentAction::Pair(pair_args) => match pair_args.action {
+                    IntentPairAction::Start {
+                        network,
+                        expires_in_secs,
+                        show_json,
+                        ..
+                    } => {
+                        assert_eq!(network, "signet");
+                        assert_eq!(expires_in_secs, Some(900));
+                        assert!(!show_json);
+                    }
+                    _ => panic!("expected intent pair start action"),
+                },
+                _ => panic!("expected intent pair action"),
+            },
+            _ => panic!("expected intent command"),
+        }
+    }
+
+    #[test]
+    fn parses_intent_pair_finish_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "intent",
+            "pair",
+            "finish",
+            "--request-file",
+            "/tmp/request.json",
+            "--ack-file",
+            "/tmp/ack.json",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Intent(args) => match args.action {
+                IntentAction::Pair(pair_args) => match pair_args.action {
+                    IntentPairAction::Finish {
+                        request_file,
+                        ack_file,
+                        ..
+                    } => {
+                        assert_eq!(
+                            request_file.as_deref().map(|p| p.display().to_string()),
+                            Some("/tmp/request.json".to_string())
+                        );
+                        assert_eq!(
+                            ack_file.as_deref().map(|p| p.display().to_string()),
+                            Some("/tmp/ack.json".to_string())
+                        );
+                    }
+                    _ => panic!("expected intent pair finish action"),
+                },
+                _ => panic!("expected intent pair action"),
+            },
+            _ => panic!("expected intent command"),
+        }
+    }
+
+    #[test]
+    fn parses_pair_start_alias_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "pair",
+            "start",
+            "--network",
+            "signet",
+            "--show-json",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Pair(args) => match args.action {
+                IntentPairAction::Start {
+                    network, show_json, ..
+                } => {
+                    assert_eq!(network, "signet");
+                    assert!(show_json);
+                }
+                _ => panic!("expected pair start action"),
+            },
+            _ => panic!("expected pair command"),
+        }
+    }
+
+    #[test]
+    fn parses_pair_finish_alias_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "pair",
+            "finish",
+            "--request-file",
+            "/tmp/request.json",
+            "--ack-file",
+            "/tmp/ack.json",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Pair(args) => match args.action {
+                IntentPairAction::Finish {
+                    request_file,
+                    ack_file,
+                    ..
+                } => {
+                    assert_eq!(
+                        request_file.as_deref().map(|p| p.display().to_string()),
+                        Some("/tmp/request.json".to_string())
+                    );
+                    assert_eq!(
+                        ack_file.as_deref().map(|p| p.display().to_string()),
+                        Some("/tmp/ack.json".to_string())
+                    );
+                }
+                _ => panic!("expected pair finish action"),
+            },
+            _ => panic!("expected pair command"),
+        }
+    }
+
+    #[test]
+    fn parses_pair_finish_ack_code_without_request_flags() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "pair",
+            "finish",
+            "--ack-code",
+            "zincack1_deadbeef",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Pair(args) => match args.action {
+                IntentPairAction::Finish {
+                    request_json,
+                    request_file,
+                    ack_json,
+                    ack_file,
+                    ack_code,
+                    ..
+                } => {
+                    assert!(request_json.is_none());
+                    assert!(request_file.is_none());
+                    assert!(ack_json.is_none());
+                    assert!(ack_file.is_none());
+                    assert_eq!(ack_code, Some("zincack1_deadbeef".to_string()));
+                }
+                _ => panic!("expected pair finish action"),
+            },
+            _ => panic!("expected pair command"),
         }
     }
 

@@ -1,0 +1,1140 @@
+use crate::cli::{Cli, IntentAction, IntentArgs, IntentPairAction, IntentPairArgs};
+use crate::error::AppError;
+use crate::output::CommandOutput;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use zinc_core::{
+    pubkey_hex_from_secret_key, verify_pairing_approval, BuildBuyerOfferIntentV1,
+    CapabilityPolicyV1, PairingAckDecisionV1, PairingAckV1, PairingLinkApprovalV1,
+    PairingRequestV1, SignIntentActionV1, SignIntentPayloadV1, SignIntentReceiptStatusV1,
+    SignIntentReceiptV1, SignIntentV1, SignedPairingAckV1, SignedPairingRequestV1,
+    SignedSignIntentReceiptV1, SignedSignIntentV1,
+};
+
+const DEFAULT_AGENT_SECRET_KEY_HEX: &str =
+    "0001020304050607080900010203040506070809000102030405060708090001";
+const DEFAULT_WALLET_SECRET_KEY_HEX: &str =
+    "0102030405060708090001020304050607080900010203040506070809000102";
+const DEFAULT_PAIR_EXPIRES_IN_SECS: u64 = 600;
+const MAX_PAIRING_URI_CHARS: usize = 8 * 1024;
+const MAX_PAIRING_REQUEST_JSON_BYTES: usize = 16 * 1024;
+const MAX_PAIRING_ACK_JSON_BYTES: usize = 16 * 1024;
+const PAIRING_ACK_CODE_PREFIX: &str = "zincack1_";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IntentFixtureBundleV1 {
+    schema_version: String,
+    signed_pairing_request: SignedPairingRequestV1,
+    signed_pairing_ack: SignedPairingAckV1,
+    signed_sign_intent: SignedSignIntentV1,
+    signed_sign_intent_receipt: SignedSignIntentReceiptV1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IntentFixtureEnvelopeV1 {
+    fixtures: IntentFixtureBundleV1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IntentLinkStoreV1 {
+    schema_version: String,
+    links: Vec<LinkedWalletV1>,
+}
+
+impl Default for IntentLinkStoreV1 {
+    fn default() -> Self {
+        Self {
+            schema_version: "intent-link-store-v1".to_string(),
+            links: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LinkedWalletV1 {
+    pairing_id: String,
+    agent_pubkey_hex: String,
+    wallet_pubkey_hex: String,
+    granted_capabilities: CapabilityPolicyV1,
+    request_expires_at_unix: i64,
+    ack_expires_at_unix: i64,
+    linked_at_unix: i64,
+    status: String,
+}
+
+pub async fn run(cli: &Cli, args: &IntentArgs) -> Result<CommandOutput, AppError> {
+    match &args.action {
+        IntentAction::Pair(pair_args) => run_pair_action(cli, &pair_args.action),
+        IntentAction::FixtureGenerate {
+            now_unix,
+            agent_secret_key_hex,
+            wallet_secret_key_hex,
+        } => {
+            let now_unix = i64::try_from(now_unix.unwrap_or_else(current_unix))
+                .map_err(|_| AppError::Invalid("now_unix is out of range".to_string()))?;
+            let agent_secret = agent_secret_key_hex
+                .as_deref()
+                .unwrap_or(DEFAULT_AGENT_SECRET_KEY_HEX);
+            let wallet_secret = wallet_secret_key_hex
+                .as_deref()
+                .unwrap_or(DEFAULT_WALLET_SECRET_KEY_HEX);
+
+            let bundle = build_fixture_bundle(now_unix, agent_secret, wallet_secret)?;
+            let pairing_id = bundle
+                .signed_pairing_request
+                .pairing_id_hex()
+                .map_err(map_intent_error)?;
+            let intent_id = bundle
+                .signed_sign_intent
+                .intent_id_hex()
+                .map_err(map_intent_error)?;
+
+            if cli.agent {
+                Ok(CommandOutput::Generic(json!({
+                    "schemaVersion": bundle.schema_version,
+                    "pairingId": pairing_id,
+                    "intentId": intent_id,
+                    "signedPairingRequest": bundle.signed_pairing_request,
+                    "signedPairingAck": bundle.signed_pairing_ack,
+                    "signedSignIntent": bundle.signed_sign_intent,
+                    "signedSignIntentReceipt": bundle.signed_sign_intent_receipt
+                })))
+            } else {
+                Ok(CommandOutput::IntentFixtureGenerate {
+                    schema_version: bundle.schema_version,
+                    pairing_id,
+                    intent_id,
+                    signed_pairing_request: to_json_value(
+                        &bundle.signed_pairing_request,
+                        "signed pairing request",
+                    )?,
+                    signed_pairing_ack: to_json_value(
+                        &bundle.signed_pairing_ack,
+                        "signed pairing ack",
+                    )?,
+                    signed_sign_intent: to_json_value(
+                        &bundle.signed_sign_intent,
+                        "signed sign intent",
+                    )?,
+                    signed_sign_intent_receipt: to_json_value(
+                        &bundle.signed_sign_intent_receipt,
+                        "signed sign intent receipt",
+                    )?,
+                })
+            }
+        }
+        IntentAction::FixtureVerify {
+            fixture_json,
+            fixture_file,
+            fixture_stdin,
+        } => {
+            let source = resolve_fixture_source(
+                fixture_json.as_deref(),
+                fixture_file.as_deref(),
+                *fixture_stdin,
+            )?;
+            let bundle = parse_fixture_bundle(&source)?;
+
+            let pairing_id = bundle
+                .signed_pairing_request
+                .pairing_id_hex()
+                .map_err(map_intent_error)?;
+            let intent_id = bundle
+                .signed_sign_intent
+                .intent_id_hex()
+                .map_err(map_intent_error)?;
+
+            bundle
+                .signed_pairing_request
+                .verify()
+                .map_err(map_intent_error)?;
+            bundle
+                .signed_pairing_ack
+                .verify()
+                .map_err(map_intent_error)?;
+            bundle
+                .signed_sign_intent
+                .verify()
+                .map_err(map_intent_error)?;
+            bundle
+                .signed_sign_intent_receipt
+                .verify()
+                .map_err(map_intent_error)?;
+
+            if bundle.signed_pairing_ack.ack.pairing_id != pairing_id {
+                return Err(AppError::Invalid(
+                    "pairing ack pairing_id does not match signed pairing request".to_string(),
+                ));
+            }
+            if bundle.signed_sign_intent.intent.pairing_id != pairing_id {
+                return Err(AppError::Invalid(
+                    "sign intent pairing_id does not match signed pairing request".to_string(),
+                ));
+            }
+            if bundle.signed_sign_intent_receipt.receipt.intent_id != intent_id {
+                return Err(AppError::Invalid(
+                    "sign intent receipt intent_id does not match signed sign intent".to_string(),
+                ));
+            }
+
+            if cli.agent {
+                Ok(CommandOutput::Generic(json!({
+                    "schemaVersion": bundle.schema_version,
+                    "valid": true,
+                    "pairingId": pairing_id,
+                    "intentId": intent_id
+                })))
+            } else {
+                Ok(CommandOutput::IntentFixtureVerify {
+                    schema_version: bundle.schema_version,
+                    valid: true,
+                    pairing_id,
+                    intent_id,
+                })
+            }
+        }
+    }
+}
+
+pub async fn run_pair(cli: &Cli, args: &IntentPairArgs) -> Result<CommandOutput, AppError> {
+    run_pair_action(cli, &args.action)
+}
+
+fn run_pair_action(cli: &Cli, action: &IntentPairAction) -> Result<CommandOutput, AppError> {
+    match action {
+        IntentPairAction::Start {
+            now_unix,
+            expires_in_secs,
+            agent_secret_key_hex,
+            network,
+            show_json,
+        } => run_pair_start(
+            cli,
+            *now_unix,
+            *expires_in_secs,
+            agent_secret_key_hex.as_deref(),
+            network,
+            *show_json,
+        ),
+        IntentPairAction::Finish {
+            now_unix,
+            request_json,
+            request_file,
+            ack_json,
+            ack_file,
+            ack_code,
+        } => run_pair_finish(
+            cli,
+            *now_unix,
+            request_json.as_deref(),
+            request_file.as_deref(),
+            ack_json.as_deref(),
+            ack_file.as_deref(),
+            ack_code.as_deref(),
+        ),
+    }
+}
+
+fn run_pair_start(
+    cli: &Cli,
+    now_unix: Option<u64>,
+    expires_in_secs: Option<u64>,
+    agent_secret_key_hex: Option<&str>,
+    network: &str,
+    show_json: bool,
+) -> Result<CommandOutput, AppError> {
+    let now_unix = i64::try_from(now_unix.unwrap_or_else(current_unix))
+        .map_err(|_| AppError::Invalid("now_unix is out of range".to_string()))?;
+    let expires_in_secs = expires_in_secs.unwrap_or(DEFAULT_PAIR_EXPIRES_IN_SECS);
+    let expires_delta = i64::try_from(expires_in_secs)
+        .map_err(|_| AppError::Invalid("expires_in_secs is out of range".to_string()))?;
+    if expires_delta <= 0 {
+        return Err(AppError::Invalid(
+            "expires_in_secs must be greater than zero".to_string(),
+        ));
+    }
+
+    let agent_secret = agent_secret_key_hex.unwrap_or(DEFAULT_AGENT_SECRET_KEY_HEX);
+    let agent_pubkey_hex = pubkey_hex_from_secret_key(agent_secret).map_err(map_intent_error)?;
+
+    let requested_capabilities = default_pairing_capabilities(network);
+    let request = PairingRequestV1 {
+        version: 1,
+        agent_pubkey_hex: agent_pubkey_hex.clone(),
+        challenge_nonce: format!("pair-{}-{}", now_unix, std::process::id()),
+        created_at_unix: now_unix,
+        expires_at_unix: now_unix + expires_delta,
+        relays: Vec::new(),
+        requested_capabilities,
+    };
+    let signed_request =
+        SignedPairingRequestV1::new(request, agent_secret).map_err(map_intent_error)?;
+    let pairing_id = signed_request.pairing_id_hex().map_err(map_intent_error)?;
+
+    let request_json = serde_json::to_string(&signed_request).map_err(|e| {
+        AppError::Internal(format!("failed to serialize signed pairing request: {e}"))
+    })?;
+    let pairing_uri = pairing_uri_from_request_json(&request_json)?;
+    let request_path = pairing_request_path(cli, &pairing_id)?;
+    crate::write_bytes_atomic(
+        &request_path,
+        request_json.as_bytes(),
+        "pairing request payload",
+    )?;
+    let latest_request_path = latest_pairing_request_path(cli)?;
+    crate::write_bytes_atomic(
+        &latest_request_path,
+        request_json.as_bytes(),
+        "latest pairing request payload",
+    )?;
+
+    let links_path = intent_links_path(cli)?;
+
+    if cli.agent {
+        Ok(CommandOutput::Generic(json!({
+            "schemaVersion": "pairing-request-v1",
+            "pairingId": pairing_id,
+            "agentPubkeyHex": agent_pubkey_hex,
+            "fingerprint": pairing_fingerprint(&pairing_id),
+            "pairingUri": pairing_uri,
+            "signedPairingRequest": signed_request,
+            "pairingRequestJson": request_json,
+            "requestPath": request_path.display().to_string(),
+            "linksPath": links_path.display().to_string()
+        })))
+    } else {
+        Ok(CommandOutput::IntentPairStart {
+            schema_version: "pairing-request-v1".to_string(),
+            pairing_id,
+            agent_pubkey_hex,
+            fingerprint: pairing_fingerprint(
+                &signed_request.pairing_id_hex().map_err(map_intent_error)?,
+            ),
+            pairing_uri,
+            signed_pairing_request: to_json_value(&signed_request, "signed pairing request")?,
+            pairing_request_json: if show_json { Some(request_json) } else { None },
+            request_path: request_path.display().to_string(),
+            links_path: links_path.display().to_string(),
+        })
+    }
+}
+
+fn run_pair_finish(
+    cli: &Cli,
+    now_unix: Option<u64>,
+    request_json: Option<&str>,
+    request_file: Option<&Path>,
+    ack_json: Option<&str>,
+    ack_file: Option<&Path>,
+    ack_code: Option<&str>,
+) -> Result<CommandOutput, AppError> {
+    let now_unix = i64::try_from(now_unix.unwrap_or_else(current_unix))
+        .map_err(|_| AppError::Invalid("now_unix is out of range".to_string()))?;
+
+    let request_source = resolve_pairing_request_source(cli, request_json, request_file)?;
+    let request_source = if request_source.trim_start().starts_with("zinc://") {
+        pairing_request_json_from_uri(&request_source)?
+    } else {
+        request_source
+    };
+    let ack_source = resolve_pairing_ack_source(ack_json, ack_file, ack_code)?;
+
+    let signed_request: SignedPairingRequestV1 = serde_json::from_str(&request_source)
+        .map_err(|e| AppError::Invalid(format!("invalid signed pairing request json: {e}")))?;
+    let signed_ack: SignedPairingAckV1 = serde_json::from_str(&ack_source)
+        .map_err(|e| AppError::Invalid(format!("invalid signed pairing ack json: {e}")))?;
+
+    let approval = verify_pairing_approval(&signed_request, &signed_ack, now_unix)
+        .map_err(map_intent_error)?;
+    let pairing_id = approval.pairing_id.clone();
+
+    let links_path = intent_links_path(cli)?;
+    let mut store = load_link_store(&links_path)?;
+    upsert_link(&mut store, build_link_from_approval(&approval, now_unix));
+    save_link_store(&links_path, &store)?;
+
+    if cli.agent {
+        Ok(CommandOutput::Generic(json!({
+            "paired": true,
+            "pairingId": pairing_id,
+            "fingerprint": pairing_fingerprint(&approval.pairing_id),
+            "agentPubkeyHex": approval.agent_pubkey_hex,
+            "walletPubkeyHex": approval.wallet_pubkey_hex,
+            "grantedCapabilities": approval.granted_capabilities,
+            "linkedAtUnix": now_unix,
+            "linksPath": links_path.display().to_string()
+        })))
+    } else {
+        Ok(CommandOutput::IntentPairFinish {
+            paired: true,
+            pairing_id,
+            fingerprint: pairing_fingerprint(&approval.pairing_id),
+            agent_pubkey_hex: approval.agent_pubkey_hex,
+            wallet_pubkey_hex: approval.wallet_pubkey_hex,
+            granted_capabilities: to_json_value(
+                &approval.granted_capabilities,
+                "granted capabilities",
+            )?,
+            linked_at_unix: now_unix,
+            links_path: links_path.display().to_string(),
+        })
+    }
+}
+
+fn to_json_value<T: Serialize>(value: &T, label: &str) -> Result<Value, AppError> {
+    serde_json::to_value(value)
+        .map_err(|e| AppError::Internal(format!("failed to serialize {label}: {e}")))
+}
+
+fn parse_fixture_bundle(source: &str) -> Result<IntentFixtureBundleV1, AppError> {
+    match serde_json::from_str::<IntentFixtureBundleV1>(source) {
+        Ok(bundle) => Ok(bundle),
+        Err(bundle_err) => match serde_json::from_str::<IntentFixtureEnvelopeV1>(source) {
+            Ok(envelope) => Ok(envelope.fixtures),
+            Err(_) => Err(AppError::Invalid(format!(
+                "invalid fixture json: {bundle_err}"
+            ))),
+        },
+    }
+}
+
+fn default_pairing_capabilities(network: &str) -> CapabilityPolicyV1 {
+    CapabilityPolicyV1 {
+        allowed_actions: vec![
+            SignIntentActionV1::BuildBuyerOffer,
+            SignIntentActionV1::SignSellerInput,
+        ],
+        max_sats_per_intent: Some(300_000),
+        daily_spend_limit_sats: Some(900_000),
+        max_fee_rate_sat_vb: Some(20),
+        allowed_networks: vec![network.to_string()],
+    }
+}
+
+fn build_fixture_bundle(
+    now_unix: i64,
+    agent_secret_key_hex: &str,
+    wallet_secret_key_hex: &str,
+) -> Result<IntentFixtureBundleV1, AppError> {
+    let agent_pubkey_hex =
+        pubkey_hex_from_secret_key(agent_secret_key_hex).map_err(map_intent_error)?;
+    let wallet_pubkey_hex =
+        pubkey_hex_from_secret_key(wallet_secret_key_hex).map_err(map_intent_error)?;
+
+    let capabilities = default_pairing_capabilities("regtest");
+
+    let pairing_request = PairingRequestV1 {
+        version: 1,
+        agent_pubkey_hex: agent_pubkey_hex.clone(),
+        challenge_nonce: format!("pairing-{}", now_unix),
+        created_at_unix: now_unix,
+        expires_at_unix: now_unix + 600,
+        relays: vec!["wss://relay.example".to_string()],
+        requested_capabilities: capabilities.clone(),
+    };
+    let signed_pairing_request = SignedPairingRequestV1::new(pairing_request, agent_secret_key_hex)
+        .map_err(map_intent_error)?;
+    let pairing_id = signed_pairing_request
+        .pairing_id_hex()
+        .map_err(map_intent_error)?;
+
+    let pairing_ack = PairingAckV1 {
+        version: 1,
+        pairing_id: pairing_id.clone(),
+        challenge_nonce: signed_pairing_request.request.challenge_nonce.clone(),
+        agent_pubkey_hex: agent_pubkey_hex.clone(),
+        wallet_pubkey_hex: wallet_pubkey_hex.clone(),
+        created_at_unix: now_unix + 1,
+        expires_at_unix: now_unix + 601,
+        decision: PairingAckDecisionV1::Approved,
+        granted_capabilities: Some(capabilities),
+        rejection_reason: None,
+    };
+    let signed_pairing_ack =
+        SignedPairingAckV1::new(pairing_ack, wallet_secret_key_hex).map_err(map_intent_error)?;
+
+    let sign_intent = SignIntentV1 {
+        version: 1,
+        pairing_id: pairing_id.clone(),
+        agent_pubkey_hex,
+        wallet_pubkey_hex: wallet_pubkey_hex.clone(),
+        network: "regtest".to_string(),
+        created_at_unix: now_unix + 2,
+        expires_at_unix: now_unix + 602,
+        nonce: 1,
+        payload: SignIntentPayloadV1::BuildBuyerOffer(BuildBuyerOfferIntentV1 {
+            inscription_id: "inscription-123".to_string(),
+            seller_outpoint: "6fb976ab49dcec017f1e201e84395983204ae1a7c2abf7ced0a85d692e442799:0"
+                .to_string(),
+            ask_sats: 100_000,
+            fee_rate_sat_vb: 2,
+        }),
+    };
+    let signed_sign_intent =
+        SignedSignIntentV1::new(sign_intent, agent_secret_key_hex).map_err(map_intent_error)?;
+    let intent_id = signed_sign_intent
+        .intent_id_hex()
+        .map_err(map_intent_error)?;
+
+    let sign_intent_receipt = SignIntentReceiptV1 {
+        version: 1,
+        intent_id,
+        pairing_id,
+        signer_pubkey_hex: wallet_pubkey_hex,
+        created_at_unix: now_unix + 3,
+        status: SignIntentReceiptStatusV1::Approved,
+        signed_psbt_base64: Some(
+            "cHNidP8BAHECAAAAAf//////////////////////////////////////////AAAAAAD9////AqCGAQAAAAAAIgAgx0Jv4z2frfr6f3Ff9rR9lSxDgP3UzrA1n6g0bHTqfQAAAAAAAAAA"
+                .to_string(),
+        ),
+        artifact_json: None,
+        error_message: None,
+    };
+    let signed_sign_intent_receipt =
+        SignedSignIntentReceiptV1::new(sign_intent_receipt, wallet_secret_key_hex)
+            .map_err(map_intent_error)?;
+
+    Ok(IntentFixtureBundleV1 {
+        schema_version: "intent-fixture-v1".to_string(),
+        signed_pairing_request,
+        signed_pairing_ack,
+        signed_sign_intent,
+        signed_sign_intent_receipt,
+    })
+}
+
+fn resolve_json_source(
+    inline_json: Option<&str>,
+    file_path: Option<&Path>,
+    label: &str,
+    inline_flag: &str,
+    file_flag: &str,
+) -> Result<String, AppError> {
+    match (inline_json, file_path) {
+        (Some(_), Some(_)) => Err(AppError::Invalid(format!(
+            "provide exactly one {label} source: {inline_flag} or {file_flag}"
+        ))),
+        (None, None) => Err(AppError::Invalid(format!(
+            "missing {label} source: provide {inline_flag} or {file_flag}"
+        ))),
+        (Some(inline), None) => Ok(inline.to_string()),
+        (None, Some(path)) => std::fs::read_to_string(path).map_err(|e| {
+            AppError::Io(format!(
+                "failed to read {label} file {}: {e}",
+                path.display()
+            ))
+        }),
+    }
+}
+
+fn resolve_pairing_request_source(
+    cli: &Cli,
+    request_json: Option<&str>,
+    request_file: Option<&Path>,
+) -> Result<String, AppError> {
+    if request_json.is_some() || request_file.is_some() {
+        return resolve_json_source(
+            request_json,
+            request_file,
+            "request",
+            "--request-json",
+            "--request-file",
+        );
+    }
+
+    let latest_path = latest_pairing_request_path(cli)?;
+    std::fs::read_to_string(&latest_path).map_err(|e| {
+        AppError::Invalid(format!(
+            "missing request source: provide --request-json/--request-file, or run `pair start` first ({})",
+            e
+        ))
+    })
+}
+
+fn resolve_pairing_ack_source(
+    ack_json: Option<&str>,
+    ack_file: Option<&Path>,
+    ack_code: Option<&str>,
+) -> Result<String, AppError> {
+    let source_count = usize::from(ack_json.is_some())
+        + usize::from(ack_file.is_some())
+        + usize::from(ack_code.is_some());
+    if source_count != 1 {
+        return Err(AppError::Invalid(
+            "provide exactly one ack source: --ack-code, --ack-json, or --ack-file".to_string(),
+        ));
+    }
+
+    if let Some(code) = ack_code {
+        return pairing_ack_json_from_code(code);
+    }
+    if let Some(inline_json) = ack_json {
+        let trimmed = inline_json.trim();
+        if trimmed.starts_with(PAIRING_ACK_CODE_PREFIX) {
+            return pairing_ack_json_from_code(trimmed);
+        }
+        return Ok(inline_json.to_string());
+    }
+    let path = ack_file.expect("ack_file must be present when source_count == 1");
+    let file_contents = std::fs::read_to_string(path)
+        .map_err(|e| AppError::Io(format!("failed to read ack file {}: {e}", path.display())))?;
+    let trimmed = file_contents.trim();
+    if trimmed.starts_with(PAIRING_ACK_CODE_PREFIX) {
+        return pairing_ack_json_from_code(trimmed);
+    }
+    Ok(file_contents)
+}
+
+fn resolve_fixture_source(
+    fixture_json: Option<&str>,
+    fixture_file: Option<&Path>,
+    fixture_stdin: bool,
+) -> Result<String, AppError> {
+    let source_count = usize::from(fixture_json.is_some())
+        + usize::from(fixture_file.is_some())
+        + usize::from(fixture_stdin);
+
+    if source_count != 1 {
+        return Err(AppError::Invalid(
+            "provide exactly one source: --fixture-json, --fixture-file, or --fixture-stdin"
+                .to_string(),
+        ));
+    }
+
+    if let Some(inline) = fixture_json {
+        return Ok(inline.to_string());
+    }
+
+    if let Some(path) = fixture_file {
+        return std::fs::read_to_string(path).map_err(|e| {
+            AppError::Io(format!(
+                "failed to read fixture file {}: {e}",
+                path.display()
+            ))
+        });
+    }
+
+    let mut input = String::new();
+    std::io::stdin()
+        .read_to_string(&mut input)
+        .map_err(|e| AppError::Io(format!("failed to read fixture json from stdin: {e}")))?;
+    Ok(input)
+}
+
+fn intent_links_path(cli: &Cli) -> Result<PathBuf, AppError> {
+    Ok(crate::profile_path(cli)?.with_extension("intent-links.json"))
+}
+
+fn pairing_request_path(cli: &Cli, pairing_id: &str) -> Result<PathBuf, AppError> {
+    let profile_path = crate::profile_path(cli)?;
+    Ok(profile_path.with_extension(format!(
+        "pair-request-{}.json",
+        pairing_fingerprint(pairing_id)
+    )))
+}
+
+fn latest_pairing_request_path(cli: &Cli) -> Result<PathBuf, AppError> {
+    Ok(crate::profile_path(cli)?.with_extension("pair-request-latest.json"))
+}
+
+fn pairing_uri_from_request_json(request_json: &str) -> Result<String, AppError> {
+    if request_json.len() > MAX_PAIRING_REQUEST_JSON_BYTES {
+        return Err(AppError::Invalid(format!(
+            "pairing request json exceeds {} bytes",
+            MAX_PAIRING_REQUEST_JSON_BYTES
+        )));
+    }
+    let encoded = URL_SAFE_NO_PAD.encode(request_json.as_bytes());
+    let uri = format!("zinc://pair?request={encoded}");
+    if uri.len() > MAX_PAIRING_URI_CHARS {
+        return Err(AppError::Invalid(format!(
+            "pairing uri exceeds {} characters",
+            MAX_PAIRING_URI_CHARS
+        )));
+    }
+    Ok(uri)
+}
+
+fn pairing_request_json_from_uri(pairing_uri: &str) -> Result<String, AppError> {
+    if pairing_uri.len() > MAX_PAIRING_URI_CHARS {
+        return Err(AppError::Invalid(format!(
+            "pairing uri exceeds {} characters",
+            MAX_PAIRING_URI_CHARS
+        )));
+    }
+    let query = pairing_uri
+        .strip_prefix("zinc://pair?")
+        .ok_or_else(|| AppError::Invalid("pairing uri must start with zinc://pair?".to_string()))?;
+    let request_b64 = query
+        .split('&')
+        .find_map(|item| {
+            let (key, value) = item.split_once('=')?;
+            if key == "request" {
+                Some(value)
+            } else {
+                None
+            }
+        })
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::Invalid("pairing uri is missing request param".to_string()))?;
+
+    let decoded = URL_SAFE_NO_PAD
+        .decode(request_b64.as_bytes())
+        .map_err(|e| {
+            AppError::Invalid(format!("pairing uri request param is not base64url: {e}"))
+        })?;
+    if decoded.len() > MAX_PAIRING_REQUEST_JSON_BYTES {
+        return Err(AppError::Invalid(format!(
+            "decoded pairing request exceeds {} bytes",
+            MAX_PAIRING_REQUEST_JSON_BYTES
+        )));
+    }
+
+    String::from_utf8(decoded)
+        .map_err(|e| AppError::Invalid(format!("decoded pairing request is not utf-8: {e}")))
+}
+
+#[cfg(test)]
+fn pairing_ack_code_from_json(signed_ack_json: &str) -> Result<String, AppError> {
+    let ack_bytes = signed_ack_json.as_bytes();
+    if ack_bytes.len() > MAX_PAIRING_ACK_JSON_BYTES {
+        return Err(AppError::Invalid(format!(
+            "signed pairing ack exceeds {} bytes",
+            MAX_PAIRING_ACK_JSON_BYTES
+        )));
+    }
+    Ok(format!(
+        "{PAIRING_ACK_CODE_PREFIX}{}",
+        URL_SAFE_NO_PAD.encode(ack_bytes)
+    ))
+}
+
+fn pairing_ack_json_from_code(ack_code: &str) -> Result<String, AppError> {
+    let encoded = ack_code
+        .trim()
+        .strip_prefix(PAIRING_ACK_CODE_PREFIX)
+        .ok_or_else(|| {
+            AppError::Invalid(format!(
+                "ack code must start with {PAIRING_ACK_CODE_PREFIX}"
+            ))
+        })?;
+    if encoded.is_empty() {
+        return Err(AppError::Invalid(
+            "ack code is missing encoded payload".to_string(),
+        ));
+    }
+
+    let decoded = URL_SAFE_NO_PAD
+        .decode(encoded.as_bytes())
+        .map_err(|e| AppError::Invalid(format!("ack code is not valid base64url: {e}")))?;
+    if decoded.len() > MAX_PAIRING_ACK_JSON_BYTES {
+        return Err(AppError::Invalid(format!(
+            "decoded pairing ack exceeds {} bytes",
+            MAX_PAIRING_ACK_JSON_BYTES
+        )));
+    }
+    let ack_json = String::from_utf8(decoded)
+        .map_err(|e| AppError::Invalid(format!("decoded pairing ack is not utf-8: {e}")))?;
+    serde_json::from_str::<serde_json::Value>(&ack_json)
+        .map_err(|e| AppError::Invalid(format!("decoded pairing ack is not valid json: {e}")))?;
+    Ok(ack_json)
+}
+
+fn load_link_store(path: &Path) -> Result<IntentLinkStoreV1, AppError> {
+    if !path.exists() {
+        return Ok(IntentLinkStoreV1::default());
+    }
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| AppError::Config(format!("failed to read intent links: {e}")))?;
+    serde_json::from_str(&raw)
+        .map_err(|e| AppError::Config(format!("failed to parse intent links json: {e}")))
+}
+
+fn save_link_store(path: &Path, store: &IntentLinkStoreV1) -> Result<(), AppError> {
+    let bytes = serde_json::to_vec_pretty(store)
+        .map_err(|e| AppError::Internal(format!("failed to serialize intent links: {e}")))?;
+    crate::write_bytes_atomic(path, &bytes, "intent links")
+}
+
+fn build_link_from_approval(
+    approval: &PairingLinkApprovalV1,
+    linked_at_unix: i64,
+) -> LinkedWalletV1 {
+    LinkedWalletV1 {
+        pairing_id: approval.pairing_id.clone(),
+        agent_pubkey_hex: approval.agent_pubkey_hex.clone(),
+        wallet_pubkey_hex: approval.wallet_pubkey_hex.clone(),
+        granted_capabilities: approval.granted_capabilities.clone(),
+        request_expires_at_unix: approval.request_expires_at_unix,
+        ack_expires_at_unix: approval.ack_expires_at_unix,
+        linked_at_unix,
+        status: "active".to_string(),
+    }
+}
+
+fn upsert_link(store: &mut IntentLinkStoreV1, new_link: LinkedWalletV1) {
+    store
+        .links
+        .retain(|link| link.pairing_id != new_link.pairing_id);
+    store.links.push(new_link);
+}
+
+fn pairing_fingerprint(pairing_id: &str) -> String {
+    pairing_id.chars().take(12).collect()
+}
+
+fn current_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn map_intent_error<E: ToString>(err: E) -> AppError {
+    let message = err.to_string();
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("invalid")
+        || lower.contains("unsupported")
+        || lower.contains("duplicate")
+        || lower.contains("expired")
+        || lower.contains("exceeds")
+        || lower.contains("verification")
+        || lower.contains("signature")
+        || lower.contains("missing")
+        || lower.contains("must")
+    {
+        return AppError::Invalid(message);
+    }
+    AppError::Internal(message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_fixture_bundle, default_pairing_capabilities, latest_pairing_request_path,
+        map_intent_error, pairing_ack_code_from_json, pairing_ack_json_from_code,
+        pairing_request_json_from_uri, pairing_uri_from_request_json, parse_fixture_bundle,
+        resolve_fixture_source, resolve_json_source, run_pair_finish, run_pair_start, upsert_link,
+        IntentLinkStoreV1, LinkedWalletV1, DEFAULT_AGENT_SECRET_KEY_HEX,
+        DEFAULT_WALLET_SECRET_KEY_HEX, MAX_PAIRING_URI_CHARS,
+    };
+    use crate::cli::Cli;
+    use crate::error::AppError;
+    use crate::output::CommandOutput;
+    use clap::Parser;
+    use std::path::Path;
+    use zinc_core::{
+        pubkey_hex_from_secret_key, PairingAckDecisionV1, PairingAckV1, SignedPairingAckV1,
+        SignedPairingRequestV1,
+    };
+
+    fn ensure_profile_parent_exists(cli: &Cli) {
+        let profile_path = crate::profile_path(cli).expect("profile path");
+        let parent = profile_path.parent().expect("profile parent");
+        std::fs::create_dir_all(parent).expect("create profile parent");
+    }
+
+    fn unique_data_dir(prefix: &str) -> String {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        format!("/tmp/zinc-cli-{prefix}-{}-{now}", std::process::id())
+    }
+
+    #[test]
+    fn resolve_fixture_source_requires_exactly_one() {
+        let err = resolve_fixture_source(None, None, false).expect_err("must fail");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn resolve_fixture_source_prefers_inline_json() {
+        let source = resolve_fixture_source(Some("{\"x\":1}"), None, false).expect("source");
+        assert_eq!(source, "{\"x\":1}");
+    }
+
+    #[test]
+    fn resolve_fixture_source_rejects_multiple_sources() {
+        let err = resolve_fixture_source(Some("{}"), Some(Path::new("/tmp/a.json")), false)
+            .expect_err("must fail");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn map_intent_error_classifies_validation_as_invalid() {
+        let err = map_intent_error("invalid schema");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn parse_fixture_bundle_accepts_raw_bundle() {
+        let bundle = build_fixture_bundle(
+            1_710_000_000,
+            DEFAULT_AGENT_SECRET_KEY_HEX,
+            DEFAULT_WALLET_SECRET_KEY_HEX,
+        )
+        .expect("fixture bundle");
+        let raw = serde_json::to_string(&bundle).expect("fixture json");
+        let bundle = parse_fixture_bundle(&raw).expect("parsed bundle");
+        assert_eq!(bundle.schema_version, "intent-fixture-v1");
+    }
+
+    #[test]
+    fn parse_fixture_bundle_accepts_envelope() {
+        let bundle = build_fixture_bundle(
+            1_710_000_000,
+            DEFAULT_AGENT_SECRET_KEY_HEX,
+            DEFAULT_WALLET_SECRET_KEY_HEX,
+        )
+        .expect("fixture bundle");
+        let envelope = serde_json::json!({ "fixtures": bundle }).to_string();
+        let parsed = parse_fixture_bundle(&envelope).expect("parsed");
+        assert_eq!(parsed.schema_version, "intent-fixture-v1");
+    }
+
+    #[test]
+    fn resolve_json_source_requires_exactly_one_source() {
+        let err = resolve_json_source(None, None, "request", "--request-json", "--request-file")
+            .expect_err("must fail");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn resolve_json_source_rejects_multiple_sources() {
+        let err = resolve_json_source(
+            Some("{}"),
+            Some(Path::new("/tmp/request.json")),
+            "request",
+            "--request-json",
+            "--request-file",
+        )
+        .expect_err("must fail");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn upsert_link_replaces_existing_pairing() {
+        let capabilities = default_pairing_capabilities("regtest");
+        let mut store = IntentLinkStoreV1 {
+            schema_version: "intent-link-store-v1".to_string(),
+            links: vec![LinkedWalletV1 {
+                pairing_id: "a".repeat(64),
+                agent_pubkey_hex: "1".repeat(64),
+                wallet_pubkey_hex: "2".repeat(64),
+                granted_capabilities: capabilities.clone(),
+                request_expires_at_unix: 10,
+                ack_expires_at_unix: 11,
+                linked_at_unix: 1,
+                status: "active".to_string(),
+            }],
+        };
+
+        upsert_link(
+            &mut store,
+            LinkedWalletV1 {
+                pairing_id: "a".repeat(64),
+                agent_pubkey_hex: "3".repeat(64),
+                wallet_pubkey_hex: "4".repeat(64),
+                granted_capabilities: capabilities,
+                request_expires_at_unix: 20,
+                ack_expires_at_unix: 21,
+                linked_at_unix: 2,
+                status: "active".to_string(),
+            },
+        );
+
+        assert_eq!(store.links.len(), 1);
+        assert_eq!(store.links[0].agent_pubkey_hex, "3".repeat(64));
+        assert_eq!(store.links[0].linked_at_unix, 2);
+    }
+
+    #[test]
+    fn pairing_uri_roundtrip_is_lossless() {
+        let request_json = r#"{"request":{"version":1,"challengeNonce":"n1"}}"#;
+        let uri = pairing_uri_from_request_json(request_json).expect("pairing uri");
+        let decoded = pairing_request_json_from_uri(&uri).expect("decoded");
+        assert_eq!(decoded, request_json);
+    }
+
+    #[test]
+    fn pairing_uri_rejects_invalid_scheme() {
+        let err = pairing_request_json_from_uri("https://pair?request=abc").expect_err("must fail");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn pairing_uri_rejects_missing_request_param() {
+        let err = pairing_request_json_from_uri("zinc://pair?x=1").expect_err("must fail");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn pairing_uri_rejects_malformed_base64() {
+        let err = pairing_request_json_from_uri("zinc://pair?request=****").expect_err("must fail");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn pairing_uri_rejects_oversized_uri() {
+        let oversized = format!(
+            "zinc://pair?request={}",
+            "a".repeat(MAX_PAIRING_URI_CHARS + 1)
+        );
+        let err = pairing_request_json_from_uri(&oversized).expect_err("must fail");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn pairing_ack_code_roundtrip_is_lossless() {
+        let ack_json = r#"{"ack":{"version":1},"signatureHex":"aa"}"#;
+        let code = pairing_ack_code_from_json(ack_json).expect("ack code");
+        let decoded = pairing_ack_json_from_code(&code).expect("decoded");
+        assert_eq!(decoded, ack_json);
+    }
+
+    #[test]
+    fn pair_start_agent_output_includes_pairing_uri_and_legacy_json() {
+        let data_dir = unique_data_dir("pair-agent");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--agent".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "intent".to_string(),
+            "pair".to_string(),
+            "start".to_string(),
+        ])
+        .expect("cli parse");
+        ensure_profile_parent_exists(&cli);
+        let output = run_pair_start(&cli, Some(1_710_000_000), Some(600), None, "regtest", false)
+            .expect("pair start");
+
+        match output {
+            CommandOutput::Generic(value) => {
+                assert!(value.get("pairingUri").is_some());
+                assert!(value.get("pairingRequestJson").is_some());
+            }
+            _ => panic!("expected generic output"),
+        }
+    }
+
+    #[test]
+    fn pair_start_human_output_hides_json_by_default() {
+        let data_dir = unique_data_dir("pair-human-hide");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "intent".to_string(),
+            "pair".to_string(),
+            "start".to_string(),
+        ])
+        .expect("cli parse");
+        ensure_profile_parent_exists(&cli);
+        let output = run_pair_start(&cli, Some(1_710_000_000), Some(600), None, "regtest", false)
+            .expect("pair start");
+
+        match output {
+            CommandOutput::IntentPairStart {
+                pairing_request_json,
+                ..
+            } => assert!(pairing_request_json.is_none()),
+            _ => panic!("expected human pair start output"),
+        }
+    }
+
+    #[test]
+    fn pair_start_human_output_shows_json_when_flag_is_set() {
+        let data_dir = unique_data_dir("pair-human-show");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "intent".to_string(),
+            "pair".to_string(),
+            "start".to_string(),
+        ])
+        .expect("cli parse");
+        ensure_profile_parent_exists(&cli);
+        let output = run_pair_start(&cli, Some(1_710_000_000), Some(600), None, "regtest", true)
+            .expect("pair start");
+
+        match output {
+            CommandOutput::IntentPairStart {
+                pairing_request_json,
+                ..
+            } => assert!(pairing_request_json.is_some()),
+            _ => panic!("expected human pair start output"),
+        }
+    }
+
+    #[test]
+    fn pair_finish_accepts_ack_code_and_uses_latest_request_file() {
+        let data_dir = unique_data_dir("pair-finish-ack-code");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "intent".to_string(),
+            "pair".to_string(),
+            "start".to_string(),
+        ])
+        .expect("cli parse");
+        ensure_profile_parent_exists(&cli);
+
+        run_pair_start(&cli, Some(1_710_000_000), Some(600), None, "regtest", false)
+            .expect("pair start");
+
+        let request_json = std::fs::read_to_string(
+            latest_pairing_request_path(&cli).expect("latest request path"),
+        )
+        .expect("read latest request");
+        let signed_request: SignedPairingRequestV1 =
+            serde_json::from_str(&request_json).expect("signed request");
+
+        let pairing_id = signed_request.pairing_id_hex().expect("pairing id");
+        let wallet_pubkey_hex =
+            pubkey_hex_from_secret_key(DEFAULT_WALLET_SECRET_KEY_HEX).expect("wallet pubkey");
+        let ack = PairingAckV1 {
+            version: 1,
+            pairing_id,
+            challenge_nonce: signed_request.request.challenge_nonce.clone(),
+            agent_pubkey_hex: signed_request.request.agent_pubkey_hex.clone(),
+            wallet_pubkey_hex,
+            created_at_unix: 1_710_000_010,
+            expires_at_unix: 1_710_000_300,
+            decision: PairingAckDecisionV1::Approved,
+            granted_capabilities: Some(signed_request.request.requested_capabilities.clone()),
+            rejection_reason: None,
+        };
+        let signed_ack =
+            SignedPairingAckV1::new(ack, DEFAULT_WALLET_SECRET_KEY_HEX).expect("signed ack");
+        let ack_json = serde_json::to_string(&signed_ack).expect("ack json");
+        let ack_code = pairing_ack_code_from_json(&ack_json).expect("ack code");
+
+        let output = run_pair_finish(
+            &cli,
+            Some(1_710_000_020),
+            None,
+            None,
+            None,
+            None,
+            Some(&ack_code),
+        )
+        .expect("pair finish");
+
+        match output {
+            CommandOutput::IntentPairFinish { paired, .. } => assert!(paired),
+            _ => panic!("expected intent pair finish output"),
+        }
+    }
+}

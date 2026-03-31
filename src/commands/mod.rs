@@ -4,6 +4,7 @@ pub mod balance;
 pub mod config;
 pub mod doctor;
 pub mod inscription;
+pub mod intent;
 pub mod lock;
 pub mod offer;
 pub mod psbt;

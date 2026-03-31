@@ -903,6 +903,8 @@ pub(crate) async fn dispatch(cli: &Cli) -> Result<crate::output::CommandOutput, 
         Command::Balance => crate::commands::balance::run(cli).await,
         Command::Tx(args) => crate::commands::tx::run(cli, args).await,
         Command::Psbt(args) => crate::commands::psbt::run(cli, args).await,
+        Command::Intent(args) => crate::commands::intent::run(cli, args).await,
+        Command::Pair(args) => crate::commands::intent::run_pair(cli, args).await,
         Command::Offer(_) => Err(crate::error::AppError::Invalid(
             "The 'offer' command is currently in development and not available in this release."
                 .to_string(),
@@ -944,6 +946,8 @@ pub(crate) fn needs_lock(command: &Command) -> bool {
         | Command::Version
         | Command::Lock { .. }
         | Command::Psbt { .. }
+        | Command::Intent(..)
+        | Command::Pair(..)
         | Command::Offer { .. } => false,
         _ => true,
     }

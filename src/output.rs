@@ -217,6 +217,43 @@ pub enum CommandOutput {
         hide_inscription_ids: bool,
         raw_response: serde_json::Value,
     },
+    IntentFixtureGenerate {
+        schema_version: String,
+        pairing_id: String,
+        intent_id: String,
+        signed_pairing_request: serde_json::Value,
+        signed_pairing_ack: serde_json::Value,
+        signed_sign_intent: serde_json::Value,
+        signed_sign_intent_receipt: serde_json::Value,
+    },
+    IntentFixtureVerify {
+        schema_version: String,
+        valid: bool,
+        pairing_id: String,
+        intent_id: String,
+    },
+    IntentPairStart {
+        schema_version: String,
+        pairing_id: String,
+        agent_pubkey_hex: String,
+        fingerprint: String,
+        pairing_uri: String,
+        signed_pairing_request: serde_json::Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pairing_request_json: Option<String>,
+        request_path: String,
+        links_path: String,
+    },
+    IntentPairFinish {
+        paired: bool,
+        pairing_id: String,
+        fingerprint: String,
+        agent_pubkey_hex: String,
+        wallet_pubkey_hex: String,
+        granted_capabilities: serde_json::Value,
+        linked_at_unix: i64,
+        links_path: String,
+    },
     Setup {
         config_saved: bool,
         wizard_used: bool,
@@ -392,6 +429,12 @@ pub struct HumanPresenter {
 }
 
 impl HumanPresenter {
+    fn render_qr(content: &str) -> Option<String> {
+        use qrcode::render::unicode;
+        let qr = qrcode::QrCode::new(content.as_bytes()).ok()?;
+        Some(qr.render::<unicode::Dense1x2>().build())
+    }
+
     pub fn new(use_color: bool) -> Self {
         Self { use_color }
     }
@@ -801,6 +844,236 @@ impl HumanPresenter {
         } else {
             String::new()
         }
+    }
+
+    fn print_intent_fixture_generate(&self, output: &CommandOutput) -> String {
+        if let CommandOutput::IntentFixtureGenerate {
+            schema_version,
+            pairing_id,
+            intent_id,
+            ..
+        } = output
+        {
+            use console::style;
+            let mut out = String::new();
+            out.push_str(&format!("{}\n", style("INTENT FIXTURE GENERATE").bold()));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Schema").dim(),
+                schema_version
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Pairing ID").dim(),
+                crate::commands::offer::abbreviate(pairing_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Intent ID").dim(),
+                crate::commands::offer::abbreviate(intent_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "\n{}\n",
+                style("Use `intent fixture-verify --fixture-file <file>` to validate.").dim()
+            ));
+            out
+        } else {
+            String::new()
+        }
+    }
+
+    fn print_intent_fixture_verify(&self, output: &CommandOutput) -> String {
+        if let CommandOutput::IntentFixtureVerify {
+            schema_version,
+            valid,
+            pairing_id,
+            intent_id,
+        } = output
+        {
+            use console::style;
+            let mut out = String::new();
+            let status = if *valid {
+                style("VALID").green().bold()
+            } else {
+                style("INVALID").red().bold()
+            };
+            out.push_str(&format!("{} {}\n", style("INTENT FIXTURE").bold(), status));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Schema").dim(),
+                schema_version
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Pairing ID").dim(),
+                crate::commands::offer::abbreviate(pairing_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Intent ID").dim(),
+                crate::commands::offer::abbreviate(intent_id, 12, 8)
+            ));
+            out
+        } else {
+            String::new()
+        }
+    }
+
+    fn print_intent_pair_start(&self, output: &CommandOutput) -> String {
+        if let CommandOutput::IntentPairStart {
+            pairing_id,
+            fingerprint,
+            pairing_uri,
+            pairing_request_json,
+            request_path,
+            links_path,
+            ..
+        } = output
+        {
+            use console::style;
+            let mut out = String::new();
+            out.push_str(&format!("{}\n", style("INTENT PAIR START").bold()));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Pairing ID").dim(),
+                crate::commands::offer::abbreviate(pairing_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Fingerprint").dim(),
+                fingerprint
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Request File").dim(),
+                request_path
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Links File").dim(),
+                links_path
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Pairing Link").dim(),
+                pairing_uri
+            ));
+            if let Some(qr) = Self::render_qr(pairing_uri) {
+                out.push_str(&format!(
+                    "\n{}\n{}\n",
+                    style("Scan this QR in Zinc wallet:").bold(),
+                    qr
+                ));
+            }
+            out.push_str(&format!(
+                "\n{}\n{}\n",
+                style("No scanner?").bold(),
+                style("Copy the Pairing Link above and paste it in wallet pairing.").dim()
+            ));
+            out.push_str(&format!(
+                "\n{}\n{}\n",
+                style("After wallet approval").bold(),
+                style("Run `zinc-cli pair finish --ack-code <code>` to complete linking.").dim()
+            ));
+            if let Some(request_json) = pairing_request_json {
+                out.push_str(&format!(
+                    "\n{}\n{}\n",
+                    style("Pairing Request JSON (advanced/debug):").bold(),
+                    request_json
+                ));
+            }
+            out
+        } else {
+            String::new()
+        }
+    }
+
+    fn print_intent_pair_finish(&self, output: &CommandOutput) -> String {
+        if let CommandOutput::IntentPairFinish {
+            paired,
+            pairing_id,
+            fingerprint,
+            wallet_pubkey_hex,
+            links_path,
+            ..
+        } = output
+        {
+            use console::style;
+            let mut out = String::new();
+            let status = if *paired {
+                style("PAIRED").green().bold()
+            } else {
+                style("NOT PAIRED").red().bold()
+            };
+            out.push_str(&format!("{} {}\n", style("INTENT PAIR").bold(), status));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Pairing ID").dim(),
+                crate::commands::offer::abbreviate(pairing_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Fingerprint").dim(),
+                fingerprint
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Wallet Key").dim(),
+                crate::commands::offer::abbreviate(wallet_pubkey_hex, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Links File").dim(),
+                links_path
+            ));
+            out
+        } else {
+            String::new()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CommandOutput, HumanPresenter, Presenter};
+    use serde_json::json;
+
+    fn sample_pair_start_output(pairing_request_json: Option<String>) -> CommandOutput {
+        CommandOutput::IntentPairStart {
+            schema_version: "pairing-request-v1".to_string(),
+            pairing_id: "a".repeat(64),
+            agent_pubkey_hex: "b".repeat(64),
+            fingerprint: "aaaaaaaaaaaa".to_string(),
+            pairing_uri: "zinc://pair?request=eyJmb28iOiJiYXIifQ".to_string(),
+            signed_pairing_request: json!({"request":{"version":1},"signatureHex":"ff"}),
+            pairing_request_json,
+            request_path: "/tmp/request.json".to_string(),
+            links_path: "/tmp/links.json".to_string(),
+        }
+    }
+
+    #[test]
+    fn pair_start_human_output_shows_pairing_link_and_qr_section() {
+        let presenter = HumanPresenter::new(false);
+        let rendered = presenter.render(&sample_pair_start_output(None));
+        assert!(rendered.contains("Pairing Link"));
+        assert!(rendered.contains("zinc://pair?request="));
+        assert!(rendered.contains("Scan this QR in Zinc wallet:"));
+    }
+
+    #[test]
+    fn pair_start_human_output_hides_raw_json_by_default() {
+        let presenter = HumanPresenter::new(false);
+        let rendered = presenter.render(&sample_pair_start_output(None));
+        assert!(!rendered.contains("Pairing Request JSON (advanced/debug):"));
+    }
+
+    #[test]
+    fn pair_start_human_output_shows_raw_json_when_present() {
+        let presenter = HumanPresenter::new(false);
+        let rendered = presenter.render(&sample_pair_start_output(Some("{\"x\":1}".to_string())));
+        assert!(rendered.contains("Pairing Request JSON (advanced/debug):"));
+        assert!(rendered.contains("{\"x\":1}"));
     }
 }
 
@@ -1374,6 +1647,12 @@ impl Presenter for HumanPresenter {
             CommandOutput::OfferSubmitOrd { .. } => self.print_offer_submit_ord(output),
             CommandOutput::OfferListOrd { .. } => self.print_offer_list_ord(output),
             CommandOutput::OfferAccept { .. } => self.print_offer_accept(output),
+            CommandOutput::IntentFixtureGenerate { .. } => {
+                self.print_intent_fixture_generate(output)
+            }
+            CommandOutput::IntentFixtureVerify { .. } => self.print_intent_fixture_verify(output),
+            CommandOutput::IntentPairStart { .. } => self.print_intent_pair_start(output),
+            CommandOutput::IntentPairFinish { .. } => self.print_intent_pair_finish(output),
             CommandOutput::Generic(val) => {
                 // Fallback for human mode when a command hasn't been fully refactored yet
                 serde_json::to_string_pretty(val).unwrap_or_default()

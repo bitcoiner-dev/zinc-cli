@@ -390,6 +390,8 @@ pub enum IntentPairAction {
         expires_in_secs: Option<u64>,
         #[arg(long)]
         agent_secret_key_hex: Option<String>,
+        #[arg(long = "relay")]
+        relay: Vec<String>,
         #[arg(long, default_value = "regtest")]
         network: String,
         #[arg(long)]
@@ -402,6 +404,8 @@ pub enum IntentPairAction {
         request_json: Option<String>,
         #[arg(long)]
         request_file: Option<PathBuf>,
+        #[arg(long)]
+        agent_secret_key_hex: Option<String>,
         #[arg(long)]
         ack_json: Option<String>,
         #[arg(long)]
@@ -716,6 +720,10 @@ mod tests {
             "signet",
             "--expires-in-secs",
             "900",
+            "--relay",
+            "wss://relay.one",
+            "--relay",
+            "wss://relay.two",
         ])
         .expect("cli parse");
 
@@ -725,11 +733,13 @@ mod tests {
                     IntentPairAction::Start {
                         network,
                         expires_in_secs,
+                        relay,
                         show_json,
                         ..
                     } => {
                         assert_eq!(network, "signet");
                         assert_eq!(expires_in_secs, Some(900));
+                        assert_eq!(relay, vec!["wss://relay.one", "wss://relay.two"]);
                         assert!(!show_json);
                     }
                     _ => panic!("expected intent pair start action"),

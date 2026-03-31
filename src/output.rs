@@ -268,6 +268,8 @@ pub enum CommandOutput {
         wallet_pubkey_hex: String,
         granted_capabilities: serde_json::Value,
         linked_at_unix: i64,
+        ack_source: String,
+        completion_receipt_published: bool,
         links_path: String,
     },
     IntentPairList {
@@ -1030,6 +1032,8 @@ impl HumanPresenter {
             pairing_id,
             fingerprint,
             wallet_pubkey_hex,
+            ack_source,
+            completion_receipt_published,
             links_path,
             ..
         } = output
@@ -1056,6 +1060,20 @@ impl HumanPresenter {
                 "  {:<14} {}\n",
                 style("Wallet Key").dim(),
                 crate::commands::offer::abbreviate(wallet_pubkey_hex, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Ack Source").dim(),
+                ack_source
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Receipt Sent").dim(),
+                if *completion_receipt_published {
+                    "yes"
+                } else {
+                    "no"
+                }
             ));
             out.push_str(&format!(
                 "  {:<14} {}\n",

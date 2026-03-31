@@ -3,16 +3,27 @@ use crate::error::AppError;
 use crate::output::{CommandOutput, IntentPairLinkEntry};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashSet;
+use std::future::Future;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::time::{timeout, Duration};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use zinc_core::{
-    pubkey_hex_from_secret_key, verify_pairing_approval, BuildBuyerOfferIntentV1,
-    CapabilityPolicyV1, PairingAckDecisionV1, PairingAckV1, PairingLinkApprovalV1,
-    PairingRequestV1, SignIntentActionV1, SignIntentPayloadV1, SignIntentReceiptStatusV1,
-    SignIntentReceiptV1, SignIntentV1, SignedPairingAckV1, SignedPairingRequestV1,
-    SignedSignIntentReceiptV1, SignedSignIntentV1,
+    build_signed_pairing_complete_receipt, decode_pairing_ack_envelope_event,
+    pairing_tag_hash_hex, pairing_transport_tags, pubkey_hex_from_secret_key,
+    verify_pairing_approval, BuildBuyerOfferIntentV1, CapabilityPolicyV1, NostrTransportEventV1,
+    PairingAckDecisionV1, PairingAckV1, PairingLinkApprovalV1,
+    PairingRequestV1, SignedPairingCompleteReceiptV1, SignIntentActionV1, SignIntentPayloadV1,
+    SignIntentReceiptStatusV1, SignIntentReceiptV1, SignIntentV1, SignedPairingAckV1,
+    SignedPairingRequestV1, SignedSignIntentReceiptV1, SignedSignIntentV1,
+    NOSTR_PAIRING_ACK_TYPE_TAG_VALUE, NOSTR_PAIRING_COMPLETE_RECEIPT_TYPE_TAG_VALUE,
+    NOSTR_SIGN_INTENT_APP_TAG_VALUE, NOSTR_TAG_APP_KEY, NOSTR_TAG_PAIRING_HASH_KEY,
+    NOSTR_TAG_RECIPIENT_PUBKEY_KEY, NOSTR_TAG_TYPE_KEY, PAIRING_TRANSPORT_EVENT_KIND,
 };
 
 const DEFAULT_AGENT_SECRET_KEY_HEX: &str =
@@ -24,6 +35,10 @@ const MAX_PAIRING_URI_CHARS: usize = 8 * 1024;
 const MAX_PAIRING_REQUEST_JSON_BYTES: usize = 16 * 1024;
 const MAX_PAIRING_ACK_JSON_BYTES: usize = 16 * 1024;
 const PAIRING_ACK_CODE_PREFIX: &str = "zincack1_";
+const DEFAULT_PAIRING_RELAY_TIMEOUT_MS: u64 = 5_000;
+const DEFAULT_PAIRING_RELAY_LIMIT: usize = 32;
+const DEFAULT_PAIRING_RELAYS: &[&str] = &["wss://relay.damus.io", "wss://nos.lol"];
+const REGTEST_DEFAULT_PAIRING_RELAYS: &[&str] = &["wss://nostr-regtest.exittheloop.com"];
 const LINK_STATUS_ACTIVE: &str = "active";
 const LINK_STATUS_PAUSED: &str = "paused";
 const LINK_STATUS_REVOKED: &str = "revoked";
@@ -231,6 +246,7 @@ fn run_pair_action(cli: &Cli, action: &IntentPairAction) -> Result<CommandOutput
             now_unix,
             expires_in_secs,
             agent_secret_key_hex,
+            relay,
             network,
             show_json,
         } => run_pair_start(
@@ -238,6 +254,7 @@ fn run_pair_action(cli: &Cli, action: &IntentPairAction) -> Result<CommandOutput
             *now_unix,
             *expires_in_secs,
             agent_secret_key_hex.as_deref(),
+            relay,
             network,
             *show_json,
         ),
@@ -245,6 +262,7 @@ fn run_pair_action(cli: &Cli, action: &IntentPairAction) -> Result<CommandOutput
             now_unix,
             request_json,
             request_file,
+            agent_secret_key_hex,
             ack_json,
             ack_file,
             ack_code,
@@ -253,6 +271,7 @@ fn run_pair_action(cli: &Cli, action: &IntentPairAction) -> Result<CommandOutput
             *now_unix,
             request_json.as_deref(),
             request_file.as_deref(),
+            agent_secret_key_hex.as_deref(),
             ack_json.as_deref(),
             ack_file.as_deref(),
             ack_code.as_deref(),
@@ -279,6 +298,7 @@ fn run_pair_start(
     now_unix: Option<u64>,
     expires_in_secs: Option<u64>,
     agent_secret_key_hex: Option<&str>,
+    relay_urls: &[String],
     network: &str,
     show_json: bool,
 ) -> Result<CommandOutput, AppError> {
@@ -297,13 +317,14 @@ fn run_pair_start(
     let agent_pubkey_hex = pubkey_hex_from_secret_key(agent_secret).map_err(map_intent_error)?;
 
     let requested_capabilities = default_pairing_capabilities(network);
+    let relays = normalize_pairing_relays(relay_urls, network);
     let request = PairingRequestV1 {
         version: 1,
         agent_pubkey_hex: agent_pubkey_hex.clone(),
         challenge_nonce: format!("pair-{}-{}", now_unix, std::process::id()),
         created_at_unix: now_unix,
         expires_at_unix: now_unix + expires_delta,
-        relays: Vec::new(),
+        relays,
         requested_capabilities,
     };
     let signed_request =
@@ -363,6 +384,7 @@ fn run_pair_finish(
     now_unix: Option<u64>,
     request_json: Option<&str>,
     request_file: Option<&Path>,
+    agent_secret_key_hex: Option<&str>,
     ack_json: Option<&str>,
     ack_file: Option<&Path>,
     ack_code: Option<&str>,
@@ -376,12 +398,33 @@ fn run_pair_finish(
     } else {
         request_source
     };
-    let ack_source = resolve_pairing_ack_source(ack_json, ack_file, ack_code)?;
-
     let signed_request: SignedPairingRequestV1 = serde_json::from_str(&request_source)
         .map_err(|e| AppError::Invalid(format!("invalid signed pairing request json: {e}")))?;
-    let signed_ack: SignedPairingAckV1 = serde_json::from_str(&ack_source)
-        .map_err(|e| AppError::Invalid(format!("invalid signed pairing ack json: {e}")))?;
+    let resolved_ack_source = resolve_pairing_ack_source_optional(ack_json, ack_file, ack_code)?;
+    let relay_ack = match fetch_signed_pairing_ack_from_relays(&signed_request) {
+        Ok(found) => found,
+        Err(_) if resolved_ack_source.is_some() => None,
+        Err(err) => return Err(err),
+    };
+    let (signed_ack, ack_source_label) = if let Some(signed_ack) = relay_ack {
+        (signed_ack, "relay".to_string())
+    } else if let Some(ack_source) = resolved_ack_source {
+        let signed_ack: SignedPairingAckV1 = serde_json::from_str(&ack_source)
+            .map_err(|e| AppError::Invalid(format!("invalid signed pairing ack json: {e}")))?;
+        let source_label = if ack_code.is_some() {
+            "ack-code".to_string()
+        } else if ack_json.is_some() {
+            "ack-json".to_string()
+        } else {
+            "ack-file".to_string()
+        };
+        (signed_ack, source_label)
+    } else {
+        return Err(AppError::Invalid(
+            "no relay ack found and no ack source provided; provide --ack-code, --ack-json, or --ack-file"
+                .to_string(),
+        ));
+    };
 
     let approval = verify_pairing_approval(&signed_request, &signed_ack, now_unix)
         .map_err(map_intent_error)?;
@@ -392,6 +435,13 @@ fn run_pair_finish(
     upsert_link(&mut store, build_link_from_approval(&approval, now_unix));
     save_link_store(&links_path, &store)?;
 
+    let completion_receipt_published = publish_pairing_complete_receipt_best_effort(
+        &signed_request,
+        &signed_ack,
+        agent_secret_key_hex.unwrap_or(DEFAULT_AGENT_SECRET_KEY_HEX),
+        now_unix,
+    );
+
     if cli.agent {
         Ok(CommandOutput::Generic(json!({
             "paired": true,
@@ -401,6 +451,8 @@ fn run_pair_finish(
             "walletPubkeyHex": approval.wallet_pubkey_hex,
             "grantedCapabilities": approval.granted_capabilities,
             "linkedAtUnix": now_unix,
+            "ackSource": ack_source_label,
+            "completionReceiptPublished": completion_receipt_published,
             "linksPath": links_path.display().to_string()
         })))
     } else {
@@ -415,6 +467,8 @@ fn run_pair_finish(
                 "granted capabilities",
             )?,
             linked_at_unix: now_unix,
+            ack_source: ack_source_label,
+            completion_receipt_published,
             links_path: links_path.display().to_string(),
         })
     }
@@ -673,6 +727,64 @@ fn default_pairing_capabilities(network: &str) -> CapabilityPolicyV1 {
     }
 }
 
+fn default_pairing_relays_for_network(network: &str) -> &'static [&'static str] {
+    if network.eq_ignore_ascii_case("regtest") {
+        REGTEST_DEFAULT_PAIRING_RELAYS
+    } else {
+        DEFAULT_PAIRING_RELAYS
+    }
+}
+
+fn canonicalize_relay_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if let Some(rest) = trimmed.strip_prefix("https://") {
+        return format!("wss://{rest}");
+    }
+    if let Some(rest) = trimmed.strip_prefix("http://") {
+        return format!("ws://{rest}");
+    }
+    trimmed.to_string()
+}
+
+fn pairing_request_network_hint(signed_request: &SignedPairingRequestV1) -> &str {
+    signed_request
+        .request
+        .requested_capabilities
+        .allowed_networks
+        .first()
+        .map(String::as_str)
+        .unwrap_or("mainnet")
+}
+
+fn normalize_pairing_relays(relays: &[String], default_network: &str) -> Vec<String> {
+    let defaults = default_pairing_relays_for_network(default_network);
+    let source: Vec<String> = if relays.is_empty() {
+        defaults.iter().map(|relay| relay.to_string()).collect()
+    } else {
+        relays.to_vec()
+    };
+
+    let mut deduped = Vec::new();
+    let mut seen = HashSet::new();
+    for relay in source {
+        let trimmed = relay.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let normalized = canonicalize_relay_url(trimmed);
+        let key = normalized.to_ascii_lowercase();
+        if seen.insert(key) {
+            deduped.push(normalized);
+        }
+    }
+
+    if deduped.is_empty() {
+        defaults.iter().map(|relay| relay.to_string()).collect()
+    } else {
+        deduped
+    }
+}
+
 fn build_fixture_bundle(
     now_unix: i64,
     agent_secret_key_hex: &str,
@@ -847,6 +959,20 @@ fn resolve_pairing_ack_source(
     Ok(file_contents)
 }
 
+fn resolve_pairing_ack_source_optional(
+    ack_json: Option<&str>,
+    ack_file: Option<&Path>,
+    ack_code: Option<&str>,
+) -> Result<Option<String>, AppError> {
+    let source_count = usize::from(ack_json.is_some())
+        + usize::from(ack_file.is_some())
+        + usize::from(ack_code.is_some());
+    if source_count == 0 {
+        return Ok(None);
+    }
+    resolve_pairing_ack_source(ack_json, ack_file, ack_code).map(Some)
+}
+
 fn resolve_fixture_source(
     fixture_json: Option<&str>,
     fixture_file: Option<&Path>,
@@ -1002,6 +1128,364 @@ fn pairing_ack_json_from_code(ack_code: &str) -> Result<String, AppError> {
     Ok(ack_json)
 }
 
+fn run_async_with_runtime<T, F>(future: F) -> Result<T, AppError>
+where
+    F: Future<Output = Result<T, AppError>>,
+{
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| handle.block_on(future))
+    } else {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| AppError::Internal(format!("failed to build async runtime: {e}")))?;
+        runtime.block_on(future)
+    }
+}
+
+fn fetch_signed_pairing_ack_from_relays(
+    signed_request: &SignedPairingRequestV1,
+) -> Result<Option<SignedPairingAckV1>, AppError> {
+    run_async_with_runtime(fetch_signed_pairing_ack_from_relays_async(signed_request))
+}
+
+async fn fetch_signed_pairing_ack_from_relays_async(
+    signed_request: &SignedPairingRequestV1,
+) -> Result<Option<SignedPairingAckV1>, AppError> {
+    let relays = normalize_pairing_relays(
+        &signed_request.request.relays,
+        pairing_request_network_hint(signed_request),
+    );
+    if relays.is_empty() {
+        return Ok(None);
+    }
+    let pairing_hash = pairing_tag_hash_hex(&signed_request.pairing_id_hex().map_err(map_intent_error)?)
+        .map_err(map_intent_error)?;
+    let mut seen_ack_ids = HashSet::new();
+    let mut newest: Option<SignedPairingAckV1> = None;
+
+    for relay_url in relays {
+        let candidate = discover_pairing_ack_from_relay(
+            &relay_url,
+            signed_request,
+            &pairing_hash,
+            DEFAULT_PAIRING_RELAY_TIMEOUT_MS,
+        )
+        .await?;
+        if let Some(signed_ack) = candidate {
+            let ack_id = signed_ack.ack_id_hex().map_err(map_intent_error)?;
+            if !seen_ack_ids.insert(ack_id) {
+                continue;
+            }
+            let replace = newest
+                .as_ref()
+                .map(|existing| signed_ack.ack.created_at_unix > existing.ack.created_at_unix)
+                .unwrap_or(true);
+            if replace {
+                newest = Some(signed_ack);
+            }
+        }
+    }
+
+    Ok(newest)
+}
+
+async fn discover_pairing_ack_from_relay(
+    relay_url: &str,
+    signed_request: &SignedPairingRequestV1,
+    pairing_hash: &str,
+    timeout_ms: u64,
+) -> Result<Option<SignedPairingAckV1>, AppError> {
+    let (mut socket, _) = connect_async(relay_url)
+        .await
+        .map_err(|e| AppError::Network(format!("failed to connect relay {relay_url}: {e}")))?;
+
+    let subscription_id = format!(
+        "zinc-pair-ack-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let req = pairing_ack_req_frame(
+        &subscription_id,
+        pairing_hash,
+        &signed_request.request.agent_pubkey_hex,
+        DEFAULT_PAIRING_RELAY_LIMIT,
+    )?;
+    socket
+        .send(Message::Text(req.into()))
+        .await
+        .map_err(|e| AppError::Network(format!("failed to send relay req frame: {e}")))?;
+
+    let mut newest: Option<SignedPairingAckV1> = None;
+    let sid = subscription_id.clone();
+    timeout(Duration::from_millis(timeout_ms), async {
+        while let Some(message) = socket.next().await {
+            match message {
+                Ok(Message::Text(text)) => {
+                    if let Some(event) = parse_transport_event_frame(text.as_ref(), &sid) {
+                        if let Ok(envelope) = decode_pairing_ack_envelope_event(&event) {
+                            let replace = newest
+                                .as_ref()
+                                .map(|existing| {
+                                    envelope.signed_ack.ack.created_at_unix
+                                        > existing.ack.created_at_unix
+                                })
+                                .unwrap_or(true);
+                            if replace {
+                                newest = Some(envelope.signed_ack);
+                            }
+                        }
+                        continue;
+                    }
+                    if is_eose_frame(text.as_ref(), &sid) {
+                        break;
+                    }
+                }
+                Ok(Message::Binary(bin)) => {
+                    if let Ok(text) = std::str::from_utf8(&bin) {
+                        if let Some(event) = parse_transport_event_frame(text, &sid) {
+                            if let Ok(envelope) = decode_pairing_ack_envelope_event(&event) {
+                                let replace = newest
+                                    .as_ref()
+                                    .map(|existing| {
+                                        envelope.signed_ack.ack.created_at_unix
+                                            > existing.ack.created_at_unix
+                                    })
+                                    .unwrap_or(true);
+                                if replace {
+                                    newest = Some(envelope.signed_ack);
+                                }
+                            }
+                            continue;
+                        }
+                        if is_eose_frame(text, &sid) {
+                            break;
+                        }
+                    }
+                }
+                Ok(Message::Close(_)) => break,
+                Ok(_) => {}
+                Err(e) => {
+                    return Err(AppError::Network(format!(
+                        "relay read error for {relay_url}: {e}"
+                    )));
+                }
+            }
+        }
+        Ok::<(), AppError>(())
+    })
+    .await
+    .map_err(|_| AppError::Network(format!("relay {relay_url} timed out reading ack events")))??;
+
+    let close = close_frame(&subscription_id)?;
+    let _ = socket.send(Message::Text(close.into())).await;
+    Ok(newest)
+}
+
+fn publish_pairing_complete_receipt_best_effort(
+    signed_request: &SignedPairingRequestV1,
+    signed_ack: &SignedPairingAckV1,
+    agent_secret_key_hex: &str,
+    now_unix: i64,
+) -> bool {
+    let relays = normalize_pairing_relays(
+        &signed_request.request.relays,
+        pairing_request_network_hint(signed_request),
+    );
+    if relays.is_empty() {
+        return false;
+    }
+    let created_at_unix = u64::try_from(now_unix).unwrap_or_else(|_| current_unix());
+
+    let signed_receipt: SignedPairingCompleteReceiptV1 = match build_signed_pairing_complete_receipt(
+        signed_request,
+        signed_ack,
+        agent_secret_key_hex,
+        now_unix,
+    ) {
+        Ok(receipt) => receipt,
+        Err(_) => return false,
+    };
+
+    let tags = match pairing_transport_tags(
+        NOSTR_PAIRING_COMPLETE_RECEIPT_TYPE_TAG_VALUE,
+        &signed_receipt.receipt.pairing_id,
+        &signed_receipt.receipt.wallet_pubkey_hex,
+    ) {
+        Ok(tags) => tags,
+        Err(_) => return false,
+    };
+    let content = match serde_json::to_string(&signed_receipt) {
+        Ok(content) => content,
+        Err(_) => return false,
+    };
+    let event = match NostrTransportEventV1::new(
+        PAIRING_TRANSPORT_EVENT_KIND,
+        tags,
+        content,
+        created_at_unix,
+        agent_secret_key_hex,
+    ) {
+        Ok(event) => event,
+        Err(_) => return false,
+    };
+
+    run_async_with_runtime(publish_transport_event_multi(
+        &relays,
+        &event,
+        DEFAULT_PAIRING_RELAY_TIMEOUT_MS,
+    ))
+    .unwrap_or_default()
+}
+
+async fn publish_transport_event_multi(
+    relay_urls: &[String],
+    event: &NostrTransportEventV1,
+    timeout_ms: u64,
+) -> Result<bool, AppError> {
+    let mut any_accepted = false;
+    for relay in relay_urls {
+        let accepted = publish_transport_event(relay, event, timeout_ms).await?;
+        any_accepted = any_accepted || accepted;
+    }
+    Ok(any_accepted)
+}
+
+async fn publish_transport_event(
+    relay_url: &str,
+    event: &NostrTransportEventV1,
+    timeout_ms: u64,
+) -> Result<bool, AppError> {
+    let (mut socket, _) = connect_async(relay_url)
+        .await
+        .map_err(|e| AppError::Network(format!("failed to connect relay {relay_url}: {e}")))?;
+    let frame = event_frame(event)?;
+    socket
+        .send(Message::Text(frame.into()))
+        .await
+        .map_err(|e| AppError::Network(format!("failed to send relay event frame: {e}")))?;
+
+    let event_id = event.id.clone();
+    let accepted = timeout(Duration::from_millis(timeout_ms), async {
+        while let Some(message) = socket.next().await {
+            match message {
+                Ok(Message::Text(text)) => {
+                    if let Some((ok, _msg)) = parse_ok_frame(text.as_ref(), &event_id) {
+                        return Ok(ok);
+                    }
+                }
+                Ok(Message::Binary(bin)) => {
+                    if let Ok(text) = std::str::from_utf8(&bin) {
+                        if let Some((ok, _msg)) = parse_ok_frame(text, &event_id) {
+                            return Ok(ok);
+                        }
+                    }
+                }
+                Ok(Message::Close(_)) => break,
+                Ok(_) => {}
+                Err(e) => {
+                    return Err(AppError::Network(format!(
+                        "relay read error for {relay_url}: {e}"
+                    )));
+                }
+            }
+        }
+        Ok(false)
+    })
+    .await
+    .map_err(|_| AppError::Network(format!("relay {relay_url} timed out waiting for OK")))??;
+
+    Ok(accepted)
+}
+
+fn event_frame(event: &NostrTransportEventV1) -> Result<String, AppError> {
+    serde_json::to_string(&serde_json::json!(["EVENT", event]))
+        .map_err(|e| AppError::Internal(format!("failed to encode relay event frame: {e}")))
+}
+
+fn close_frame(subscription_id: &str) -> Result<String, AppError> {
+    serde_json::to_string(&serde_json::json!(["CLOSE", subscription_id]))
+        .map_err(|e| AppError::Internal(format!("failed to encode relay close frame: {e}")))
+}
+
+fn pairing_ack_req_frame(
+    subscription_id: &str,
+    pairing_hash: &str,
+    recipient_pubkey_hex: &str,
+    limit: usize,
+) -> Result<String, AppError> {
+    let mut filter = serde_json::Map::new();
+    filter.insert("kinds".to_string(), json!([PAIRING_TRANSPORT_EVENT_KIND]));
+    filter.insert(
+        format!("#{}", NOSTR_TAG_APP_KEY),
+        json!([NOSTR_SIGN_INTENT_APP_TAG_VALUE]),
+    );
+    filter.insert(
+        format!("#{}", NOSTR_TAG_TYPE_KEY),
+        json!([NOSTR_PAIRING_ACK_TYPE_TAG_VALUE]),
+    );
+    filter.insert(
+        format!("#{}", NOSTR_TAG_PAIRING_HASH_KEY),
+        json!([pairing_hash]),
+    );
+    filter.insert(
+        format!("#{}", NOSTR_TAG_RECIPIENT_PUBKEY_KEY),
+        json!([recipient_pubkey_hex]),
+    );
+    filter.insert("limit".to_string(), json!(limit));
+
+    serde_json::to_string(&serde_json::json!(["REQ", subscription_id, filter]))
+    .map_err(|e| AppError::Internal(format!("failed to encode relay req frame: {e}")))
+}
+
+fn parse_ok_frame(frame: &str, event_id: &str) -> Option<(bool, String)> {
+    let value: Value = serde_json::from_str(frame).ok()?;
+    let arr = value.as_array()?;
+    if arr.len() != 4 {
+        return None;
+    }
+    if arr.first()?.as_str()? != "OK" {
+        return None;
+    }
+    if arr.get(1)?.as_str()? != event_id {
+        return None;
+    }
+    let accepted = arr.get(2)?.as_bool()?;
+    let message = arr.get(3)?.as_str()?.to_string();
+    Some((accepted, message))
+}
+
+fn parse_transport_event_frame(frame: &str, subscription_id: &str) -> Option<NostrTransportEventV1> {
+    let value: Value = serde_json::from_str(frame).ok()?;
+    let arr = value.as_array()?;
+    if arr.len() != 3 {
+        return None;
+    }
+    if arr.first()?.as_str()? != "EVENT" {
+        return None;
+    }
+    if arr.get(1)?.as_str()? != subscription_id {
+        return None;
+    }
+    let event: NostrTransportEventV1 = serde_json::from_value(arr.get(2)?.clone()).ok()?;
+    event.verify().ok()?;
+    Some(event)
+}
+
+fn is_eose_frame(frame: &str, subscription_id: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<Value>(frame) else {
+        return false;
+    };
+    let Some(arr) = value.as_array() else {
+        return false;
+    };
+    arr.len() == 2
+        && arr.first().and_then(Value::as_str) == Some("EOSE")
+        && arr.get(1).and_then(Value::as_str) == Some(subscription_id)
+}
+
 fn load_link_store(path: &Path) -> Result<IntentLinkStoreV1, AppError> {
     if !path.exists() {
         return Ok(IntentLinkStoreV1::default());
@@ -1100,13 +1584,13 @@ fn map_intent_error<E: ToString>(err: E) -> AppError {
 mod tests {
     use super::{
         assert_link_allows_intents, build_fixture_bundle, default_pairing_capabilities,
-        latest_pairing_request_path, map_intent_error, pairing_ack_code_from_json,
-        pairing_ack_json_from_code, pairing_request_json_from_uri, pairing_uri_from_request_json,
-        parse_fixture_bundle, resolve_fixture_source, resolve_json_source, run_pair_finish,
-        run_pair_list, run_pair_set_status, run_pair_show, run_pair_start, upsert_link,
-        IntentLinkStoreV1, LinkedWalletV1, DEFAULT_AGENT_SECRET_KEY_HEX,
-        DEFAULT_WALLET_SECRET_KEY_HEX, LINK_STATUS_ACTIVE, LINK_STATUS_PAUSED,
-        LINK_STATUS_REVOKED, LINK_STATUS_ROTATED, MAX_PAIRING_URI_CHARS,
+        latest_pairing_request_path, map_intent_error, normalize_pairing_relays,
+        pairing_ack_code_from_json, pairing_ack_json_from_code, pairing_request_json_from_uri,
+        pairing_uri_from_request_json, parse_fixture_bundle, resolve_fixture_source,
+        resolve_json_source, run_pair_finish, run_pair_list, run_pair_set_status, run_pair_show,
+        run_pair_start, upsert_link, IntentLinkStoreV1, LinkedWalletV1,
+        DEFAULT_AGENT_SECRET_KEY_HEX, DEFAULT_WALLET_SECRET_KEY_HEX, LINK_STATUS_ACTIVE,
+        LINK_STATUS_PAUSED, LINK_STATUS_REVOKED, LINK_STATUS_ROTATED, MAX_PAIRING_URI_CHARS,
     };
     use crate::cli::Cli;
     use crate::error::AppError;
@@ -1181,6 +1665,25 @@ mod tests {
         let envelope = serde_json::json!({ "fixtures": bundle }).to_string();
         let parsed = parse_fixture_bundle(&envelope).expect("parsed");
         assert_eq!(parsed.schema_version, "intent-fixture-v1");
+    }
+
+    #[test]
+    fn normalize_pairing_relays_uses_regtest_default() {
+        let normalized = normalize_pairing_relays(&[], "regtest");
+        assert_eq!(
+            normalized,
+            vec!["wss://nostr-regtest.exittheloop.com".to_string()]
+        );
+    }
+
+    #[test]
+    fn normalize_pairing_relays_canonicalizes_http_schemes() {
+        let normalized =
+            normalize_pairing_relays(&["https://nostr-regtest.exittheloop.com".to_string()], "regtest");
+        assert_eq!(
+            normalized,
+            vec!["wss://nostr-regtest.exittheloop.com".to_string()]
+        );
     }
 
     #[test]
@@ -1375,7 +1878,15 @@ mod tests {
         ])
         .expect("cli parse");
         ensure_profile_parent_exists(&cli);
-        let output = run_pair_start(&cli, Some(1_710_000_000), Some(600), None, "regtest", false)
+        let output = run_pair_start(
+            &cli,
+            Some(1_710_000_000),
+            Some(600),
+            None,
+            &[],
+            "regtest",
+            false,
+        )
             .expect("pair start");
 
         match output {
@@ -1400,7 +1911,15 @@ mod tests {
         ])
         .expect("cli parse");
         ensure_profile_parent_exists(&cli);
-        let output = run_pair_start(&cli, Some(1_710_000_000), Some(600), None, "regtest", false)
+        let output = run_pair_start(
+            &cli,
+            Some(1_710_000_000),
+            Some(600),
+            None,
+            &[],
+            "regtest",
+            false,
+        )
             .expect("pair start");
 
         match output {
@@ -1425,7 +1944,15 @@ mod tests {
         ])
         .expect("cli parse");
         ensure_profile_parent_exists(&cli);
-        let output = run_pair_start(&cli, Some(1_710_000_000), Some(600), None, "regtest", true)
+        let output = run_pair_start(
+            &cli,
+            Some(1_710_000_000),
+            Some(600),
+            None,
+            &[],
+            "regtest",
+            true,
+        )
             .expect("pair start");
 
         match output {
@@ -1451,7 +1978,15 @@ mod tests {
         .expect("cli parse");
         ensure_profile_parent_exists(&cli);
 
-        run_pair_start(&cli, Some(1_710_000_000), Some(600), None, "regtest", false)
+        run_pair_start(
+            &cli,
+            Some(1_710_000_000),
+            Some(600),
+            None,
+            &[],
+            "regtest",
+            false,
+        )
             .expect("pair start");
 
         let request_json = std::fs::read_to_string(
@@ -1488,6 +2023,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(&ack_code),
         )
         .expect("pair finish");
@@ -1510,7 +2046,15 @@ mod tests {
         .expect("cli parse");
         ensure_profile_parent_exists(&cli);
 
-        run_pair_start(&cli, Some(1_710_000_000), Some(600), None, "regtest", false)
+        run_pair_start(
+            &cli,
+            Some(1_710_000_000),
+            Some(600),
+            None,
+            &[],
+            "regtest",
+            false,
+        )
             .expect("pair start");
 
         let request_json = std::fs::read_to_string(
@@ -1543,6 +2087,7 @@ mod tests {
         run_pair_finish(
             &cli,
             Some(1_710_000_020),
+            None,
             None,
             None,
             None,

@@ -8,22 +8,23 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::future::Future;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::time::{timeout, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use zinc_core::{
-    build_signed_pairing_complete_receipt, decode_pairing_ack_envelope_event,
-    pairing_tag_hash_hex, pairing_transport_tags, pubkey_hex_from_secret_key,
-    verify_pairing_approval, BuildBuyerOfferIntentV1, CapabilityPolicyV1, NostrTransportEventV1,
-    PairingAckDecisionV1, PairingAckV1, PairingLinkApprovalV1,
-    PairingRequestV1, SignedPairingCompleteReceiptV1, SignIntentActionV1, SignIntentPayloadV1,
+    build_signed_pairing_complete_receipt, decode_pairing_ack_envelope_event_with_secret,
+    encrypt_pairing_transport_content, pairing_tag_hash_hex, pairing_transport_tags,
+    pubkey_hex_from_secret_key, verify_pairing_approval, BuildBuyerOfferIntentV1,
+    CapabilityPolicyV1, NostrTransportEventV1, PairingAckDecisionV1, PairingAckV1,
+    PairingLinkApprovalV1, PairingRequestV1, SignIntentActionV1, SignIntentPayloadV1,
     SignIntentReceiptStatusV1, SignIntentReceiptV1, SignIntentV1, SignedPairingAckV1,
-    SignedPairingRequestV1, SignedSignIntentReceiptV1, SignedSignIntentV1,
-    NOSTR_PAIRING_ACK_TYPE_TAG_VALUE, NOSTR_PAIRING_COMPLETE_RECEIPT_TYPE_TAG_VALUE,
-    NOSTR_SIGN_INTENT_APP_TAG_VALUE, NOSTR_TAG_APP_KEY, NOSTR_TAG_PAIRING_HASH_KEY,
-    NOSTR_TAG_RECIPIENT_PUBKEY_KEY, NOSTR_TAG_TYPE_KEY, PAIRING_TRANSPORT_EVENT_KIND,
+    SignedPairingCompleteReceiptV1, SignedPairingRequestV1, SignedSignIntentReceiptV1,
+    SignedSignIntentV1, NOSTR_PAIRING_ACK_TYPE_TAG_VALUE,
+    NOSTR_PAIRING_COMPLETE_RECEIPT_TYPE_TAG_VALUE, NOSTR_SIGN_INTENT_APP_TAG_VALUE,
+    NOSTR_TAG_APP_KEY, NOSTR_TAG_PAIRING_HASH_KEY, NOSTR_TAG_RECIPIENT_PUBKEY_KEY,
+    NOSTR_TAG_TYPE_KEY, PAIRING_TRANSPORT_EVENT_KIND,
 };
 
 const DEFAULT_AGENT_SECRET_KEY_HEX: &str =
@@ -37,6 +38,8 @@ const MAX_PAIRING_ACK_JSON_BYTES: usize = 16 * 1024;
 const PAIRING_ACK_CODE_PREFIX: &str = "zincack1_";
 const DEFAULT_PAIRING_RELAY_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_PAIRING_RELAY_LIMIT: usize = 32;
+const DEFAULT_PAIR_START_AWAIT_ACK_WINDOW_MS: u64 = 30_000;
+const DEFAULT_PAIR_START_AWAIT_ACK_POLL_MS: u64 = 900;
 const DEFAULT_PAIRING_RELAYS: &[&str] = &["wss://relay.damus.io", "wss://nos.lol"];
 const REGTEST_DEFAULT_PAIRING_RELAYS: &[&str] = &["wss://nostr-regtest.exittheloop.com"];
 const LINK_STATUS_ACTIVE: &str = "active";
@@ -249,6 +252,7 @@ fn run_pair_action(cli: &Cli, action: &IntentPairAction) -> Result<CommandOutput
             relay,
             network,
             show_json,
+            no_wait,
         } => run_pair_start(
             cli,
             *now_unix,
@@ -257,6 +261,7 @@ fn run_pair_action(cli: &Cli, action: &IntentPairAction) -> Result<CommandOutput
             relay,
             network,
             *show_json,
+            *no_wait,
         ),
         IntentPairAction::Finish {
             now_unix,
@@ -301,6 +306,7 @@ fn run_pair_start(
     relay_urls: &[String],
     network: &str,
     show_json: bool,
+    no_wait: bool,
 ) -> Result<CommandOutput, AppError> {
     let now_unix = i64::try_from(now_unix.unwrap_or_else(current_unix))
         .map_err(|_| AppError::Invalid("now_unix is out of range".to_string()))?;
@@ -313,8 +319,9 @@ fn run_pair_start(
         ));
     }
 
-    let agent_secret = agent_secret_key_hex.unwrap_or(DEFAULT_AGENT_SECRET_KEY_HEX);
-    let agent_pubkey_hex = pubkey_hex_from_secret_key(agent_secret).map_err(map_intent_error)?;
+    let agent_secret_key_hex = agent_secret_key_hex.unwrap_or(DEFAULT_AGENT_SECRET_KEY_HEX);
+    let agent_pubkey_hex =
+        pubkey_hex_from_secret_key(agent_secret_key_hex).map_err(map_intent_error)?;
 
     let requested_capabilities = default_pairing_capabilities(network);
     let relays = normalize_pairing_relays(relay_urls, network);
@@ -328,7 +335,7 @@ fn run_pair_start(
         requested_capabilities,
     };
     let signed_request =
-        SignedPairingRequestV1::new(request, agent_secret).map_err(map_intent_error)?;
+        SignedPairingRequestV1::new(request, agent_secret_key_hex).map_err(map_intent_error)?;
     let pairing_id = signed_request.pairing_id_hex().map_err(map_intent_error)?;
 
     let request_json = serde_json::to_string(&signed_request).map_err(|e| {
@@ -351,7 +358,7 @@ fn run_pair_start(
     let links_path = intent_links_path(cli)?;
 
     if cli.agent {
-        Ok(CommandOutput::Generic(json!({
+        return Ok(CommandOutput::Generic(json!({
             "schemaVersion": "pairing-request-v1",
             "pairingId": pairing_id,
             "agentPubkeyHex": agent_pubkey_hex,
@@ -361,22 +368,74 @@ fn run_pair_start(
             "pairingRequestJson": request_json,
             "requestPath": request_path.display().to_string(),
             "linksPath": links_path.display().to_string()
-        })))
-    } else {
-        Ok(CommandOutput::IntentPairStart {
+        })));
+    }
+
+    let await_ack = !no_wait;
+    if await_ack {
+        use crate::output::Presenter;
+        let start_output = CommandOutput::IntentPairStart {
             schema_version: "pairing-request-v1".to_string(),
-            pairing_id,
-            agent_pubkey_hex,
+            pairing_id: pairing_id.clone(),
+            agent_pubkey_hex: agent_pubkey_hex.clone(),
             fingerprint: pairing_fingerprint(
                 &signed_request.pairing_id_hex().map_err(map_intent_error)?,
             ),
-            pairing_uri,
+            pairing_uri: pairing_uri.clone(),
             signed_pairing_request: to_json_value(&signed_request, "signed pairing request")?,
-            pairing_request_json: if show_json { Some(request_json) } else { None },
+            pairing_request_json: if show_json {
+                Some(request_json.clone())
+            } else {
+                None
+            },
             request_path: request_path.display().to_string(),
             links_path: links_path.display().to_string(),
-        })
+            await_ack,
+        };
+        let preview = crate::output::HumanPresenter::new(true).render(&start_output);
+        let _ = std::io::stdout().write_all(preview.as_bytes());
+        let _ = std::io::stdout().flush();
+
+        if let Some(signed_ack) = wait_for_pairing_ack_from_relays(
+            &signed_request,
+            agent_secret_key_hex,
+            DEFAULT_PAIR_START_AWAIT_ACK_WINDOW_MS,
+        ) {
+            let finish_now_unix = i64::try_from(current_unix())
+                .map_err(|_| AppError::Invalid("now_unix is out of range".to_string()))?;
+            return finalize_pairing_link(
+                cli,
+                &signed_request,
+                &signed_ack,
+                agent_secret_key_hex,
+                finish_now_unix,
+                "relay".to_string(),
+            );
+        }
+        return Ok(CommandOutput::IntentPairAwaitTimeout {
+            pairing_id,
+            fingerprint: pairing_fingerprint(
+                &signed_request.pairing_id_hex().map_err(map_intent_error)?,
+            ),
+            request_path: request_path.display().to_string(),
+            links_path: links_path.display().to_string(),
+        });
     }
+
+    Ok(CommandOutput::IntentPairStart {
+        schema_version: "pairing-request-v1".to_string(),
+        pairing_id,
+        agent_pubkey_hex,
+        fingerprint: pairing_fingerprint(
+            &signed_request.pairing_id_hex().map_err(map_intent_error)?,
+        ),
+        pairing_uri,
+        signed_pairing_request: to_json_value(&signed_request, "signed pairing request")?,
+        pairing_request_json: if show_json { Some(request_json) } else { None },
+        request_path: request_path.display().to_string(),
+        links_path: links_path.display().to_string(),
+        await_ack,
+    })
 }
 
 fn run_pair_finish(
@@ -401,11 +460,13 @@ fn run_pair_finish(
     let signed_request: SignedPairingRequestV1 = serde_json::from_str(&request_source)
         .map_err(|e| AppError::Invalid(format!("invalid signed pairing request json: {e}")))?;
     let resolved_ack_source = resolve_pairing_ack_source_optional(ack_json, ack_file, ack_code)?;
-    let relay_ack = match fetch_signed_pairing_ack_from_relays(&signed_request) {
-        Ok(found) => found,
-        Err(_) if resolved_ack_source.is_some() => None,
-        Err(err) => return Err(err),
-    };
+    let agent_secret_key_hex = agent_secret_key_hex.unwrap_or(DEFAULT_AGENT_SECRET_KEY_HEX);
+    let relay_ack =
+        match fetch_signed_pairing_ack_from_relays(&signed_request, agent_secret_key_hex) {
+            Ok(found) => found,
+            Err(_) if resolved_ack_source.is_some() => None,
+            Err(err) => return Err(err),
+        };
     let (signed_ack, ack_source_label) = if let Some(signed_ack) = relay_ack {
         (signed_ack, "relay".to_string())
     } else if let Some(ack_source) = resolved_ack_source {
@@ -425,9 +486,26 @@ fn run_pair_finish(
                 .to_string(),
         ));
     };
+    finalize_pairing_link(
+        cli,
+        &signed_request,
+        &signed_ack,
+        agent_secret_key_hex,
+        now_unix,
+        ack_source_label,
+    )
+}
 
-    let approval = verify_pairing_approval(&signed_request, &signed_ack, now_unix)
-        .map_err(map_intent_error)?;
+fn finalize_pairing_link(
+    cli: &Cli,
+    signed_request: &SignedPairingRequestV1,
+    signed_ack: &SignedPairingAckV1,
+    agent_secret_key_hex: &str,
+    now_unix: i64,
+    ack_source_label: String,
+) -> Result<CommandOutput, AppError> {
+    let approval =
+        verify_pairing_approval(signed_request, signed_ack, now_unix).map_err(map_intent_error)?;
     let pairing_id = approval.pairing_id.clone();
 
     let links_path = intent_links_path(cli)?;
@@ -436,9 +514,9 @@ fn run_pair_finish(
     save_link_store(&links_path, &store)?;
 
     let completion_receipt_published = publish_pairing_complete_receipt_best_effort(
-        &signed_request,
-        &signed_ack,
-        agent_secret_key_hex.unwrap_or(DEFAULT_AGENT_SECRET_KEY_HEX),
+        signed_request,
+        signed_ack,
+        agent_secret_key_hex,
         now_unix,
     );
 
@@ -654,7 +732,8 @@ fn assert_link_allows_intents(link: &LinkedWalletV1) -> Result<(), AppError> {
             "linked agent is revoked; create a new pairing before sending intents".to_string(),
         )),
         LINK_STATUS_ROTATED => Err(AppError::Policy(
-            "linked agent was rotated by a newer pairing; use the latest active pairing".to_string(),
+            "linked agent was rotated by a newer pairing; use the latest active pairing"
+                .to_string(),
         )),
         _ => Err(AppError::Policy(
             "linked agent is not in an active state".to_string(),
@@ -1145,12 +1224,43 @@ where
 
 fn fetch_signed_pairing_ack_from_relays(
     signed_request: &SignedPairingRequestV1,
+    recipient_secret_key_hex: &str,
 ) -> Result<Option<SignedPairingAckV1>, AppError> {
-    run_async_with_runtime(fetch_signed_pairing_ack_from_relays_async(signed_request))
+    run_async_with_runtime(fetch_signed_pairing_ack_from_relays_async(
+        signed_request,
+        recipient_secret_key_hex,
+    ))
+}
+
+fn wait_for_pairing_ack_from_relays(
+    signed_request: &SignedPairingRequestV1,
+    recipient_secret_key_hex: &str,
+    wait_window_ms: u64,
+) -> Option<SignedPairingAckV1> {
+    let deadline = Instant::now() + Duration::from_millis(wait_window_ms);
+    loop {
+        if let Ok(Some(signed_ack)) =
+            fetch_signed_pairing_ack_from_relays(signed_request, recipient_secret_key_hex)
+        {
+            return Some(signed_ack);
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            return None;
+        }
+        let remaining = deadline.saturating_duration_since(now);
+        let sleep_for = remaining.min(Duration::from_millis(DEFAULT_PAIR_START_AWAIT_ACK_POLL_MS));
+        if sleep_for.is_zero() {
+            return None;
+        }
+        std::thread::sleep(sleep_for);
+    }
 }
 
 async fn fetch_signed_pairing_ack_from_relays_async(
     signed_request: &SignedPairingRequestV1,
+    recipient_secret_key_hex: &str,
 ) -> Result<Option<SignedPairingAckV1>, AppError> {
     let relays = normalize_pairing_relays(
         &signed_request.request.relays,
@@ -1159,8 +1269,9 @@ async fn fetch_signed_pairing_ack_from_relays_async(
     if relays.is_empty() {
         return Ok(None);
     }
-    let pairing_hash = pairing_tag_hash_hex(&signed_request.pairing_id_hex().map_err(map_intent_error)?)
-        .map_err(map_intent_error)?;
+    let pairing_hash =
+        pairing_tag_hash_hex(&signed_request.pairing_id_hex().map_err(map_intent_error)?)
+            .map_err(map_intent_error)?;
     let mut seen_ack_ids = HashSet::new();
     let mut newest: Option<SignedPairingAckV1> = None;
 
@@ -1169,6 +1280,7 @@ async fn fetch_signed_pairing_ack_from_relays_async(
             &relay_url,
             signed_request,
             &pairing_hash,
+            recipient_secret_key_hex,
             DEFAULT_PAIRING_RELAY_TIMEOUT_MS,
         )
         .await?;
@@ -1194,6 +1306,7 @@ async fn discover_pairing_ack_from_relay(
     relay_url: &str,
     signed_request: &SignedPairingRequestV1,
     pairing_hash: &str,
+    recipient_secret_key_hex: &str,
     timeout_ms: u64,
 ) -> Result<Option<SignedPairingAckV1>, AppError> {
     let (mut socket, _) = connect_async(relay_url)
@@ -1225,7 +1338,10 @@ async fn discover_pairing_ack_from_relay(
             match message {
                 Ok(Message::Text(text)) => {
                     if let Some(event) = parse_transport_event_frame(text.as_ref(), &sid) {
-                        if let Ok(envelope) = decode_pairing_ack_envelope_event(&event) {
+                        if let Ok(envelope) = decode_pairing_ack_envelope_event_with_secret(
+                            &event,
+                            recipient_secret_key_hex,
+                        ) {
                             let replace = newest
                                 .as_ref()
                                 .map(|existing| {
@@ -1246,7 +1362,10 @@ async fn discover_pairing_ack_from_relay(
                 Ok(Message::Binary(bin)) => {
                     if let Ok(text) = std::str::from_utf8(&bin) {
                         if let Some(event) = parse_transport_event_frame(text, &sid) {
-                            if let Ok(envelope) = decode_pairing_ack_envelope_event(&event) {
+                            if let Ok(envelope) = decode_pairing_ack_envelope_event_with_secret(
+                                &event,
+                                recipient_secret_key_hex,
+                            ) {
                                 let replace = newest
                                     .as_ref()
                                     .map(|existing| {
@@ -1317,7 +1436,15 @@ fn publish_pairing_complete_receipt_best_effort(
         Ok(tags) => tags,
         Err(_) => return false,
     };
-    let content = match serde_json::to_string(&signed_receipt) {
+    let receipt_json = match serde_json::to_string(&signed_receipt) {
+        Ok(content) => content,
+        Err(_) => return false,
+    };
+    let content = match encrypt_pairing_transport_content(
+        &receipt_json,
+        agent_secret_key_hex,
+        &signed_receipt.receipt.wallet_pubkey_hex,
+    ) {
         Ok(content) => content,
         Err(_) => return false,
     };
@@ -1437,7 +1564,7 @@ fn pairing_ack_req_frame(
     filter.insert("limit".to_string(), json!(limit));
 
     serde_json::to_string(&serde_json::json!(["REQ", subscription_id, filter]))
-    .map_err(|e| AppError::Internal(format!("failed to encode relay req frame: {e}")))
+        .map_err(|e| AppError::Internal(format!("failed to encode relay req frame: {e}")))
 }
 
 fn parse_ok_frame(frame: &str, event_id: &str) -> Option<(bool, String)> {
@@ -1457,7 +1584,10 @@ fn parse_ok_frame(frame: &str, event_id: &str) -> Option<(bool, String)> {
     Some((accepted, message))
 }
 
-fn parse_transport_event_frame(frame: &str, subscription_id: &str) -> Option<NostrTransportEventV1> {
+fn parse_transport_event_frame(
+    frame: &str,
+    subscription_id: &str,
+) -> Option<NostrTransportEventV1> {
     let value: Value = serde_json::from_str(frame).ok()?;
     let arr = value.as_array()?;
     if arr.len() != 3 {
@@ -1678,8 +1808,10 @@ mod tests {
 
     #[test]
     fn normalize_pairing_relays_canonicalizes_http_schemes() {
-        let normalized =
-            normalize_pairing_relays(&["https://nostr-regtest.exittheloop.com".to_string()], "regtest");
+        let normalized = normalize_pairing_relays(
+            &["https://nostr-regtest.exittheloop.com".to_string()],
+            "regtest",
+        );
         assert_eq!(
             normalized,
             vec!["wss://nostr-regtest.exittheloop.com".to_string()]
@@ -1796,7 +1928,10 @@ mod tests {
             .find(|link| link.pairing_id == "a".repeat(64))
             .expect("rotated link");
         assert_eq!(rotated.status, LINK_STATUS_ROTATED);
-        assert_eq!(rotated.rotated_by_pairing_id.as_deref(), Some("b".repeat(64).as_str()));
+        assert_eq!(
+            rotated.rotated_by_pairing_id.as_deref(),
+            Some("b".repeat(64).as_str())
+        );
     }
 
     #[test]
@@ -1886,8 +2021,9 @@ mod tests {
             &[],
             "regtest",
             false,
+            true,
         )
-            .expect("pair start");
+        .expect("pair start");
 
         match output {
             CommandOutput::Generic(value) => {
@@ -1919,8 +2055,9 @@ mod tests {
             &[],
             "regtest",
             false,
+            true,
         )
-            .expect("pair start");
+        .expect("pair start");
 
         match output {
             CommandOutput::IntentPairStart {
@@ -1952,14 +2089,46 @@ mod tests {
             &[],
             "regtest",
             true,
+            true,
         )
-            .expect("pair start");
+        .expect("pair start");
 
         match output {
             CommandOutput::IntentPairStart {
                 pairing_request_json,
                 ..
             } => assert!(pairing_request_json.is_some()),
+            _ => panic!("expected human pair start output"),
+        }
+    }
+
+    #[test]
+    fn pair_start_human_output_sets_await_ack_false_when_no_wait() {
+        let data_dir = unique_data_dir("pair-human-no-wait");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "pair".to_string(),
+            "start".to_string(),
+            "--no-wait".to_string(),
+        ])
+        .expect("cli parse");
+        ensure_profile_parent_exists(&cli);
+        let output = run_pair_start(
+            &cli,
+            Some(1_710_000_000),
+            Some(600),
+            None,
+            &[],
+            "regtest",
+            false,
+            true,
+        )
+        .expect("pair start");
+
+        match output {
+            CommandOutput::IntentPairStart { await_ack, .. } => assert!(!await_ack),
             _ => panic!("expected human pair start output"),
         }
     }
@@ -1986,8 +2155,9 @@ mod tests {
             &[],
             "regtest",
             false,
+            true,
         )
-            .expect("pair start");
+        .expect("pair start");
 
         let request_json = std::fs::read_to_string(
             latest_pairing_request_path(&cli).expect("latest request path"),
@@ -2054,8 +2224,9 @@ mod tests {
             &[],
             "regtest",
             false,
+            true,
         )
-            .expect("pair start");
+        .expect("pair start");
 
         let request_json = std::fs::read_to_string(
             latest_pairing_request_path(&cli).expect("latest request path"),
@@ -2132,8 +2303,9 @@ mod tests {
             _ => panic!("expected intent pair list output"),
         };
 
-        let pause_output = run_pair_set_status(&cli, &pairing_id, LINK_STATUS_PAUSED, Some(1_710_000_030))
-            .expect("pause");
+        let pause_output =
+            run_pair_set_status(&cli, &pairing_id, LINK_STATUS_PAUSED, Some(1_710_000_030))
+                .expect("pause");
         match pause_output {
             CommandOutput::IntentPairStatusUpdate { status, .. } => {
                 assert_eq!(status, LINK_STATUS_PAUSED);
@@ -2141,8 +2313,9 @@ mod tests {
             _ => panic!("expected status update output"),
         }
 
-        let resume_output = run_pair_set_status(&cli, &pairing_id, LINK_STATUS_ACTIVE, Some(1_710_000_040))
-            .expect("resume");
+        let resume_output =
+            run_pair_set_status(&cli, &pairing_id, LINK_STATUS_ACTIVE, Some(1_710_000_040))
+                .expect("resume");
         match resume_output {
             CommandOutput::IntentPairStatusUpdate { status, .. } => {
                 assert_eq!(status, LINK_STATUS_ACTIVE);
@@ -2150,8 +2323,9 @@ mod tests {
             _ => panic!("expected status update output"),
         }
 
-        let revoke_output = run_pair_set_status(&cli, &pairing_id, LINK_STATUS_REVOKED, Some(1_710_000_050))
-            .expect("revoke");
+        let revoke_output =
+            run_pair_set_status(&cli, &pairing_id, LINK_STATUS_REVOKED, Some(1_710_000_050))
+                .expect("revoke");
         match revoke_output {
             CommandOutput::IntentPairStatusUpdate { status, .. } => {
                 assert_eq!(status, LINK_STATUS_REVOKED);
@@ -2159,15 +2333,11 @@ mod tests {
             _ => panic!("expected status update output"),
         }
 
-        let err = match run_pair_set_status(
-            &cli,
-            &pairing_id,
-            LINK_STATUS_ACTIVE,
-            Some(1_710_000_060),
-        ) {
-            Ok(_) => panic!("revoked cannot resume"),
-            Err(err) => err,
-        };
+        let err =
+            match run_pair_set_status(&cli, &pairing_id, LINK_STATUS_ACTIVE, Some(1_710_000_060)) {
+                Ok(_) => panic!("revoked cannot resume"),
+                Err(err) => err,
+            };
         assert!(matches!(err, AppError::Invalid(_)));
     }
 }

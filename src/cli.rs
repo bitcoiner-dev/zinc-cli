@@ -396,6 +396,8 @@ pub enum IntentPairAction {
         network: String,
         #[arg(long)]
         show_json: bool,
+        #[arg(long)]
+        no_wait: bool,
     },
     Finish {
         #[arg(long)]
@@ -735,12 +737,14 @@ mod tests {
                         expires_in_secs,
                         relay,
                         show_json,
+                        no_wait,
                         ..
                     } => {
                         assert_eq!(network, "signet");
                         assert_eq!(expires_in_secs, Some(900));
                         assert_eq!(relay, vec!["wss://relay.one", "wss://relay.two"]);
                         assert!(!show_json);
+                        assert!(!no_wait);
                     }
                     _ => panic!("expected intent pair start action"),
                 },
@@ -808,6 +812,22 @@ mod tests {
                 } => {
                     assert_eq!(network, "signet");
                     assert!(show_json);
+                }
+                _ => panic!("expected pair start action"),
+            },
+            _ => panic!("expected pair command"),
+        }
+    }
+
+    #[test]
+    fn parses_pair_start_no_wait_flag() {
+        let cli =
+            Cli::try_parse_from(["zinc-cli", "pair", "start", "--no-wait"]).expect("cli parse");
+
+        match cli.command {
+            Command::Pair(args) => match args.action {
+                IntentPairAction::Start { no_wait, .. } => {
+                    assert!(no_wait);
                 }
                 _ => panic!("expected pair start action"),
             },
@@ -898,14 +918,8 @@ mod tests {
 
     #[test]
     fn parses_pair_show_alias_subcommand() {
-        let cli = Cli::try_parse_from([
-            "zinc-cli",
-            "pair",
-            "show",
-            "--pairing-id",
-            "deadbeef",
-        ])
-        .expect("cli parse");
+        let cli = Cli::try_parse_from(["zinc-cli", "pair", "show", "--pairing-id", "deadbeef"])
+            .expect("cli parse");
 
         match cli.command {
             Command::Pair(args) => match args.action {

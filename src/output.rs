@@ -259,6 +259,13 @@ pub enum CommandOutput {
         pairing_request_json: Option<String>,
         request_path: String,
         links_path: String,
+        await_ack: bool,
+    },
+    IntentPairAwaitTimeout {
+        pairing_id: String,
+        fingerprint: String,
+        request_path: String,
+        links_path: String,
     },
     IntentPairFinish {
         paired: bool,
@@ -965,6 +972,7 @@ impl HumanPresenter {
             pairing_request_json,
             request_path,
             links_path,
+            await_ack,
             ..
         } = output
         {
@@ -1008,11 +1016,20 @@ impl HumanPresenter {
                 style("No scanner?").bold(),
                 style("Copy the Pairing Link above and paste it in wallet pairing.").dim()
             ));
-            out.push_str(&format!(
-                "\n{}\n{}\n",
-                style("After wallet approval").bold(),
-                style("Run `zinc-cli pair finish --ack-code <code>` to complete linking.").dim()
-            ));
+            if *await_ack {
+                out.push_str(&format!(
+                    "\n{}\n{}\n{}\n",
+                    style("No relay approval received yet").bold(),
+                    style("CLI waited briefly for wallet approval but did not receive an ack.").dim(),
+                    style("Run `zinc-cli pair finish` to retry relay fetch now (or use `--ack-code` fallback).").dim()
+                ));
+            } else {
+                out.push_str(&format!(
+                    "\n{}\n{}\n",
+                    style("After wallet approval").bold(),
+                    style("Run `zinc-cli pair finish` (or `--ack-code <code>` fallback).").dim()
+                ));
+            }
             if let Some(request_json) = pairing_request_json {
                 out.push_str(&format!(
                     "\n{}\n{}\n",
@@ -1099,7 +1116,11 @@ impl HumanPresenter {
         {
             use console::style;
             let mut out = String::new();
-            out.push_str(&format!("{} {}\n", style("INTENT LINKS").bold(), style(total).bold()));
+            out.push_str(&format!(
+                "{} {}\n",
+                style("INTENT LINKS").bold(),
+                style(total).bold()
+            ));
             out.push_str(&format!(
                 "  {:<14} active={} paused={} revoked={} rotated={}\n",
                 style("Status").dim(),
@@ -1151,7 +1172,11 @@ impl HumanPresenter {
                 style("Fingerprint").dim(),
                 link.fingerprint
             ));
-            out.push_str(&format!("  {:<14} {}\n", style("Status").dim(), link.status));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Status").dim(),
+                link.status
+            ));
             out.push_str(&format!(
                 "  {:<14} {}\n",
                 style("Can Send").dim(),
@@ -1241,6 +1266,48 @@ impl HumanPresenter {
             String::new()
         }
     }
+
+    fn print_intent_pair_await_timeout(&self, output: &CommandOutput) -> String {
+        if let CommandOutput::IntentPairAwaitTimeout {
+            pairing_id,
+            fingerprint,
+            request_path,
+            links_path,
+        } = output
+        {
+            use console::style;
+            let mut out = String::new();
+            out.push_str(&format!("{}\n", style("INTENT PAIR").bold()));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Pairing ID").dim(),
+                crate::commands::offer::abbreviate(pairing_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Fingerprint").dim(),
+                fingerprint
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Request File").dim(),
+                request_path
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Links File").dim(),
+                links_path
+            ));
+            out.push_str(&format!(
+                "\n{}\n{}\n",
+                style("No relay approval received yet").bold(),
+                style("Run `zinc-cli pair finish` to retry relay fetch now (or use `--ack-code` fallback).").dim()
+            ));
+            out
+        } else {
+            String::new()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1248,7 +1315,10 @@ mod tests {
     use super::{CommandOutput, HumanPresenter, Presenter};
     use serde_json::json;
 
-    fn sample_pair_start_output(pairing_request_json: Option<String>) -> CommandOutput {
+    fn sample_pair_start_output(
+        pairing_request_json: Option<String>,
+        await_ack: bool,
+    ) -> CommandOutput {
         CommandOutput::IntentPairStart {
             schema_version: "pairing-request-v1".to_string(),
             pairing_id: "a".repeat(64),
@@ -1259,31 +1329,44 @@ mod tests {
             pairing_request_json,
             request_path: "/tmp/request.json".to_string(),
             links_path: "/tmp/links.json".to_string(),
+            await_ack,
         }
     }
 
     #[test]
     fn pair_start_human_output_shows_pairing_link_and_qr_section() {
         let presenter = HumanPresenter::new(false);
-        let rendered = presenter.render(&sample_pair_start_output(None));
+        let rendered = presenter.render(&sample_pair_start_output(None, true));
         assert!(rendered.contains("Pairing Link"));
         assert!(rendered.contains("zinc://pair?request="));
         assert!(rendered.contains("Scan this QR in Zinc wallet:"));
+        assert!(rendered.contains("No relay approval received yet"));
     }
 
     #[test]
     fn pair_start_human_output_hides_raw_json_by_default() {
         let presenter = HumanPresenter::new(false);
-        let rendered = presenter.render(&sample_pair_start_output(None));
+        let rendered = presenter.render(&sample_pair_start_output(None, true));
         assert!(!rendered.contains("Pairing Request JSON (advanced/debug):"));
     }
 
     #[test]
     fn pair_start_human_output_shows_raw_json_when_present() {
         let presenter = HumanPresenter::new(false);
-        let rendered = presenter.render(&sample_pair_start_output(Some("{\"x\":1}".to_string())));
+        let rendered = presenter.render(&sample_pair_start_output(
+            Some("{\"x\":1}".to_string()),
+            true,
+        ));
         assert!(rendered.contains("Pairing Request JSON (advanced/debug):"));
         assert!(rendered.contains("{\"x\":1}"));
+    }
+
+    #[test]
+    fn pair_start_human_output_shows_manual_finish_copy_when_no_wait() {
+        let presenter = HumanPresenter::new(false);
+        let rendered = presenter.render(&sample_pair_start_output(None, false));
+        assert!(rendered.contains("After wallet approval"));
+        assert!(rendered.contains("zinc-cli pair finish"));
     }
 }
 
@@ -1862,6 +1945,9 @@ impl Presenter for HumanPresenter {
             }
             CommandOutput::IntentFixtureVerify { .. } => self.print_intent_fixture_verify(output),
             CommandOutput::IntentPairStart { .. } => self.print_intent_pair_start(output),
+            CommandOutput::IntentPairAwaitTimeout { .. } => {
+                self.print_intent_pair_await_timeout(output)
+            }
             CommandOutput::IntentPairFinish { .. } => self.print_intent_pair_finish(output),
             CommandOutput::IntentPairList { .. } => self.print_intent_pair_list(output),
             CommandOutput::IntentPairShow { .. } => self.print_intent_pair_show(output),

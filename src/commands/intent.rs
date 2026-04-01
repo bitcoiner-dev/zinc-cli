@@ -15,15 +15,16 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::time::{timeout, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use zinc_core::{
-    build_signed_pairing_complete_receipt, decode_pairing_ack_envelope_event_with_secret,
+    build_pairing_transport_event, build_signed_pairing_complete_receipt,
+    decode_pairing_ack_envelope_event_with_secret,
     decode_signed_sign_intent_receipt_event_with_secret, decrypt_secret_internal,
-    encrypt_pairing_transport_content, encrypt_secret_internal, generate_secret_key_hex,
-    pairing_tag_hash_hex, pairing_transport_tags, pubkey_hex_from_secret_key,
-    verify_pairing_approval, BuildBuyerOfferIntentV1, CapabilityPolicyV1, NostrTransportEventV1,
-    PairingAckDecisionV1, PairingAckV1, PairingLinkApprovalV1, PairingRequestV1,
-    SignIntentActionV1, SignIntentPayloadV1, SignIntentReceiptStatusV1, SignIntentReceiptV1,
-    SignIntentV1, SignedPairingAckV1, SignedPairingCompleteReceiptV1, SignedPairingRequestV1,
-    SignedSignIntentReceiptV1, SignedSignIntentV1, NOSTR_PAIRING_ACK_TYPE_TAG_VALUE,
+    encrypt_secret_internal, generate_secret_key_hex, pairing_tag_hash_hex,
+    pubkey_hex_from_secret_key, verify_pairing_approval, BuildBuyerOfferIntentV1,
+    CapabilityPolicyV1, NostrTransportEventV1, PairingAckDecisionV1, PairingAckV1,
+    PairingLinkApprovalV1, PairingRequestV1, SignIntentActionV1, SignIntentPayloadV1,
+    SignIntentReceiptStatusV1, SignIntentReceiptV1, SignIntentV1, SignedPairingAckV1,
+    SignedPairingCompleteReceiptV1, SignedPairingRequestV1, SignedSignIntentReceiptV1,
+    SignedSignIntentV1, NOSTR_PAIRING_ACK_TYPE_TAG_VALUE,
     NOSTR_PAIRING_COMPLETE_RECEIPT_TYPE_TAG_VALUE, NOSTR_SIGN_INTENT_APP_TAG_VALUE,
     NOSTR_SIGN_INTENT_RECEIPT_TYPE_TAG_VALUE, NOSTR_SIGN_INTENT_TYPE_TAG_VALUE, NOSTR_TAG_APP_KEY,
     NOSTR_TAG_PAIRING_HASH_KEY, NOSTR_TAG_RECIPIENT_PUBKEY_KEY, NOSTR_TAG_TYPE_KEY,
@@ -53,6 +54,8 @@ const LINK_STATUS_ACTIVE: &str = "active";
 const LINK_STATUS_PAUSED: &str = "paused";
 const LINK_STATUS_REVOKED: &str = "revoked";
 const LINK_STATUS_ROTATED: &str = "rotated";
+const INTENT_OUTBOX_STORE_SCHEMA_VERSION: &str = "intent-outbox-v1";
+const INTENT_OUTBOX_RETENTION_SECS: i64 = 7 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -84,6 +87,32 @@ impl Default for IntentLinkStoreV1 {
             links: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IntentOutboxStoreV1 {
+    schema_version: String,
+    entries: Vec<IntentOutboxEntryV1>,
+}
+
+impl Default for IntentOutboxStoreV1 {
+    fn default() -> Self {
+        Self {
+            schema_version: INTENT_OUTBOX_STORE_SCHEMA_VERSION.to_string(),
+            entries: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IntentOutboxEntryV1 {
+    intent_id: String,
+    pairing_id: String,
+    action: SignIntentActionV1,
+    created_at_unix: i64,
+    expires_at_unix: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +180,7 @@ pub async fn run(cli: &Cli, args: &IntentArgs) -> Result<CommandOutput, AppError
             timeout_ms,
             agent_secret_key_hex,
             relay,
+            allow_unknown_intent_action,
         } => run_intent_wait_receipt(
             cli,
             pairing_id,
@@ -158,6 +188,7 @@ pub async fn run(cli: &Cli, args: &IntentArgs) -> Result<CommandOutput, AppError
             *timeout_ms,
             agent_secret_key_hex.as_deref(),
             relay,
+            *allow_unknown_intent_action,
         ),
         IntentAction::FixtureGenerate {
             now_unix,
@@ -407,22 +438,11 @@ fn run_intent_send(
     let intent_id = signed_intent.intent_id_hex().map_err(map_intent_error)?;
     let signed_intent_json = serde_json::to_string(&signed_intent)
         .map_err(|e| AppError::Internal(format!("failed to serialize signed sign intent: {e}")))?;
-    let tags = pairing_transport_tags(
+    let event = build_pairing_transport_event(
+        &signed_intent_json,
         NOSTR_SIGN_INTENT_TYPE_TAG_VALUE,
         &link.pairing_id,
         &link.wallet_pubkey_hex,
-    )
-    .map_err(map_intent_error)?;
-    let content = encrypt_pairing_transport_content(
-        &signed_intent_json,
-        &agent_secret_key_hex,
-        &link.wallet_pubkey_hex,
-    )
-    .map_err(map_intent_error)?;
-    let event = NostrTransportEventV1::new(
-        PAIRING_TRANSPORT_EVENT_KIND,
-        tags,
-        content,
         u64::try_from(now_unix).unwrap_or_else(|_| current_unix()),
         &agent_secret_key_hex,
     )
@@ -438,6 +458,16 @@ fn run_intent_send(
             "failed to publish sign intent to any relay".to_string(),
         ));
     }
+    persist_intent_outbox_entry(
+        cli,
+        IntentOutboxEntryV1 {
+            intent_id: intent_id.clone(),
+            pairing_id: link.pairing_id.clone(),
+            action: signed_intent.intent.payload.action(),
+            created_at_unix: signed_intent.intent.created_at_unix,
+            expires_at_unix: signed_intent.intent.expires_at_unix,
+        },
+    )?;
 
     if cli.agent {
         return Ok(CommandOutput::Generic(json!({
@@ -470,6 +500,7 @@ fn run_intent_wait_receipt(
     timeout_ms: u64,
     agent_secret_key_hex: Option<&str>,
     relay_urls: &[String],
+    allow_unknown_intent_action: bool,
 ) -> Result<CommandOutput, AppError> {
     let timeout_ms = if timeout_ms == 0 {
         DEFAULT_WAIT_RECEIPT_TIMEOUT_MS
@@ -522,6 +553,17 @@ fn run_intent_wait_receipt(
             "sign intent receipt signer did not match linked wallet".to_string(),
         ));
     }
+    let expected_action = resolve_wait_receipt_intent_action(
+        cli,
+        &relays,
+        &link.pairing_id,
+        intent_id,
+        &link.agent_pubkey_hex,
+        &agent_secret_key_hex,
+        &link.wallet_pubkey_hex,
+        allow_unknown_intent_action,
+    )?;
+    enforce_wait_receipt_contract(&signed_receipt, expected_action.as_ref())?;
 
     let receipt_id = signed_receipt.receipt_id_hex().map_err(map_intent_error)?;
     if cli.agent {
@@ -544,6 +586,83 @@ fn run_intent_wait_receipt(
         signer_pubkey_hex: signed_receipt.receipt.signer_pubkey_hex.clone(),
         error_message: signed_receipt.receipt.error_message.clone(),
     })
+}
+
+fn resolve_wait_receipt_intent_action(
+    cli: &Cli,
+    _relays: &[String],
+    pairing_id: &str,
+    intent_id: &str,
+    _agent_pubkey_hex: &str,
+    _agent_secret_key_hex: &str,
+    _wallet_pubkey_hex: &str,
+    allow_unknown_intent_action: bool,
+) -> Result<Option<SignIntentActionV1>, AppError> {
+    if let Some(action) =
+        resolve_wait_receipt_intent_action_from_outbox(cli, pairing_id, intent_id)?
+    {
+        return Ok(Some(action));
+    }
+
+    if allow_unknown_intent_action {
+        return Ok(None);
+    }
+
+    Err(AppError::Invalid(
+        "unable to resolve intent action for receipt verification (missing local outbox entry); rerun with --allow-unknown-intent-action for cross-device recovery because kind 1059 gift-wrap transport is not sender-decryptable"
+            .to_string(),
+    ))
+}
+
+fn resolve_wait_receipt_intent_action_from_outbox(
+    cli: &Cli,
+    pairing_id: &str,
+    intent_id: &str,
+) -> Result<Option<SignIntentActionV1>, AppError> {
+    let path = intent_outbox_path(cli)?;
+    let mut store = load_intent_outbox_store(&path)?;
+    let now_unix = i64::try_from(current_unix()).unwrap_or(i64::MAX);
+    let before_len = store.entries.len();
+    prune_intent_outbox_entries(&mut store, now_unix);
+    if store.entries.len() != before_len {
+        save_intent_outbox_store(&path, &store)?;
+    }
+
+    let Some(entry) = store
+        .entries
+        .iter()
+        .find(|entry| entry.intent_id.eq_ignore_ascii_case(intent_id))
+    else {
+        return Ok(None);
+    };
+    if !entry.pairing_id.eq_ignore_ascii_case(pairing_id) {
+        return Err(AppError::Invalid(
+            "intent outbox entry pairing_id did not match linked pairing".to_string(),
+        ));
+    }
+    Ok(Some(entry.action))
+}
+
+fn enforce_wait_receipt_contract(
+    signed_receipt: &SignedSignIntentReceiptV1,
+    expected_action: Option<&SignIntentActionV1>,
+) -> Result<(), AppError> {
+    if matches!(
+        signed_receipt.receipt.status,
+        SignIntentReceiptStatusV1::Approved
+    ) && matches!(expected_action, Some(SignIntentActionV1::SignSellerInput))
+        && signed_receipt
+            .receipt
+            .signed_psbt_base64
+            .as_deref()
+            .map(str::trim)
+            .is_none_or(str::is_empty)
+    {
+        return Err(AppError::Invalid(
+            "approved SignSellerInput receipt must include signed_psbt_base64".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn run_pair_start(
@@ -1494,7 +1613,7 @@ fn map_secret_decrypt_error<E: ToString>(err: E) -> AppError {
     let lower = message.to_ascii_lowercase();
     if lower.contains("decryption failed") || lower.contains("wrong password") {
         return AppError::Auth(
-            "failed to decrypt intent agent key (wrong password or corrupted key store)"
+            "failed to decrypt intent agent key (wrong password, stale key store after password change, or corrupted key store); if this persists, back up and remove ~/.zinc-cli/profiles/<profile>.intent-agent-key.json then run `pair start` again"
                 .to_string(),
         );
     }
@@ -1528,6 +1647,10 @@ fn save_agent_key_store(path: &Path, store: &IntentAgentKeyStoreV1) -> Result<()
 
 fn intent_links_path(cli: &Cli) -> Result<PathBuf, AppError> {
     Ok(crate::profile_path(cli)?.with_extension("intent-links.json"))
+}
+
+fn intent_outbox_path(cli: &Cli) -> Result<PathBuf, AppError> {
+    Ok(crate::profile_path(cli)?.with_extension("intent-outbox.json"))
 }
 
 fn pairing_request_path(cli: &Cli, pairing_id: &str) -> Result<PathBuf, AppError> {
@@ -2099,30 +2222,15 @@ fn publish_pairing_complete_receipt_best_effort(
         Err(_) => return false,
     };
 
-    let tags = match pairing_transport_tags(
-        NOSTR_PAIRING_COMPLETE_RECEIPT_TYPE_TAG_VALUE,
-        &signed_receipt.receipt.pairing_id,
-        &signed_receipt.receipt.wallet_pubkey_hex,
-    ) {
-        Ok(tags) => tags,
-        Err(_) => return false,
-    };
     let receipt_json = match serde_json::to_string(&signed_receipt) {
         Ok(content) => content,
         Err(_) => return false,
     };
-    let content = match encrypt_pairing_transport_content(
+    let event = match build_pairing_transport_event(
         &receipt_json,
-        agent_secret_key_hex,
+        NOSTR_PAIRING_COMPLETE_RECEIPT_TYPE_TAG_VALUE,
+        &signed_receipt.receipt.pairing_id,
         &signed_receipt.receipt.wallet_pubkey_hex,
-    ) {
-        Ok(content) => content,
-        Err(_) => return false,
-    };
-    let event = match NostrTransportEventV1::new(
-        PAIRING_TRANSPORT_EVENT_KIND,
-        tags,
-        content,
         created_at_unix,
         agent_secret_key_hex,
     ) {
@@ -2233,32 +2341,33 @@ fn pairing_ack_req_frame(
     recipient_pubkey_hex: &str,
     limit: usize,
 ) -> Result<String, AppError> {
-    let mut filter = serde_json::Map::new();
-    filter.insert("kinds".to_string(), json!([PAIRING_TRANSPORT_EVENT_KIND]));
-    filter.insert(
-        format!("#{}", NOSTR_TAG_APP_KEY),
-        json!([NOSTR_SIGN_INTENT_APP_TAG_VALUE]),
-    );
-    filter.insert(
-        format!("#{}", NOSTR_TAG_TYPE_KEY),
-        json!([NOSTR_PAIRING_ACK_TYPE_TAG_VALUE]),
-    );
-    filter.insert(
-        format!("#{}", NOSTR_TAG_PAIRING_HASH_KEY),
-        json!([pairing_hash]),
-    );
-    filter.insert(
-        format!("#{}", NOSTR_TAG_RECIPIENT_PUBKEY_KEY),
-        json!([recipient_pubkey_hex]),
-    );
-    filter.insert("limit".to_string(), json!(limit));
-
-    serde_json::to_string(&serde_json::json!(["REQ", subscription_id, filter]))
-        .map_err(|e| AppError::Internal(format!("failed to encode relay req frame: {e}")))
+    pairing_transport_req_frame(
+        subscription_id,
+        NOSTR_PAIRING_ACK_TYPE_TAG_VALUE,
+        pairing_hash,
+        recipient_pubkey_hex,
+        limit,
+    )
 }
 
 fn sign_intent_receipt_req_frame(
     subscription_id: &str,
+    pairing_hash: &str,
+    recipient_pubkey_hex: &str,
+    limit: usize,
+) -> Result<String, AppError> {
+    pairing_transport_req_frame(
+        subscription_id,
+        NOSTR_SIGN_INTENT_RECEIPT_TYPE_TAG_VALUE,
+        pairing_hash,
+        recipient_pubkey_hex,
+        limit,
+    )
+}
+
+fn pairing_transport_req_frame(
+    subscription_id: &str,
+    type_tag_value: &str,
     pairing_hash: &str,
     recipient_pubkey_hex: &str,
     limit: usize,
@@ -2269,10 +2378,7 @@ fn sign_intent_receipt_req_frame(
         format!("#{}", NOSTR_TAG_APP_KEY),
         json!([NOSTR_SIGN_INTENT_APP_TAG_VALUE]),
     );
-    filter.insert(
-        format!("#{}", NOSTR_TAG_TYPE_KEY),
-        json!([NOSTR_SIGN_INTENT_RECEIPT_TYPE_TAG_VALUE]),
-    );
+    filter.insert(format!("#{}", NOSTR_TAG_TYPE_KEY), json!([type_tag_value]));
     filter.insert(
         format!("#{}", NOSTR_TAG_PAIRING_HASH_KEY),
         json!([pairing_hash]),
@@ -2359,6 +2465,54 @@ fn save_link_store(path: &Path, store: &IntentLinkStoreV1) -> Result<(), AppErro
     crate::write_bytes_atomic(path, &bytes, "intent links")
 }
 
+fn load_intent_outbox_store(path: &Path) -> Result<IntentOutboxStoreV1, AppError> {
+    if !path.exists() {
+        return Ok(IntentOutboxStoreV1::default());
+    }
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| AppError::Config(format!("failed to read intent outbox: {e}")))?;
+    let mut store: IntentOutboxStoreV1 = serde_json::from_str(&raw)
+        .map_err(|e| AppError::Config(format!("failed to parse intent outbox json: {e}")))?;
+    if store.schema_version.trim().is_empty() {
+        store.schema_version = INTENT_OUTBOX_STORE_SCHEMA_VERSION.to_string();
+    }
+    Ok(store)
+}
+
+fn save_intent_outbox_store(path: &Path, store: &IntentOutboxStoreV1) -> Result<(), AppError> {
+    let bytes = serde_json::to_vec_pretty(store)
+        .map_err(|e| AppError::Internal(format!("failed to serialize intent outbox: {e}")))?;
+    crate::write_bytes_atomic(path, &bytes, "intent outbox")
+}
+
+fn upsert_intent_outbox_entry(store: &mut IntentOutboxStoreV1, entry: IntentOutboxEntryV1) {
+    if let Some(existing) = store
+        .entries
+        .iter_mut()
+        .find(|existing| existing.intent_id.eq_ignore_ascii_case(&entry.intent_id))
+    {
+        *existing = entry;
+        return;
+    }
+    store.entries.push(entry);
+}
+
+fn prune_intent_outbox_entries(store: &mut IntentOutboxStoreV1, now_unix: i64) {
+    let cutoff = now_unix.saturating_sub(INTENT_OUTBOX_RETENTION_SECS);
+    store
+        .entries
+        .retain(|entry| entry.expires_at_unix >= cutoff);
+}
+
+fn persist_intent_outbox_entry(cli: &Cli, entry: IntentOutboxEntryV1) -> Result<(), AppError> {
+    let path = intent_outbox_path(cli)?;
+    let mut store = load_intent_outbox_store(&path)?;
+    upsert_intent_outbox_entry(&mut store, entry);
+    let now_unix = i64::try_from(current_unix()).unwrap_or(i64::MAX);
+    prune_intent_outbox_entries(&mut store, now_unix);
+    save_intent_outbox_store(&path, &store)
+}
+
 fn build_link_from_approval(
     approval: &PairingLinkApprovalV1,
     linked_at_unix: i64,
@@ -2433,13 +2587,15 @@ fn map_intent_error<E: ToString>(err: E) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_fixture_bundle, default_pairing_capabilities, ensure_link_allows_intents,
-        intent_agent_key_store_path, latest_pairing_request_path, map_intent_error,
-        normalize_pairing_relays, pairing_ack_code_from_json, pairing_ack_json_from_code,
-        pairing_request_json_from_uri, pairing_uri_from_request_json, parse_fixture_bundle,
-        resolve_agent_secret_key_hex, resolve_fixture_source, resolve_json_source, run_pair_finish,
-        run_pair_list, run_pair_set_status, run_pair_show, run_pair_start, upsert_link,
-        IntentLinkStoreV1, LinkedWalletV1, DEFAULT_AGENT_SECRET_KEY_HEX,
+        build_fixture_bundle, default_pairing_capabilities, enforce_wait_receipt_contract,
+        ensure_link_allows_intents, intent_agent_key_store_path, latest_pairing_request_path,
+        map_intent_error, normalize_pairing_relays, pairing_ack_code_from_json,
+        pairing_ack_json_from_code, pairing_request_json_from_uri, pairing_uri_from_request_json,
+        parse_fixture_bundle, persist_intent_outbox_entry, resolve_agent_secret_key_hex,
+        resolve_fixture_source, resolve_json_source, resolve_wait_receipt_intent_action,
+        resolve_wait_receipt_intent_action_from_outbox, run_pair_finish, run_pair_list,
+        run_pair_set_status, run_pair_show, run_pair_start, upsert_link, IntentLinkStoreV1,
+        IntentOutboxEntryV1, LinkedWalletV1, DEFAULT_AGENT_SECRET_KEY_HEX,
         DEFAULT_WALLET_SECRET_KEY_HEX, LINK_STATUS_ACTIVE, LINK_STATUS_PAUSED, LINK_STATUS_REVOKED,
         LINK_STATUS_ROTATED, MAX_PAIRING_URI_CHARS,
     };
@@ -2449,8 +2605,9 @@ mod tests {
     use clap::Parser;
     use std::path::Path;
     use zinc_core::{
-        pubkey_hex_from_secret_key, PairingAckDecisionV1, PairingAckV1, SignedPairingAckV1,
-        SignedPairingRequestV1,
+        pubkey_hex_from_secret_key, PairingAckDecisionV1, PairingAckV1, SignIntentActionV1,
+        SignIntentReceiptStatusV1, SignIntentReceiptV1, SignedPairingAckV1, SignedPairingRequestV1,
+        SignedSignIntentReceiptV1,
     };
 
     fn ensure_profile_parent_exists(cli: &Cli) {
@@ -2599,6 +2756,20 @@ mod tests {
             normalized,
             vec!["wss://nostr-regtest.exittheloop.com".to_string()]
         );
+    }
+
+    #[test]
+    fn pairing_transport_req_frame_uses_only_1059_kind() {
+        let frame = super::pairing_ack_req_frame("sub-1", &"a".repeat(64), &"b".repeat(64), 10)
+            .expect("req frame");
+        let value: serde_json::Value = serde_json::from_str(&frame).expect("json");
+        let kinds = value
+            .get(2)
+            .and_then(|v| v.get("kinds"))
+            .and_then(serde_json::Value::as_array)
+            .expect("kinds array");
+        assert_eq!(kinds.len(), 1);
+        assert_eq!(kinds[0].as_u64(), Some(1_059));
     }
 
     #[test]
@@ -3053,6 +3224,28 @@ mod tests {
         cli
     }
 
+    fn signed_receipt_for_contract_test(
+        status: SignIntentReceiptStatusV1,
+        signed_psbt_base64: Option<&str>,
+        artifact_json: Option<&str>,
+    ) -> SignedSignIntentReceiptV1 {
+        let signer_pubkey_hex =
+            pubkey_hex_from_secret_key(DEFAULT_WALLET_SECRET_KEY_HEX).expect("wallet pubkey");
+        let receipt = SignIntentReceiptV1 {
+            version: 1,
+            intent_id: "a".repeat(64),
+            pairing_id: "b".repeat(64),
+            signer_pubkey_hex,
+            created_at_unix: 1_710_000_000,
+            status,
+            signed_psbt_base64: signed_psbt_base64.map(str::to_string),
+            artifact_json: artifact_json.map(str::to_string),
+            error_message: None,
+        };
+        SignedSignIntentReceiptV1::new(receipt, DEFAULT_WALLET_SECRET_KEY_HEX)
+            .expect("signed receipt")
+    }
+
     #[test]
     fn pair_list_and_show_include_link_details() {
         let cli = create_linked_profile("pair-list-show");
@@ -3122,5 +3315,128 @@ mod tests {
                 Err(err) => err,
             };
         assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn wait_receipt_contract_rejects_sign_seller_input_approved_without_signed_psbt() {
+        let signed_receipt = signed_receipt_for_contract_test(
+            SignIntentReceiptStatusV1::Approved,
+            None,
+            Some("{\"offerId\":\"offer-1\"}"),
+        );
+        let err = enforce_wait_receipt_contract(
+            &signed_receipt,
+            Some(&SignIntentActionV1::SignSellerInput),
+        )
+        .expect_err("must reject missing signed psbt");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn wait_receipt_contract_accepts_sign_seller_input_approved_with_signed_psbt() {
+        let signed_receipt = signed_receipt_for_contract_test(
+            SignIntentReceiptStatusV1::Approved,
+            Some("cHNidP8BAHECAAAAAf//////////////////////////////////////////AAAAAAD9////AqCGAQAAAAAAIgAgx0Jv4z2frfr6f3Ff9rR9lSxDgP3UzrA1n6g0bHTqfQAAAAAAAAAA"),
+            None,
+        );
+        enforce_wait_receipt_contract(&signed_receipt, Some(&SignIntentActionV1::SignSellerInput))
+            .expect("must accept signed psbt");
+    }
+
+    #[test]
+    fn wait_receipt_contract_allows_build_buyer_offer_approved_without_signed_psbt() {
+        let signed_receipt = signed_receipt_for_contract_test(
+            SignIntentReceiptStatusV1::Approved,
+            None,
+            Some("{\"offerPsbtBase64\":\"abc\"}"),
+        );
+        enforce_wait_receipt_contract(&signed_receipt, Some(&SignIntentActionV1::BuildBuyerOffer))
+            .expect("build buyer offer may return artifact only");
+    }
+
+    #[test]
+    fn resolve_wait_receipt_intent_action_prefers_local_outbox() {
+        let data_dir = unique_data_dir("intent-outbox-action");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "pair".to_string(),
+            "list".to_string(),
+        ])
+        .expect("cli parse");
+        ensure_profile_parent_exists(&cli);
+
+        let entry = IntentOutboxEntryV1 {
+            intent_id: "a".repeat(64),
+            pairing_id: "b".repeat(64),
+            action: SignIntentActionV1::SignSellerInput,
+            created_at_unix: i64::try_from(super::current_unix()).unwrap_or(i64::MAX),
+            expires_at_unix: i64::try_from(super::current_unix()).unwrap_or(i64::MAX) + 600,
+        };
+        persist_intent_outbox_entry(&cli, entry.clone()).expect("persist outbox entry");
+
+        let action = resolve_wait_receipt_intent_action_from_outbox(
+            &cli,
+            &entry.pairing_id,
+            &entry.intent_id,
+        )
+        .expect("resolve action")
+        .expect("action exists");
+        assert_eq!(action, SignIntentActionV1::SignSellerInput);
+    }
+
+    #[test]
+    fn resolve_wait_receipt_intent_action_fails_closed_when_unknown() {
+        let data_dir = unique_data_dir("intent-outbox-fail-closed");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "pair".to_string(),
+            "list".to_string(),
+        ])
+        .expect("cli parse");
+        ensure_profile_parent_exists(&cli);
+
+        let err = resolve_wait_receipt_intent_action(
+            &cli,
+            &[],
+            &"b".repeat(64),
+            &"a".repeat(64),
+            &"1".repeat(64),
+            DEFAULT_AGENT_SECRET_KEY_HEX,
+            &"2".repeat(64),
+            false,
+        )
+        .expect_err("missing action should fail closed");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn resolve_wait_receipt_intent_action_allows_override_when_unknown() {
+        let data_dir = unique_data_dir("intent-outbox-allow-override");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "pair".to_string(),
+            "list".to_string(),
+        ])
+        .expect("cli parse");
+        ensure_profile_parent_exists(&cli);
+
+        let action = resolve_wait_receipt_intent_action(
+            &cli,
+            &[],
+            &"b".repeat(64),
+            &"a".repeat(64),
+            &"1".repeat(64),
+            DEFAULT_AGENT_SECRET_KEY_HEX,
+            &"2".repeat(64),
+            true,
+        )
+        .expect("override should pass");
+        assert!(action.is_none());
     }
 }

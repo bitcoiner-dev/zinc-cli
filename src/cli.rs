@@ -386,6 +386,12 @@ pub enum IntentAction {
         agent_secret_key_hex: Option<String>,
         #[arg(long = "relay")]
         relay: Vec<String>,
+        #[arg(
+            long,
+            default_value_t = false,
+            help = "Allow wait-receipt to proceed when intent action cannot be resolved locally (cross-device recovery)"
+        )]
+        allow_unknown_intent_action: bool,
     },
     FixtureGenerate {
         #[arg(long)]
@@ -890,6 +896,7 @@ mod tests {
                     intent_id,
                     timeout_ms,
                     relay,
+                    allow_unknown_intent_action,
                     ..
                 } => {
                     assert_eq!(pairing_id, "abcd1234");
@@ -899,6 +906,35 @@ mod tests {
                     );
                     assert_eq!(timeout_ms, 45_000);
                     assert_eq!(relay, vec!["wss://nostr.example".to_string()]);
+                    assert!(!allow_unknown_intent_action);
+                }
+                _ => panic!("expected intent wait-receipt action"),
+            },
+            _ => panic!("expected intent command"),
+        }
+    }
+
+    #[test]
+    fn parses_intent_wait_receipt_allow_unknown_action_flag() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "intent",
+            "wait-receipt",
+            "--pairing-id",
+            "abcd1234",
+            "--intent-id",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "--allow-unknown-intent-action",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Intent(args) => match args.action {
+                IntentAction::WaitReceipt {
+                    allow_unknown_intent_action,
+                    ..
+                } => {
+                    assert!(allow_unknown_intent_action);
                 }
                 _ => panic!("expected intent wait-receipt action"),
             },

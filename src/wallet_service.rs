@@ -68,7 +68,7 @@ pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<String, AppError> {
         io::stdin()
             .read_line(&mut buffer)
             .map_err(|e| AppError::Auth(format!("failed to read password from stdin: {e}")))?;
-        let pass = buffer.trim().to_string();
+        let pass = strip_line_endings(buffer);
         if pass.is_empty() {
             return Err(AppError::Auth("password from stdin is empty".to_string()));
         }
@@ -96,8 +96,38 @@ pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<String, AppError> {
     if io::stdin().is_terminal() {
         eprint!("Enter wallet password: ");
         io::stderr().flush().ok();
-        let pass =
-            read_password().map_err(|e| AppError::Auth(format!("failed to read password: {e}")))?;
+        let pass = match read_password() {
+            Ok(pass) => {
+                let normalized = strip_line_endings(pass);
+                if normalized.is_empty() {
+                    eprintln!();
+                    eprintln!(
+                        "Hidden password input returned empty value; falling back to visible input."
+                    );
+                    read_visible_password()?
+                } else {
+                    normalized
+                }
+            }
+            Err(hidden_err) => {
+                // Some terminal hosts reject hidden-input mode (termios/tty limitations).
+                // Fall back to a visible line read so humans can still proceed.
+                eprintln!();
+                eprintln!(
+                    "Hidden password input unavailable; falling back to visible input."
+                );
+                let mut buffer = String::new();
+                io::stdin().read_line(&mut buffer).map_err(|e| {
+                    AppError::Auth(format!(
+                        "failed to read password: {e} (hidden-input error: {hidden_err})"
+                    ))
+                })?;
+                strip_line_endings(buffer)
+            }
+        };
+        if pass.is_empty() {
+            return Err(AppError::Auth("password cannot be empty".to_string()));
+        }
 
         return Ok(pass);
     }
@@ -106,6 +136,18 @@ pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<String, AppError> {
         "wallet password missing (use --password, --password-stdin, set {}, or run in interactive terminal)",
         config.password_env
     )))
+}
+
+fn strip_line_endings(value: String) -> String {
+    value.trim_end_matches(['\n', '\r']).to_string()
+}
+
+fn read_visible_password() -> Result<String, AppError> {
+    let mut buffer = String::new();
+    io::stdin()
+        .read_line(&mut buffer)
+        .map_err(|e| AppError::Auth(format!("failed to read password: {e}")))?;
+    Ok(strip_line_endings(buffer))
 }
 
 pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, AppError> {
@@ -297,5 +339,13 @@ mod tests {
         assert!(!apply_scan_policy_migration(&mut profile));
         assert_eq!(profile.scan_policy_version, SCAN_POLICY_VERSION_MAIN_ONLY);
         assert_eq!(profile.updated_at_unix, migrated_updated_at);
+    }
+
+    #[test]
+    fn strip_line_endings_only_removes_trailing_newlines() {
+        assert_eq!(strip_line_endings("abc\n".to_string()), "abc");
+        assert_eq!(strip_line_endings("abc\r\n".to_string()), "abc");
+        assert_eq!(strip_line_endings("  abc  \n".to_string()), "  abc  ");
+        assert_eq!(strip_line_endings("abc".to_string()), "abc");
     }
 }

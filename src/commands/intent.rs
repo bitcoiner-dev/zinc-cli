@@ -1,6 +1,7 @@
 use crate::cli::{Cli, IntentAction, IntentArgs, IntentPairAction, IntentPairArgs};
 use crate::error::AppError;
 use crate::output::{CommandOutput, IntentPairLinkEntry};
+use crate::wallet_password;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
@@ -15,22 +16,25 @@ use tokio::time::{timeout, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use zinc_core::{
     build_signed_pairing_complete_receipt, decode_pairing_ack_envelope_event_with_secret,
-    encrypt_pairing_transport_content, pairing_tag_hash_hex, pairing_transport_tags,
-    pubkey_hex_from_secret_key, verify_pairing_approval, BuildBuyerOfferIntentV1,
-    CapabilityPolicyV1, NostrTransportEventV1, PairingAckDecisionV1, PairingAckV1,
-    PairingLinkApprovalV1, PairingRequestV1, SignIntentActionV1, SignIntentPayloadV1,
-    SignIntentReceiptStatusV1, SignIntentReceiptV1, SignIntentV1, SignedPairingAckV1,
-    SignedPairingCompleteReceiptV1, SignedPairingRequestV1, SignedSignIntentReceiptV1,
-    SignedSignIntentV1, NOSTR_PAIRING_ACK_TYPE_TAG_VALUE,
+    decode_signed_sign_intent_receipt_event_with_secret, decrypt_secret_internal,
+    encrypt_pairing_transport_content, encrypt_secret_internal, generate_secret_key_hex,
+    pairing_tag_hash_hex, pairing_transport_tags, pubkey_hex_from_secret_key,
+    verify_pairing_approval, BuildBuyerOfferIntentV1, CapabilityPolicyV1, NostrTransportEventV1,
+    PairingAckDecisionV1, PairingAckV1, PairingLinkApprovalV1, PairingRequestV1,
+    SignIntentActionV1, SignIntentPayloadV1, SignIntentReceiptStatusV1, SignIntentReceiptV1,
+    SignIntentV1, SignedPairingAckV1, SignedPairingCompleteReceiptV1, SignedPairingRequestV1,
+    SignedSignIntentReceiptV1, SignedSignIntentV1, NOSTR_PAIRING_ACK_TYPE_TAG_VALUE,
     NOSTR_PAIRING_COMPLETE_RECEIPT_TYPE_TAG_VALUE, NOSTR_SIGN_INTENT_APP_TAG_VALUE,
-    NOSTR_TAG_APP_KEY, NOSTR_TAG_PAIRING_HASH_KEY, NOSTR_TAG_RECIPIENT_PUBKEY_KEY,
-    NOSTR_TAG_TYPE_KEY, PAIRING_TRANSPORT_EVENT_KIND,
+    NOSTR_SIGN_INTENT_RECEIPT_TYPE_TAG_VALUE, NOSTR_SIGN_INTENT_TYPE_TAG_VALUE, NOSTR_TAG_APP_KEY,
+    NOSTR_TAG_PAIRING_HASH_KEY, NOSTR_TAG_RECIPIENT_PUBKEY_KEY, NOSTR_TAG_TYPE_KEY,
+    PAIRING_TRANSPORT_EVENT_KIND,
 };
 
 const DEFAULT_AGENT_SECRET_KEY_HEX: &str =
     "0001020304050607080900010203040506070809000102030405060708090001";
 const DEFAULT_WALLET_SECRET_KEY_HEX: &str =
     "0102030405060708090001020304050607080900010203040506070809000102";
+const INTENT_AGENT_KEY_STORE_SCHEMA_VERSION: &str = "intent-agent-key-v1";
 const DEFAULT_PAIR_EXPIRES_IN_SECS: u64 = 600;
 const MAX_PAIRING_URI_CHARS: usize = 8 * 1024;
 const MAX_PAIRING_REQUEST_JSON_BYTES: usize = 16 * 1024;
@@ -40,6 +44,9 @@ const DEFAULT_PAIRING_RELAY_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_PAIRING_RELAY_LIMIT: usize = 32;
 const DEFAULT_PAIR_START_AWAIT_ACK_WINDOW_MS: u64 = 30_000;
 const DEFAULT_PAIR_START_AWAIT_ACK_POLL_MS: u64 = 900;
+const DEFAULT_SIGN_INTENT_EXPIRES_IN_SECS: u64 = 180;
+const DEFAULT_WAIT_RECEIPT_TIMEOUT_MS: u64 = 30_000;
+const DEFAULT_WAIT_RECEIPT_POLL_MS: u64 = 1_000;
 const DEFAULT_PAIRING_RELAYS: &[&str] = &["wss://relay.damus.io", "wss://nos.lol"];
 const REGTEST_DEFAULT_PAIRING_RELAYS: &[&str] = &["wss://nostr-regtest.exittheloop.com"];
 const LINK_STATUS_ACTIVE: &str = "active";
@@ -101,6 +108,16 @@ struct LinkedWalletV1 {
     rotated_by_pairing_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IntentAgentKeyStoreV1 {
+    schema_version: String,
+    agent_pubkey_hex: String,
+    encrypted_agent_secret: String,
+    created_at_unix: i64,
+    updated_at_unix: i64,
+}
+
 fn default_link_status() -> String {
     LINK_STATUS_ACTIVE.to_string()
 }
@@ -108,6 +125,40 @@ fn default_link_status() -> String {
 pub async fn run(cli: &Cli, args: &IntentArgs) -> Result<CommandOutput, AppError> {
     match &args.action {
         IntentAction::Pair(pair_args) => run_pair_action(cli, &pair_args.action),
+        IntentAction::Send {
+            pairing_id,
+            payload_json,
+            now_unix,
+            expires_in_secs,
+            nonce,
+            agent_secret_key_hex,
+            relay,
+            network,
+        } => run_intent_send(
+            cli,
+            pairing_id,
+            payload_json,
+            *now_unix,
+            *expires_in_secs,
+            *nonce,
+            agent_secret_key_hex.as_deref(),
+            relay,
+            network,
+        ),
+        IntentAction::WaitReceipt {
+            pairing_id,
+            intent_id,
+            timeout_ms,
+            agent_secret_key_hex,
+            relay,
+        } => run_intent_wait_receipt(
+            cli,
+            pairing_id,
+            intent_id,
+            *timeout_ms,
+            agent_secret_key_hex.as_deref(),
+            relay,
+        ),
         IntentAction::FixtureGenerate {
             now_unix,
             agent_secret_key_hex,
@@ -298,6 +349,203 @@ fn run_pair_action(cli: &Cli, action: &IntentPairAction) -> Result<CommandOutput
     }
 }
 
+fn run_intent_send(
+    cli: &Cli,
+    pairing_id_selector: &str,
+    payload_json: &str,
+    now_unix: Option<u64>,
+    expires_in_secs: Option<u64>,
+    nonce: Option<u64>,
+    agent_secret_key_hex: Option<&str>,
+    relay_urls: &[String],
+    network: &str,
+) -> Result<CommandOutput, AppError> {
+    let now_unix = i64::try_from(now_unix.unwrap_or_else(current_unix))
+        .map_err(|_| AppError::Invalid("now_unix is out of range".to_string()))?;
+    let expires_delta =
+        i64::try_from(expires_in_secs.unwrap_or(DEFAULT_SIGN_INTENT_EXPIRES_IN_SECS))
+            .map_err(|_| AppError::Invalid("expires_in_secs is out of range".to_string()))?;
+    if expires_delta <= 0 {
+        return Err(AppError::Invalid(
+            "expires_in_secs must be greater than zero".to_string(),
+        ));
+    }
+
+    let links_path = intent_links_path(cli)?;
+    let store = load_link_store(&links_path)?;
+    let link_index = find_link_index(&store.links, pairing_id_selector)?;
+    let link = store
+        .links
+        .get(link_index)
+        .ok_or_else(|| AppError::NotFound("linked agent not found".to_string()))?;
+    ensure_link_allows_intents(link)?;
+
+    let payload: SignIntentPayloadV1 = serde_json::from_str(payload_json)
+        .map_err(|e| AppError::Invalid(format!("invalid sign intent payload json: {e}")))?;
+    enforce_payload_against_capabilities(&payload, &link.granted_capabilities, network)?;
+
+    let agent_secret_key_hex = resolve_agent_secret_key_hex(
+        cli,
+        agent_secret_key_hex,
+        Some(&link.agent_pubkey_hex),
+        false,
+    )?;
+    let relays = normalize_pairing_relays(relay_urls, network_hint_from_link(link));
+    let intent = SignIntentV1 {
+        version: 1,
+        pairing_id: link.pairing_id.clone(),
+        agent_pubkey_hex: link.agent_pubkey_hex.clone(),
+        wallet_pubkey_hex: link.wallet_pubkey_hex.clone(),
+        network: network.trim().to_string(),
+        created_at_unix: now_unix,
+        expires_at_unix: now_unix + expires_delta,
+        nonce: nonce.unwrap_or_else(current_unix),
+        payload,
+    };
+    let signed_intent =
+        SignedSignIntentV1::new(intent, &agent_secret_key_hex).map_err(map_intent_error)?;
+    let intent_id = signed_intent.intent_id_hex().map_err(map_intent_error)?;
+    let signed_intent_json = serde_json::to_string(&signed_intent)
+        .map_err(|e| AppError::Internal(format!("failed to serialize signed sign intent: {e}")))?;
+    let tags = pairing_transport_tags(
+        NOSTR_SIGN_INTENT_TYPE_TAG_VALUE,
+        &link.pairing_id,
+        &link.wallet_pubkey_hex,
+    )
+    .map_err(map_intent_error)?;
+    let content = encrypt_pairing_transport_content(
+        &signed_intent_json,
+        &agent_secret_key_hex,
+        &link.wallet_pubkey_hex,
+    )
+    .map_err(map_intent_error)?;
+    let event = NostrTransportEventV1::new(
+        PAIRING_TRANSPORT_EVENT_KIND,
+        tags,
+        content,
+        u64::try_from(now_unix).unwrap_or_else(|_| current_unix()),
+        &agent_secret_key_hex,
+    )
+    .map_err(map_intent_error)?;
+
+    let stats = run_async_with_runtime(publish_transport_event_multi_stats(
+        &relays,
+        &event,
+        DEFAULT_PAIRING_RELAY_TIMEOUT_MS,
+    ))?;
+    if stats.accepted == 0 {
+        return Err(AppError::Network(
+            "failed to publish sign intent to any relay".to_string(),
+        ));
+    }
+
+    if cli.agent {
+        return Ok(CommandOutput::Generic(json!({
+            "schemaVersion": "sign-intent-send-v1",
+            "pairingId": link.pairing_id,
+            "intentId": intent_id,
+            "eventId": event.id,
+            "acceptedRelays": stats.accepted,
+            "totalRelays": stats.total,
+            "signedSignIntent": signed_intent
+        })));
+    }
+
+    Ok(CommandOutput::IntentSend {
+        pairing_id: link.pairing_id.clone(),
+        fingerprint: pairing_fingerprint(&link.pairing_id),
+        intent_id,
+        action: format!("{:?}", signed_intent.intent.payload.action()),
+        accepted_relays: u64::try_from(stats.accepted)
+            .map_err(|_| AppError::Internal("accepted relay count is out of range".to_string()))?,
+        total_relays: u64::try_from(stats.total)
+            .map_err(|_| AppError::Internal("total relay count is out of range".to_string()))?,
+    })
+}
+
+fn run_intent_wait_receipt(
+    cli: &Cli,
+    pairing_id_selector: &str,
+    intent_id: &str,
+    timeout_ms: u64,
+    agent_secret_key_hex: Option<&str>,
+    relay_urls: &[String],
+) -> Result<CommandOutput, AppError> {
+    let timeout_ms = if timeout_ms == 0 {
+        DEFAULT_WAIT_RECEIPT_TIMEOUT_MS
+    } else {
+        timeout_ms
+    };
+    let links_path = intent_links_path(cli)?;
+    let store = load_link_store(&links_path)?;
+    let link_index = find_link_index(&store.links, pairing_id_selector)?;
+    let link = store
+        .links
+        .get(link_index)
+        .ok_or_else(|| AppError::NotFound("linked agent not found".to_string()))?;
+    let agent_secret_key_hex = resolve_agent_secret_key_hex(
+        cli,
+        agent_secret_key_hex,
+        Some(&link.agent_pubkey_hex),
+        false,
+    )?;
+    let relays = normalize_pairing_relays(relay_urls, network_hint_from_link(link));
+    let signed_receipt = wait_for_sign_intent_receipt_from_relays(
+        &relays,
+        &link.pairing_id,
+        intent_id,
+        &link.agent_pubkey_hex,
+        &agent_secret_key_hex,
+        timeout_ms,
+    )?
+    .ok_or_else(|| {
+        AppError::Invalid(format!(
+            "no sign intent receipt found for intent_id `{intent_id}` before timeout"
+        ))
+    })?;
+
+    if !signed_receipt
+        .receipt
+        .pairing_id
+        .eq_ignore_ascii_case(&link.pairing_id)
+    {
+        return Err(AppError::Invalid(
+            "sign intent receipt pairing_id did not match linked pairing".to_string(),
+        ));
+    }
+    if !signed_receipt
+        .receipt
+        .signer_pubkey_hex
+        .eq_ignore_ascii_case(&link.wallet_pubkey_hex)
+    {
+        return Err(AppError::Invalid(
+            "sign intent receipt signer did not match linked wallet".to_string(),
+        ));
+    }
+
+    let receipt_id = signed_receipt.receipt_id_hex().map_err(map_intent_error)?;
+    if cli.agent {
+        return Ok(CommandOutput::Generic(json!({
+            "schemaVersion": "sign-intent-receipt-v1",
+            "pairingId": link.pairing_id,
+            "intentId": signed_receipt.receipt.intent_id,
+            "receiptId": receipt_id,
+            "status": format!("{:?}", signed_receipt.receipt.status),
+            "signedSignIntentReceipt": signed_receipt,
+        })));
+    }
+
+    Ok(CommandOutput::IntentWaitReceipt {
+        pairing_id: link.pairing_id.clone(),
+        fingerprint: pairing_fingerprint(&link.pairing_id),
+        intent_id: signed_receipt.receipt.intent_id.clone(),
+        receipt_id,
+        status: format!("{:?}", signed_receipt.receipt.status),
+        signer_pubkey_hex: signed_receipt.receipt.signer_pubkey_hex.clone(),
+        error_message: signed_receipt.receipt.error_message.clone(),
+    })
+}
+
 fn run_pair_start(
     cli: &Cli,
     now_unix: Option<u64>,
@@ -319,9 +567,9 @@ fn run_pair_start(
         ));
     }
 
-    let agent_secret_key_hex = agent_secret_key_hex.unwrap_or(DEFAULT_AGENT_SECRET_KEY_HEX);
+    let agent_secret_key_hex = resolve_agent_secret_key_hex(cli, agent_secret_key_hex, None, true)?;
     let agent_pubkey_hex =
-        pubkey_hex_from_secret_key(agent_secret_key_hex).map_err(map_intent_error)?;
+        pubkey_hex_from_secret_key(&agent_secret_key_hex).map_err(map_intent_error)?;
 
     let requested_capabilities = default_pairing_capabilities(network);
     let relays = normalize_pairing_relays(relay_urls, network);
@@ -335,7 +583,7 @@ fn run_pair_start(
         requested_capabilities,
     };
     let signed_request =
-        SignedPairingRequestV1::new(request, agent_secret_key_hex).map_err(map_intent_error)?;
+        SignedPairingRequestV1::new(request, &agent_secret_key_hex).map_err(map_intent_error)?;
     let pairing_id = signed_request.pairing_id_hex().map_err(map_intent_error)?;
 
     let request_json = serde_json::to_string(&signed_request).map_err(|e| {
@@ -398,7 +646,7 @@ fn run_pair_start(
 
         if let Some(signed_ack) = wait_for_pairing_ack_from_relays(
             &signed_request,
-            agent_secret_key_hex,
+            &agent_secret_key_hex,
             DEFAULT_PAIR_START_AWAIT_ACK_WINDOW_MS,
         ) {
             let finish_now_unix = i64::try_from(current_unix())
@@ -407,7 +655,7 @@ fn run_pair_start(
                 cli,
                 &signed_request,
                 &signed_ack,
-                agent_secret_key_hex,
+                &agent_secret_key_hex,
                 finish_now_unix,
                 "relay".to_string(),
             );
@@ -460,9 +708,14 @@ fn run_pair_finish(
     let signed_request: SignedPairingRequestV1 = serde_json::from_str(&request_source)
         .map_err(|e| AppError::Invalid(format!("invalid signed pairing request json: {e}")))?;
     let resolved_ack_source = resolve_pairing_ack_source_optional(ack_json, ack_file, ack_code)?;
-    let agent_secret_key_hex = agent_secret_key_hex.unwrap_or(DEFAULT_AGENT_SECRET_KEY_HEX);
+    let agent_secret_key_hex = resolve_agent_secret_key_hex(
+        cli,
+        agent_secret_key_hex,
+        Some(&signed_request.request.agent_pubkey_hex),
+        false,
+    )?;
     let relay_ack =
-        match fetch_signed_pairing_ack_from_relays(&signed_request, agent_secret_key_hex) {
+        match fetch_signed_pairing_ack_from_relays(&signed_request, &agent_secret_key_hex) {
             Ok(found) => found,
             Err(_) if resolved_ack_source.is_some() => None,
             Err(err) => return Err(err),
@@ -490,7 +743,7 @@ fn run_pair_finish(
         cli,
         &signed_request,
         &signed_ack,
-        agent_secret_key_hex,
+        &agent_secret_key_hex,
         now_unix,
         ack_source_label,
     )
@@ -721,8 +974,7 @@ fn validate_status_transition(current: &str, next: &str) -> Result<(), AppError>
     }
 }
 
-#[cfg(test)]
-fn assert_link_allows_intents(link: &LinkedWalletV1) -> Result<(), AppError> {
+fn ensure_link_allows_intents(link: &LinkedWalletV1) -> Result<(), AppError> {
     match normalize_link_status(&link.status) {
         LINK_STATUS_ACTIVE => Ok(()),
         LINK_STATUS_PAUSED => Err(AppError::Policy(
@@ -804,6 +1056,72 @@ fn default_pairing_capabilities(network: &str) -> CapabilityPolicyV1 {
         max_fee_rate_sat_vb: Some(20),
         allowed_networks: vec![network.to_string()],
     }
+}
+
+fn network_hint_from_link(link: &LinkedWalletV1) -> &str {
+    link.granted_capabilities
+        .allowed_networks
+        .first()
+        .map(String::as_str)
+        .unwrap_or("mainnet")
+}
+
+fn capability_allows_network(capabilities: &CapabilityPolicyV1, network: &str) -> bool {
+    capabilities
+        .allowed_networks
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(network))
+}
+
+fn enforce_payload_against_capabilities(
+    payload: &SignIntentPayloadV1,
+    capabilities: &CapabilityPolicyV1,
+    network: &str,
+) -> Result<(), AppError> {
+    if !capability_allows_network(capabilities, network) {
+        return Err(AppError::Policy(format!(
+            "network `{network}` is not allowed by linked-agent policy"
+        )));
+    }
+
+    let action = payload.action();
+    if !capabilities.allowed_actions.contains(&action) {
+        return Err(AppError::Policy(format!(
+            "action `{action:?}` is not allowed by linked-agent policy"
+        )));
+    }
+
+    let intent_sats = match payload {
+        SignIntentPayloadV1::BuildBuyerOffer(details) => {
+            if let Some(max_fee_rate) = capabilities.max_fee_rate_sat_vb {
+                if details.fee_rate_sat_vb > max_fee_rate {
+                    return Err(AppError::Policy(format!(
+                        "requested fee rate {} sat/vB exceeds policy max {} sat/vB",
+                        details.fee_rate_sat_vb, max_fee_rate
+                    )));
+                }
+            }
+            details.ask_sats
+        }
+        SignIntentPayloadV1::SignSellerInput(details) => details.expected_ask_sats,
+    };
+
+    if let Some(max_sats_per_intent) = capabilities.max_sats_per_intent {
+        if intent_sats > max_sats_per_intent {
+            return Err(AppError::Policy(format!(
+                "intent amount {intent_sats} sats exceeds policy max_sats_per_intent {max_sats_per_intent}"
+            )));
+        }
+    }
+    if let Some(daily_spend_limit_sats) = capabilities.daily_spend_limit_sats {
+        if intent_sats > daily_spend_limit_sats {
+            return Err(AppError::Policy(format!(
+                "intent amount {intent_sats} sats exceeds policy daily_spend_limit_sats {daily_spend_limit_sats}"
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 fn default_pairing_relays_for_network(network: &str) -> &'static [&'static str] {
@@ -1088,6 +1406,126 @@ fn resolve_fixture_source(
     Ok(input)
 }
 
+fn resolve_agent_secret_key_hex(
+    cli: &Cli,
+    explicit_secret_key_hex: Option<&str>,
+    expected_agent_pubkey_hex: Option<&str>,
+    allow_generate_if_missing: bool,
+) -> Result<String, AppError> {
+    if let Some(secret_key_hex) = explicit_secret_key_hex {
+        let trimmed = secret_key_hex.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::Invalid(
+                "--agent-secret-key-hex cannot be empty".to_string(),
+            ));
+        }
+        let derived_pubkey_hex = pubkey_hex_from_secret_key(trimmed).map_err(map_intent_error)?;
+        ensure_agent_pubkey_matches_expected(&derived_pubkey_hex, expected_agent_pubkey_hex)?;
+        return Ok(trimmed.to_string());
+    }
+
+    let store_path = intent_agent_key_store_path(cli)?;
+    if let Some(store) = load_agent_key_store(&store_path)? {
+        let password = wallet_password(cli)?;
+        let decrypted = decrypt_secret_internal(&store.encrypted_agent_secret, &password)
+            .map_err(map_secret_decrypt_error)?;
+        let secret_key_hex = decrypted.trim();
+        if secret_key_hex.is_empty() {
+            return Err(AppError::Config(
+                "intent agent key store decrypted to an empty secret".to_string(),
+            ));
+        }
+        let derived_pubkey_hex =
+            pubkey_hex_from_secret_key(secret_key_hex).map_err(map_intent_error)?;
+        if !derived_pubkey_hex.eq_ignore_ascii_case(&store.agent_pubkey_hex) {
+            return Err(AppError::Config(
+                "intent agent key store failed integrity check (pubkey mismatch)".to_string(),
+            ));
+        }
+        ensure_agent_pubkey_matches_expected(&derived_pubkey_hex, expected_agent_pubkey_hex)?;
+        return Ok(secret_key_hex.to_string());
+    }
+
+    if !allow_generate_if_missing {
+        return Err(AppError::NotFound(
+            "intent agent key is not initialized; pass --agent-secret-key-hex or run `pair start` once to bootstrap secure key storage".to_string(),
+        ));
+    }
+
+    let password = wallet_password(cli)?;
+    let generated_secret = generate_secret_key_hex().map_err(map_intent_error)?;
+    let generated_pubkey =
+        pubkey_hex_from_secret_key(&generated_secret).map_err(map_intent_error)?;
+    ensure_agent_pubkey_matches_expected(&generated_pubkey, expected_agent_pubkey_hex)?;
+
+    let encrypted_agent_secret =
+        encrypt_secret_internal(&generated_secret, &password).map_err(map_intent_error)?;
+    let now_unix = i64::try_from(current_unix())
+        .map_err(|_| AppError::Internal("current time is out of range".to_string()))?;
+    let key_store = IntentAgentKeyStoreV1 {
+        schema_version: INTENT_AGENT_KEY_STORE_SCHEMA_VERSION.to_string(),
+        agent_pubkey_hex: generated_pubkey,
+        encrypted_agent_secret,
+        created_at_unix: now_unix,
+        updated_at_unix: now_unix,
+    };
+    save_agent_key_store(&store_path, &key_store)?;
+    Ok(generated_secret)
+}
+
+fn ensure_agent_pubkey_matches_expected(
+    actual_agent_pubkey_hex: &str,
+    expected_agent_pubkey_hex: Option<&str>,
+) -> Result<(), AppError> {
+    let Some(expected) = expected_agent_pubkey_hex else {
+        return Ok(());
+    };
+    if actual_agent_pubkey_hex.eq_ignore_ascii_case(expected.trim()) {
+        return Ok(());
+    }
+    Err(AppError::Invalid(format!(
+        "agent key mismatch: resolved pubkey {} does not match expected {}",
+        actual_agent_pubkey_hex, expected
+    )))
+}
+
+fn map_secret_decrypt_error<E: ToString>(err: E) -> AppError {
+    let message = err.to_string();
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("decryption failed") || lower.contains("wrong password") {
+        return AppError::Auth(
+            "failed to decrypt intent agent key (wrong password or corrupted key store)"
+                .to_string(),
+        );
+    }
+    AppError::Config(format!("failed to decrypt intent agent key: {message}"))
+}
+
+fn intent_agent_key_store_path(cli: &Cli) -> Result<PathBuf, AppError> {
+    Ok(crate::profile_path(cli)?.with_extension("intent-agent-key.json"))
+}
+
+fn load_agent_key_store(path: &Path) -> Result<Option<IntentAgentKeyStoreV1>, AppError> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| AppError::Config(format!("failed to read intent agent key store: {e}")))?;
+    let mut store: IntentAgentKeyStoreV1 = serde_json::from_str(&raw)
+        .map_err(|e| AppError::Config(format!("failed to parse intent agent key store: {e}")))?;
+    if store.schema_version.trim().is_empty() {
+        store.schema_version = INTENT_AGENT_KEY_STORE_SCHEMA_VERSION.to_string();
+    }
+    Ok(Some(store))
+}
+
+fn save_agent_key_store(path: &Path, store: &IntentAgentKeyStoreV1) -> Result<(), AppError> {
+    let bytes = serde_json::to_vec_pretty(store).map_err(|e| {
+        AppError::Internal(format!("failed to serialize intent agent key store: {e}"))
+    })?;
+    crate::write_bytes_atomic(path, &bytes, "intent agent key store")
+}
+
 fn intent_links_path(cli: &Cli) -> Result<PathBuf, AppError> {
     Ok(crate::profile_path(cli)?.with_extension("intent-links.json"))
 }
@@ -1256,6 +1694,239 @@ fn wait_for_pairing_ack_from_relays(
         }
         std::thread::sleep(sleep_for);
     }
+}
+
+fn wait_for_sign_intent_receipt_from_relays(
+    relays: &[String],
+    pairing_id: &str,
+    intent_id: &str,
+    recipient_pubkey_hex: &str,
+    recipient_secret_key_hex: &str,
+    wait_window_ms: u64,
+) -> Result<Option<SignedSignIntentReceiptV1>, AppError> {
+    let deadline = Instant::now() + Duration::from_millis(wait_window_ms);
+    loop {
+        if let Some(signed_receipt) = fetch_sign_intent_receipt_from_relays(
+            relays,
+            pairing_id,
+            intent_id,
+            recipient_pubkey_hex,
+            recipient_secret_key_hex,
+        )? {
+            return Ok(Some(signed_receipt));
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            return Ok(None);
+        }
+        let remaining = deadline.saturating_duration_since(now);
+        let sleep_for = remaining.min(Duration::from_millis(DEFAULT_WAIT_RECEIPT_POLL_MS));
+        if sleep_for.is_zero() {
+            return Ok(None);
+        }
+        std::thread::sleep(sleep_for);
+    }
+}
+
+fn fetch_sign_intent_receipt_from_relays(
+    relays: &[String],
+    pairing_id: &str,
+    intent_id: &str,
+    recipient_pubkey_hex: &str,
+    recipient_secret_key_hex: &str,
+) -> Result<Option<SignedSignIntentReceiptV1>, AppError> {
+    run_async_with_runtime(fetch_sign_intent_receipt_from_relays_async(
+        relays,
+        pairing_id,
+        intent_id,
+        recipient_pubkey_hex,
+        recipient_secret_key_hex,
+    ))
+}
+
+async fn fetch_sign_intent_receipt_from_relays_async(
+    relays: &[String],
+    pairing_id: &str,
+    intent_id: &str,
+    recipient_pubkey_hex: &str,
+    recipient_secret_key_hex: &str,
+) -> Result<Option<SignedSignIntentReceiptV1>, AppError> {
+    if relays.is_empty() {
+        return Ok(None);
+    }
+    let pairing_hash = pairing_tag_hash_hex(pairing_id).map_err(map_intent_error)?;
+    let mut newest: Option<SignedSignIntentReceiptV1> = None;
+    let mut seen_receipt_ids = HashSet::new();
+
+    for relay_url in relays {
+        let candidate = discover_sign_intent_receipt_from_relay(
+            relay_url,
+            &pairing_hash,
+            pairing_id,
+            intent_id,
+            recipient_pubkey_hex,
+            recipient_secret_key_hex,
+            DEFAULT_PAIRING_RELAY_TIMEOUT_MS,
+        )
+        .await?;
+        if let Some(signed_receipt) = candidate {
+            let receipt_id = signed_receipt.receipt_id_hex().map_err(map_intent_error)?;
+            if !seen_receipt_ids.insert(receipt_id) {
+                continue;
+            }
+            let replace = newest
+                .as_ref()
+                .map(|existing| {
+                    signed_receipt.receipt.created_at_unix > existing.receipt.created_at_unix
+                })
+                .unwrap_or(true);
+            if replace {
+                newest = Some(signed_receipt);
+            }
+        }
+    }
+
+    Ok(newest)
+}
+
+async fn discover_sign_intent_receipt_from_relay(
+    relay_url: &str,
+    pairing_hash: &str,
+    pairing_id: &str,
+    intent_id: &str,
+    recipient_pubkey_hex: &str,
+    recipient_secret_key_hex: &str,
+    timeout_ms: u64,
+) -> Result<Option<SignedSignIntentReceiptV1>, AppError> {
+    let (mut socket, _) = connect_async(relay_url)
+        .await
+        .map_err(|e| AppError::Network(format!("failed to connect relay {relay_url}: {e}")))?;
+
+    let subscription_id = format!(
+        "zinc-intent-receipt-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let req = sign_intent_receipt_req_frame(
+        &subscription_id,
+        pairing_hash,
+        recipient_pubkey_hex,
+        DEFAULT_PAIRING_RELAY_LIMIT,
+    )?;
+    socket
+        .send(Message::Text(req.into()))
+        .await
+        .map_err(|e| AppError::Network(format!("failed to send relay req frame: {e}")))?;
+
+    let mut newest: Option<SignedSignIntentReceiptV1> = None;
+    let sid = subscription_id.clone();
+    timeout(Duration::from_millis(timeout_ms), async {
+        while let Some(message) = socket.next().await {
+            match message {
+                Ok(Message::Text(text)) => {
+                    if let Some(event) = parse_transport_event_frame(text.as_ref(), &sid) {
+                        if let Ok(signed_receipt) =
+                            decode_signed_sign_intent_receipt_event_with_secret(
+                                &event,
+                                recipient_secret_key_hex,
+                            )
+                        {
+                            if !signed_receipt
+                                .receipt
+                                .pairing_id
+                                .eq_ignore_ascii_case(pairing_id)
+                            {
+                                continue;
+                            }
+                            if !signed_receipt
+                                .receipt
+                                .intent_id
+                                .eq_ignore_ascii_case(intent_id)
+                            {
+                                continue;
+                            }
+                            let replace = newest
+                                .as_ref()
+                                .map(|existing| {
+                                    signed_receipt.receipt.created_at_unix
+                                        > existing.receipt.created_at_unix
+                                })
+                                .unwrap_or(true);
+                            if replace {
+                                newest = Some(signed_receipt);
+                            }
+                        }
+                        continue;
+                    }
+                    if is_eose_frame(text.as_ref(), &sid) {
+                        break;
+                    }
+                }
+                Ok(Message::Binary(bin)) => {
+                    if let Ok(text) = std::str::from_utf8(&bin) {
+                        if let Some(event) = parse_transport_event_frame(text, &sid) {
+                            if let Ok(signed_receipt) =
+                                decode_signed_sign_intent_receipt_event_with_secret(
+                                    &event,
+                                    recipient_secret_key_hex,
+                                )
+                            {
+                                if !signed_receipt
+                                    .receipt
+                                    .pairing_id
+                                    .eq_ignore_ascii_case(pairing_id)
+                                {
+                                    continue;
+                                }
+                                if !signed_receipt
+                                    .receipt
+                                    .intent_id
+                                    .eq_ignore_ascii_case(intent_id)
+                                {
+                                    continue;
+                                }
+                                let replace = newest
+                                    .as_ref()
+                                    .map(|existing| {
+                                        signed_receipt.receipt.created_at_unix
+                                            > existing.receipt.created_at_unix
+                                    })
+                                    .unwrap_or(true);
+                                if replace {
+                                    newest = Some(signed_receipt);
+                                }
+                            }
+                            continue;
+                        }
+                        if is_eose_frame(text, &sid) {
+                            break;
+                        }
+                    }
+                }
+                Ok(Message::Close(_)) => break,
+                Ok(_) => {}
+                Err(e) => {
+                    return Err(AppError::Network(format!(
+                        "relay read error for {relay_url}: {e}"
+                    )));
+                }
+            }
+        }
+        Ok::<(), AppError>(())
+    })
+    .await
+    .map_err(|_| {
+        AppError::Network(format!(
+            "relay {relay_url} timed out reading sign intent receipts"
+        ))
+    })??;
+
+    let close = close_frame(&subscription_id)?;
+    let _ = socket.send(Message::Text(close.into())).await;
+    Ok(newest)
 }
 
 async fn fetch_signed_pairing_ack_from_relays_async(
@@ -1472,12 +2143,31 @@ async fn publish_transport_event_multi(
     event: &NostrTransportEventV1,
     timeout_ms: u64,
 ) -> Result<bool, AppError> {
-    let mut any_accepted = false;
+    let stats = publish_transport_event_multi_stats(relay_urls, event, timeout_ms).await?;
+    Ok(stats.accepted > 0)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RelayPublishStats {
+    accepted: usize,
+    total: usize,
+}
+
+async fn publish_transport_event_multi_stats(
+    relay_urls: &[String],
+    event: &NostrTransportEventV1,
+    timeout_ms: u64,
+) -> Result<RelayPublishStats, AppError> {
+    let mut accepted = 0usize;
     for relay in relay_urls {
-        let accepted = publish_transport_event(relay, event, timeout_ms).await?;
-        any_accepted = any_accepted || accepted;
+        if publish_transport_event(relay, event, timeout_ms).await? {
+            accepted += 1;
+        }
     }
-    Ok(any_accepted)
+    Ok(RelayPublishStats {
+        accepted,
+        total: relay_urls.len(),
+    })
 }
 
 async fn publish_transport_event(
@@ -1552,6 +2242,36 @@ fn pairing_ack_req_frame(
     filter.insert(
         format!("#{}", NOSTR_TAG_TYPE_KEY),
         json!([NOSTR_PAIRING_ACK_TYPE_TAG_VALUE]),
+    );
+    filter.insert(
+        format!("#{}", NOSTR_TAG_PAIRING_HASH_KEY),
+        json!([pairing_hash]),
+    );
+    filter.insert(
+        format!("#{}", NOSTR_TAG_RECIPIENT_PUBKEY_KEY),
+        json!([recipient_pubkey_hex]),
+    );
+    filter.insert("limit".to_string(), json!(limit));
+
+    serde_json::to_string(&serde_json::json!(["REQ", subscription_id, filter]))
+        .map_err(|e| AppError::Internal(format!("failed to encode relay req frame: {e}")))
+}
+
+fn sign_intent_receipt_req_frame(
+    subscription_id: &str,
+    pairing_hash: &str,
+    recipient_pubkey_hex: &str,
+    limit: usize,
+) -> Result<String, AppError> {
+    let mut filter = serde_json::Map::new();
+    filter.insert("kinds".to_string(), json!([PAIRING_TRANSPORT_EVENT_KIND]));
+    filter.insert(
+        format!("#{}", NOSTR_TAG_APP_KEY),
+        json!([NOSTR_SIGN_INTENT_APP_TAG_VALUE]),
+    );
+    filter.insert(
+        format!("#{}", NOSTR_TAG_TYPE_KEY),
+        json!([NOSTR_SIGN_INTENT_RECEIPT_TYPE_TAG_VALUE]),
     );
     filter.insert(
         format!("#{}", NOSTR_TAG_PAIRING_HASH_KEY),
@@ -1713,14 +2433,15 @@ fn map_intent_error<E: ToString>(err: E) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::{
-        assert_link_allows_intents, build_fixture_bundle, default_pairing_capabilities,
-        latest_pairing_request_path, map_intent_error, normalize_pairing_relays,
-        pairing_ack_code_from_json, pairing_ack_json_from_code, pairing_request_json_from_uri,
-        pairing_uri_from_request_json, parse_fixture_bundle, resolve_fixture_source,
-        resolve_json_source, run_pair_finish, run_pair_list, run_pair_set_status, run_pair_show,
-        run_pair_start, upsert_link, IntentLinkStoreV1, LinkedWalletV1,
-        DEFAULT_AGENT_SECRET_KEY_HEX, DEFAULT_WALLET_SECRET_KEY_HEX, LINK_STATUS_ACTIVE,
-        LINK_STATUS_PAUSED, LINK_STATUS_REVOKED, LINK_STATUS_ROTATED, MAX_PAIRING_URI_CHARS,
+        build_fixture_bundle, default_pairing_capabilities, ensure_link_allows_intents,
+        intent_agent_key_store_path, latest_pairing_request_path, map_intent_error,
+        normalize_pairing_relays, pairing_ack_code_from_json, pairing_ack_json_from_code,
+        pairing_request_json_from_uri, pairing_uri_from_request_json, parse_fixture_bundle,
+        resolve_agent_secret_key_hex, resolve_fixture_source, resolve_json_source, run_pair_finish,
+        run_pair_list, run_pair_set_status, run_pair_show, run_pair_start, upsert_link,
+        IntentLinkStoreV1, LinkedWalletV1, DEFAULT_AGENT_SECRET_KEY_HEX,
+        DEFAULT_WALLET_SECRET_KEY_HEX, LINK_STATUS_ACTIVE, LINK_STATUS_PAUSED, LINK_STATUS_REVOKED,
+        LINK_STATUS_ROTATED, MAX_PAIRING_URI_CHARS,
     };
     use crate::cli::Cli;
     use crate::error::AppError;
@@ -1744,6 +2465,68 @@ mod tests {
             .expect("clock")
             .as_nanos();
         format!("/tmp/zinc-cli-{prefix}-{}-{now}", std::process::id())
+    }
+
+    #[test]
+    fn resolve_agent_secret_key_bootstraps_and_reuses_store() {
+        let data_dir = unique_data_dir("agent-key-bootstrap");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--password".to_string(),
+            "test-password".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "pair".to_string(),
+            "list".to_string(),
+        ])
+        .expect("cli parse");
+
+        let first = resolve_agent_secret_key_hex(&cli, None, None, true).expect("first resolve");
+        let second = resolve_agent_secret_key_hex(&cli, None, None, false).expect("second resolve");
+        assert_eq!(first, second);
+
+        let store_path = intent_agent_key_store_path(&cli).expect("store path");
+        assert!(store_path.exists(), "agent key store should be written");
+    }
+
+    #[test]
+    fn resolve_agent_secret_key_without_store_requires_explicit_or_bootstrap() {
+        let data_dir = unique_data_dir("agent-key-missing");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "pair".to_string(),
+            "list".to_string(),
+        ])
+        .expect("cli parse");
+
+        let err = resolve_agent_secret_key_hex(&cli, None, None, false)
+            .expect_err("missing store must fail");
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[test]
+    fn resolve_agent_secret_key_rejects_expected_pubkey_mismatch() {
+        let data_dir = unique_data_dir("agent-key-mismatch");
+        let cli = Cli::try_parse_from(vec![
+            "zinc-cli".to_string(),
+            "--data-dir".to_string(),
+            data_dir,
+            "pair".to_string(),
+            "list".to_string(),
+        ])
+        .expect("cli parse");
+        let unexpected_pubkey =
+            pubkey_hex_from_secret_key(DEFAULT_WALLET_SECRET_KEY_HEX).expect("wallet pubkey");
+        let err = resolve_agent_secret_key_hex(
+            &cli,
+            Some(DEFAULT_AGENT_SECRET_KEY_HEX),
+            Some(&unexpected_pubkey),
+            false,
+        )
+        .expect_err("expected mismatch should fail");
+        assert!(matches!(err, AppError::Invalid(_)));
     }
 
     #[test]
@@ -1951,7 +2734,7 @@ mod tests {
             revoked_at_unix: None,
             rotated_by_pairing_id: None,
         };
-        let err = assert_link_allows_intents(&link).expect_err("paused link should fail");
+        let err = ensure_link_allows_intents(&link).expect_err("paused link should fail");
         assert!(matches!(err, AppError::Policy(_)));
     }
 
@@ -2017,7 +2800,7 @@ mod tests {
             &cli,
             Some(1_710_000_000),
             Some(600),
-            None,
+            Some(DEFAULT_AGENT_SECRET_KEY_HEX),
             &[],
             "regtest",
             false,
@@ -2051,7 +2834,7 @@ mod tests {
             &cli,
             Some(1_710_000_000),
             Some(600),
-            None,
+            Some(DEFAULT_AGENT_SECRET_KEY_HEX),
             &[],
             "regtest",
             false,
@@ -2085,7 +2868,7 @@ mod tests {
             &cli,
             Some(1_710_000_000),
             Some(600),
-            None,
+            Some(DEFAULT_AGENT_SECRET_KEY_HEX),
             &[],
             "regtest",
             true,
@@ -2119,7 +2902,7 @@ mod tests {
             &cli,
             Some(1_710_000_000),
             Some(600),
-            None,
+            Some(DEFAULT_AGENT_SECRET_KEY_HEX),
             &[],
             "regtest",
             false,
@@ -2151,7 +2934,7 @@ mod tests {
             &cli,
             Some(1_710_000_000),
             Some(600),
-            None,
+            Some(DEFAULT_AGENT_SECRET_KEY_HEX),
             &[],
             "regtest",
             false,
@@ -2191,7 +2974,7 @@ mod tests {
             Some(1_710_000_020),
             None,
             None,
-            None,
+            Some(DEFAULT_AGENT_SECRET_KEY_HEX),
             None,
             None,
             Some(&ack_code),
@@ -2220,7 +3003,7 @@ mod tests {
             &cli,
             Some(1_710_000_000),
             Some(600),
-            None,
+            Some(DEFAULT_AGENT_SECRET_KEY_HEX),
             &[],
             "regtest",
             false,
@@ -2260,7 +3043,7 @@ mod tests {
             Some(1_710_000_020),
             None,
             None,
-            None,
+            Some(DEFAULT_AGENT_SECRET_KEY_HEX),
             None,
             None,
             Some(&ack_code),

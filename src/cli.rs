@@ -357,6 +357,36 @@ pub struct IntentArgs {
 #[derive(Subcommand, Debug, Clone)]
 pub enum IntentAction {
     Pair(IntentPairArgs),
+    Send {
+        #[arg(long)]
+        pairing_id: String,
+        #[arg(long)]
+        payload_json: String,
+        #[arg(long)]
+        now_unix: Option<u64>,
+        #[arg(long)]
+        expires_in_secs: Option<u64>,
+        #[arg(long)]
+        nonce: Option<u64>,
+        #[arg(long)]
+        agent_secret_key_hex: Option<String>,
+        #[arg(long = "relay")]
+        relay: Vec<String>,
+        #[arg(long, default_value = "regtest")]
+        network: String,
+    },
+    WaitReceipt {
+        #[arg(long)]
+        pairing_id: String,
+        #[arg(long)]
+        intent_id: String,
+        #[arg(long, default_value_t = 30_000)]
+        timeout_ms: u64,
+        #[arg(long)]
+        agent_secret_key_hex: Option<String>,
+        #[arg(long = "relay")]
+        relay: Vec<String>,
+    },
     FixtureGenerate {
         #[arg(long)]
         now_unix: Option<u64>,
@@ -788,6 +818,89 @@ mod tests {
                     _ => panic!("expected intent pair finish action"),
                 },
                 _ => panic!("expected intent pair action"),
+            },
+            _ => panic!("expected intent command"),
+        }
+    }
+
+    #[test]
+    fn parses_intent_send_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "intent",
+            "send",
+            "--pairing-id",
+            "abcd1234",
+            "--payload-json",
+            "{\"action\":\"buildBuyerOffer\",\"params\":{\"inscriptionId\":\"insc1\",\"sellerOutpoint\":\"tx:0\",\"askSats\":12345,\"feeRateSatVb\":2}}",
+            "--network",
+            "regtest",
+            "--expires-in-secs",
+            "180",
+            "--nonce",
+            "7",
+            "--relay",
+            "wss://nostr.example",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Intent(args) => match args.action {
+                IntentAction::Send {
+                    pairing_id,
+                    network,
+                    expires_in_secs,
+                    nonce,
+                    relay,
+                    ..
+                } => {
+                    assert_eq!(pairing_id, "abcd1234");
+                    assert_eq!(network, "regtest");
+                    assert_eq!(expires_in_secs, Some(180));
+                    assert_eq!(nonce, Some(7));
+                    assert_eq!(relay, vec!["wss://nostr.example".to_string()]);
+                }
+                _ => panic!("expected intent send action"),
+            },
+            _ => panic!("expected intent command"),
+        }
+    }
+
+    #[test]
+    fn parses_intent_wait_receipt_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "intent",
+            "wait-receipt",
+            "--pairing-id",
+            "abcd1234",
+            "--intent-id",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "--timeout-ms",
+            "45000",
+            "--relay",
+            "wss://nostr.example",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Intent(args) => match args.action {
+                IntentAction::WaitReceipt {
+                    pairing_id,
+                    intent_id,
+                    timeout_ms,
+                    relay,
+                    ..
+                } => {
+                    assert_eq!(pairing_id, "abcd1234");
+                    assert_eq!(
+                        intent_id,
+                        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    );
+                    assert_eq!(timeout_ms, 45_000);
+                    assert_eq!(relay, vec!["wss://nostr.example".to_string()]);
+                }
+                _ => panic!("expected intent wait-receipt action"),
             },
             _ => panic!("expected intent command"),
         }

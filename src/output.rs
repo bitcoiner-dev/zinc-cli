@@ -248,6 +248,24 @@ pub enum CommandOutput {
         pairing_id: String,
         intent_id: String,
     },
+    IntentSend {
+        pairing_id: String,
+        fingerprint: String,
+        intent_id: String,
+        action: String,
+        accepted_relays: u64,
+        total_relays: u64,
+    },
+    IntentWaitReceipt {
+        pairing_id: String,
+        fingerprint: String,
+        intent_id: String,
+        receipt_id: String,
+        status: String,
+        signer_pubkey_hex: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error_message: Option<String>,
+    },
     IntentPairStart {
         schema_version: String,
         pairing_id: String,
@@ -1036,6 +1054,105 @@ impl HumanPresenter {
                     style("Pairing Request JSON (advanced/debug):").bold(),
                     request_json
                 ));
+            }
+            out
+        } else {
+            String::new()
+        }
+    }
+
+    fn print_intent_send(&self, output: &CommandOutput) -> String {
+        if let CommandOutput::IntentSend {
+            pairing_id,
+            fingerprint,
+            intent_id,
+            action,
+            accepted_relays,
+            total_relays,
+        } = output
+        {
+            use console::style;
+            let mut out = String::new();
+            out.push_str(&format!("{}\n", style("INTENT SENT").bold()));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Pairing ID").dim(),
+                crate::commands::offer::abbreviate(pairing_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Fingerprint").dim(),
+                fingerprint
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Intent ID").dim(),
+                crate::commands::offer::abbreviate(intent_id, 12, 8)
+            ));
+            out.push_str(&format!("  {:<14} {}\n", style("Action").dim(), action));
+            out.push_str(&format!(
+                "  {:<14} {}/{}\n",
+                style("Relays").dim(),
+                accepted_relays,
+                total_relays
+            ));
+            out
+        } else {
+            String::new()
+        }
+    }
+
+    fn print_intent_wait_receipt(&self, output: &CommandOutput) -> String {
+        if let CommandOutput::IntentWaitReceipt {
+            pairing_id,
+            fingerprint,
+            intent_id,
+            receipt_id,
+            status,
+            signer_pubkey_hex,
+            error_message,
+        } = output
+        {
+            use console::style;
+            let mut out = String::new();
+            let status_text = if status.eq_ignore_ascii_case("rejected") {
+                style(status).red().bold().to_string()
+            } else {
+                style(status).green().bold().to_string()
+            };
+            out.push_str(&format!("{}\n", style("INTENT RECEIPT").bold()));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Pairing ID").dim(),
+                crate::commands::offer::abbreviate(pairing_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Fingerprint").dim(),
+                fingerprint
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Intent ID").dim(),
+                crate::commands::offer::abbreviate(intent_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Receipt ID").dim(),
+                crate::commands::offer::abbreviate(receipt_id, 12, 8)
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Status").dim(),
+                status_text
+            ));
+            out.push_str(&format!(
+                "  {:<14} {}\n",
+                style("Signer").dim(),
+                crate::commands::offer::abbreviate(signer_pubkey_hex, 12, 8)
+            ));
+            if let Some(err) = error_message {
+                out.push_str(&format!("  {:<14} {}\n", style("Reason").dim(), err));
             }
             out
         } else {
@@ -1944,6 +2061,8 @@ impl Presenter for HumanPresenter {
                 self.print_intent_fixture_generate(output)
             }
             CommandOutput::IntentFixtureVerify { .. } => self.print_intent_fixture_verify(output),
+            CommandOutput::IntentSend { .. } => self.print_intent_send(output),
+            CommandOutput::IntentWaitReceipt { .. } => self.print_intent_wait_receipt(output),
             CommandOutput::IntentPairStart { .. } => self.print_intent_pair_start(output),
             CommandOutput::IntentPairAwaitTimeout { .. } => {
                 self.print_intent_pair_await_timeout(output)

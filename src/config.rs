@@ -1,12 +1,14 @@
 use crate::error::AppError;
 use crate::paths::write_bytes_atomic;
-use crate::utils::{parse_bool_value, parse_network, parse_scheme, unknown_with_hint};
+use crate::utils::{
+    parse_bool_value, parse_network, parse_payment_address_type, parse_scheme, unknown_with_hint,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use zinc_core::{AddressScheme, Network};
+use zinc_core::{AddressScheme, Network, PaymentAddressType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -16,6 +18,7 @@ pub struct PersistedConfig {
     pub password_env: Option<String>,
     pub network: Option<String>,
     pub scheme: Option<String>,
+    pub payment_address_type: Option<String>,
     pub esplora_url: Option<String>,
     pub ord_url: Option<String>,
     pub ascii: Option<bool>,
@@ -29,6 +32,7 @@ impl Default for PersistedConfig {
             password_env: None,
             network: None,
             scheme: None,
+            payment_address_type: None,
             esplora_url: None,
             ord_url: None,
             ascii: None,
@@ -68,6 +72,7 @@ pub enum ConfigField {
     PasswordEnv,
     Network,
     Scheme,
+    PaymentAddressType,
     EsploraUrl,
     OrdUrl,
     Ascii,
@@ -79,6 +84,7 @@ pub const CONFIG_KEYS: &[&str] = &[
     "password-env",
     "network",
     "scheme",
+    "payment-address-type",
     "esplora-url",
     "ord-url",
     "ascii",
@@ -92,6 +98,7 @@ impl ConfigField {
             Self::PasswordEnv => "password-env",
             Self::Network => "network",
             Self::Scheme => "scheme",
+            Self::PaymentAddressType => "payment-address-type",
             Self::EsploraUrl => "esplora-url",
             Self::OrdUrl => "ord-url",
             Self::Ascii => "ascii",
@@ -105,6 +112,7 @@ impl ConfigField {
             "password-env" | "password_env" => Ok(Self::PasswordEnv),
             "network" => Ok(Self::Network),
             "scheme" => Ok(Self::Scheme),
+            "payment-address-type" | "payment_address_type" => Ok(Self::PaymentAddressType),
             "esplora-url" | "esplora_url" => Ok(Self::EsploraUrl),
             "ord-url" | "ord_url" => Ok(Self::OrdUrl),
             "ascii" => Ok(Self::Ascii),
@@ -155,6 +163,12 @@ pub(crate) fn set_config_field(
             config.scheme = Some(canonical.clone());
             Ok(Value::String(canonical))
         }
+        ConfigField::PaymentAddressType => {
+            let parsed = parse_payment_address_type(value)?;
+            let canonical = parsed.to_string();
+            config.payment_address_type = Some(canonical.clone());
+            Ok(Value::String(canonical))
+        }
         ConfigField::EsploraUrl => {
             config.esplora_url = Some(value.to_string());
             Ok(Value::String(value.to_string()))
@@ -178,6 +192,7 @@ pub(crate) fn unset_config_field(config: &mut PersistedConfig, key: ConfigField)
         ConfigField::PasswordEnv => config.password_env.take().is_some(),
         ConfigField::Network => config.network.take().is_some(),
         ConfigField::Scheme => config.scheme.take().is_some(),
+        ConfigField::PaymentAddressType => config.payment_address_type.take().is_some(),
         ConfigField::EsploraUrl => config.esplora_url.take().is_some(),
         ConfigField::OrdUrl => config.ord_url.take().is_some(),
         ConfigField::Ascii => config.ascii.take().is_some(),
@@ -195,6 +210,7 @@ pub struct ServiceConfig<'a> {
     pub network_override: Option<&'a str>,
     pub explicit_network: bool,
     pub scheme_override: Option<&'a str>,
+    pub payment_address_type_override: Option<&'a str>,
     pub esplora_url_override: Option<&'a str>,
     pub ord_url_override: Option<&'a str>,
     pub ascii_mode: bool,
@@ -216,6 +232,15 @@ pub enum SchemeArg {
     Dual,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PaymentAddressTypeArg {
+    #[default]
+    Native,
+    Nested,
+    Legacy,
+}
+
 impl std::fmt::Display for NetworkArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
@@ -233,6 +258,17 @@ impl std::fmt::Display for SchemeArg {
         let s = match self {
             SchemeArg::Unified => "unified",
             SchemeArg::Dual => "dual",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl std::fmt::Display for PaymentAddressTypeArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            PaymentAddressTypeArg::Native => "native",
+            PaymentAddressTypeArg::Nested => "nested",
+            PaymentAddressTypeArg::Legacy => "legacy",
         };
         write!(f, "{}", s)
     }
@@ -279,6 +315,26 @@ impl From<AddressScheme> for SchemeArg {
     }
 }
 
+impl From<PaymentAddressTypeArg> for PaymentAddressType {
+    fn from(value: PaymentAddressTypeArg) -> Self {
+        match value {
+            PaymentAddressTypeArg::Native => PaymentAddressType::NativeSegwit,
+            PaymentAddressTypeArg::Nested => PaymentAddressType::NestedSegwit,
+            PaymentAddressTypeArg::Legacy => PaymentAddressType::Legacy,
+        }
+    }
+}
+
+impl From<PaymentAddressType> for PaymentAddressTypeArg {
+    fn from(value: PaymentAddressType) -> Self {
+        match value {
+            PaymentAddressType::NativeSegwit => PaymentAddressTypeArg::Native,
+            PaymentAddressType::NestedSegwit => PaymentAddressTypeArg::Nested,
+            PaymentAddressType::Legacy => PaymentAddressTypeArg::Legacy,
+        }
+    }
+}
+
 pub const SCAN_POLICY_VERSION_MAIN_ONLY: u32 = 1;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -294,6 +350,8 @@ pub struct Profile {
     pub scan_policy_version: u32,
     pub network: NetworkArg,
     pub scheme: SchemeArg,
+    #[serde(default)]
+    pub payment_address_type: PaymentAddressTypeArg,
     pub account_index: u32,
     pub esplora_url: String,
     pub ord_url: String,
@@ -393,5 +451,14 @@ mod tests {
         let err = set_config_field(&mut cfg, ConfigField::Scheme, "legacy")
             .expect_err("invalid scheme should be rejected");
         assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn set_config_payment_address_type_validates_and_canonicalizes() {
+        let mut cfg = PersistedConfig::default();
+        let value = set_config_field(&mut cfg, ConfigField::PaymentAddressType, "NESTED")
+            .expect("nested should parse");
+        assert_eq!(value.as_str(), Some("nested"));
+        assert_eq!(cfg.payment_address_type.as_deref(), Some("nested"));
     }
 }

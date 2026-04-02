@@ -113,9 +113,7 @@ pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<String, AppError> {
                 // Some terminal hosts reject hidden-input mode (termios/tty limitations).
                 // Fall back to a visible line read so humans can still proceed.
                 eprintln!();
-                eprintln!(
-                    "Hidden password input unavailable; falling back to visible input."
-                );
+                eprintln!("Hidden password input unavailable; falling back to visible input.");
                 let mut buffer = String::new();
                 io::stdin().read_line(&mut buffer).map_err(|e| {
                     AppError::Auth(format!(
@@ -164,11 +162,17 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
     let new_network: crate::config::NetworkArg =
         resolver.resolve_network(Some(&profile)).value.into();
     let new_scheme: crate::config::SchemeArg = resolver.resolve_scheme(Some(&profile)).value.into();
+    let new_payment_address_type: crate::config::PaymentAddressTypeArg = resolver
+        .resolve_payment_address_type(Some(&profile))
+        .value
+        .into();
 
     let network_changed = profile.network.to_string() != new_network.to_string();
     let scheme_changed = profile.scheme.to_string() != new_scheme.to_string();
+    let payment_type_changed =
+        profile.payment_address_type.to_string() != new_payment_address_type.to_string();
 
-    if network_changed || scheme_changed {
+    if network_changed || scheme_changed || payment_type_changed {
         for state in profile.accounts.values_mut() {
             state.persistence_json = None;
             state.inscriptions_json = None;
@@ -182,6 +186,7 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
 
     profile.network = new_network;
     profile.scheme = new_scheme;
+    profile.payment_address_type = new_payment_address_type;
 
     if let Some(e) = config.esplora_url_override {
         profile.esplora_url = e.to_string();
@@ -203,6 +208,7 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
 
     let mut builder = WalletBuilder::from_mnemonic(profile.network.into(), &mnemonic)
         .with_scheme(profile.scheme.into())
+        .with_payment_address_type(profile.payment_address_type.into())
         .with_account_index(profile.account_index);
 
     let state = profile.account_state();
@@ -318,6 +324,7 @@ mod tests {
             scan_policy_version: 0,
             network: NetworkArg::Regtest,
             scheme: SchemeArg::Dual,
+            payment_address_type: crate::config::PaymentAddressTypeArg::Native,
             account_index: 0,
             esplora_url: "https://regtest.exittheloop.com/api".to_string(),
             ord_url: "https://ord-regtest.exittheloop.com".to_string(),

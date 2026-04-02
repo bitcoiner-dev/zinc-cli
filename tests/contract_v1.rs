@@ -23,6 +23,8 @@ fn cargo_cmd() -> Command {
         "ZINC_CLI_JSON",
         "ZINC_CLI_NETWORK",
         "ZINC_CLI_SCHEME",
+        "ZINC_CLI_PAYMENT_ADDRESS_TYPE",
+        "ZINC_PAYMENT_ADDRESS_TYPE",
         "ZINC_CLI_ESPLORA_URL",
         "ZINC_CLI_ORD_URL",
         "ZINC_CLI_CORRELATION_ID",
@@ -903,6 +905,144 @@ fn test_config_set_and_unset_roundtrip() {
     let show_after_json =
         parse_json_from_output(&String::from_utf8_lossy(&show_after_output.stdout));
     assert!(show_after_json["defaults"]["network"].is_null());
+}
+
+#[test]
+fn test_wallet_outputs_include_payment_address_type_default_native() {
+    let data_dir = unique_data_dir("zinc_test_payment_default_native");
+    let _ = fs::remove_dir_all(&data_dir);
+
+    let mut init_cmd = cargo_cmd();
+    init_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "wallet",
+        "init",
+        "--overwrite",
+    ]);
+    let init_output = init_cmd.output().expect("failed to execute process");
+    assert!(init_output.status.success());
+    let init_json = parse_json_from_output(&String::from_utf8_lossy(&init_output.stdout));
+    assert_eq!(init_json["payment_address_type"], "native");
+
+    let mut info_cmd = cargo_cmd();
+    info_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "wallet",
+        "info",
+    ]);
+    let info_output = info_cmd.output().expect("failed to execute process");
+    assert!(info_output.status.success());
+    let info_json = parse_json_from_output(&String::from_utf8_lossy(&info_output.stdout));
+    assert_eq!(info_json["payment_address_type"], "native");
+}
+
+#[test]
+fn test_payment_address_type_config_and_cli_override_precedence() {
+    let home = unique_data_dir("zinc_test_payment_type_home");
+    fs::create_dir_all(&home).expect("failed to create test home");
+    let data_dir = unique_data_dir("zinc_test_payment_type_data");
+    let _ = fs::remove_dir_all(&data_dir);
+
+    let mut set_cmd = cargo_cmd();
+    set_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "config",
+        "set",
+        "payment-address-type",
+        "nested",
+    ]);
+    set_cmd.env("HOME", &home);
+    let set_output = set_cmd.output().expect("failed to execute process");
+    assert!(set_output.status.success());
+
+    let mut show_cmd = cargo_cmd();
+    show_cmd.args(&["run", "--quiet", "--", "--agent", "config", "show"]);
+    show_cmd.env("HOME", &home);
+    let show_output = show_cmd.output().expect("failed to execute process");
+    assert!(show_output.status.success());
+    let show_json = parse_json_from_output(&String::from_utf8_lossy(&show_output.stdout));
+    assert_eq!(show_json["defaults"]["payment_address_type"], "nested");
+    assert_eq!(show_json["effective_payment_address_type"], "nested");
+
+    let mut init_cmd = cargo_cmd();
+    init_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "wallet",
+        "init",
+        "--overwrite",
+    ]);
+    init_cmd.env("HOME", &home);
+    let init_output = init_cmd.output().expect("failed to execute process");
+    assert!(init_output.status.success());
+    let init_json = parse_json_from_output(&String::from_utf8_lossy(&init_output.stdout));
+    assert_eq!(init_json["payment_address_type"], "nested");
+
+    let mut info_cmd = cargo_cmd();
+    info_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "wallet",
+        "info",
+    ]);
+    info_cmd.env("HOME", &home);
+    let info_output = info_cmd.output().expect("failed to execute process");
+    assert!(info_output.status.success());
+    let info_json = parse_json_from_output(&String::from_utf8_lossy(&info_output.stdout));
+    assert_eq!(info_json["payment_address_type"], "nested");
+
+    let mut info_override_cmd = cargo_cmd();
+    info_override_cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--payment-address-type",
+        "legacy",
+        "--data-dir",
+        &data_dir,
+        "--password",
+        "testpass",
+        "wallet",
+        "info",
+    ]);
+    info_override_cmd.env("HOME", &home);
+    let info_override_output = info_override_cmd
+        .output()
+        .expect("failed to execute process");
+    assert!(info_override_output.status.success());
+    let info_override_json =
+        parse_json_from_output(&String::from_utf8_lossy(&info_override_output.stdout));
+    assert_eq!(info_override_json["payment_address_type"], "legacy");
 }
 
 #[test]

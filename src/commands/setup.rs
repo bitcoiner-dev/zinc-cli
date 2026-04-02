@@ -2,8 +2,7 @@ use crate::cli::{Cli, SetupArgs};
 use crate::config::{load_persisted_config, save_persisted_config};
 use crate::error::AppError;
 use crate::output::CommandOutput;
-use crate::utils::parse_network;
-use crate::utils::parse_scheme;
+use crate::utils::{parse_network, parse_payment_address_type, parse_scheme};
 use crate::wallet_service::{
     default_bitcoin_cli, default_bitcoin_cli_args, default_esplora_url, default_ord_url,
     validate_mnemonic_internal, Profile,
@@ -36,6 +35,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
     config.password_env = Some(values.password_env.clone());
     config.network = values.default_network.clone();
     config.scheme = values.default_scheme.clone();
+    config.payment_address_type = values.default_payment_address_type.clone();
     config.esplora_url = values.default_esplora_url.clone();
     config.ord_url = values.default_ord_url.clone();
     save_persisted_config(&config)?;
@@ -54,6 +54,12 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             .or(cli.scheme.as_deref())
             .unwrap_or("dual");
         let scheme = parse_scheme(scheme_str)?;
+        let payment_address_type_str = values
+            .default_payment_address_type
+            .as_deref()
+            .or(cli.payment_address_type.as_deref())
+            .unwrap_or("native");
+        let payment_address_type = parse_payment_address_type(payment_address_type_str)?;
 
         // Build a temporary Cli for wallet operations
         let wallet_cli = Cli {
@@ -82,6 +88,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             started_at_unix_ms: cli.started_at_unix_ms,
             network: values.default_network.clone(),
             scheme: values.default_scheme.clone(),
+            payment_address_type: values.default_payment_address_type.clone(),
             esplora_url: values.default_esplora_url.clone(),
             ord_url: values.default_ord_url.clone(),
             command: crate::cli::Command::Doctor, // placeholder, not used
@@ -132,6 +139,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             scan_policy_version: crate::config::SCAN_POLICY_VERSION_MAIN_ONLY,
             network,
             scheme,
+            payment_address_type,
             account_index: 0,
             esplora_url,
             ord_url,

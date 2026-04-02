@@ -1,4 +1,4 @@
-use crate::config::{NetworkArg, Profile, SchemeArg};
+use crate::config::{NetworkArg, PaymentAddressTypeArg, Profile, SchemeArg};
 use crate::error::AppError;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -46,6 +46,17 @@ pub fn parse_scheme(s: &str) -> Result<SchemeArg, AppError> {
         "unified" => Ok(SchemeArg::Unified),
         "dual" => Ok(SchemeArg::Dual),
         _ => Err(AppError::Invalid(format!("unknown scheme: {s}"))),
+    }
+}
+
+pub fn parse_payment_address_type(s: &str) -> Result<PaymentAddressTypeArg, AppError> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "native" => Ok(PaymentAddressTypeArg::Native),
+        "nested" => Ok(PaymentAddressTypeArg::Nested),
+        "legacy" => Ok(PaymentAddressTypeArg::Legacy),
+        _ => Err(AppError::Invalid(format!(
+            "unknown payment address type: {s}"
+        ))),
     }
 }
 

@@ -35,6 +35,7 @@ pub enum CommandOutput {
         version: u32,
         network: String,
         scheme: String,
+        payment_address_type: String,
         account_index: u32,
         esplora_url: String,
         ord_url: String,
@@ -48,6 +49,7 @@ pub enum CommandOutput {
         profile: Option<String>,
         network: String,
         scheme: String,
+        payment_address_type: String,
         account_index: u32,
         imported: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -58,6 +60,7 @@ pub enum CommandOutput {
         version: u32,
         network: String,
         scheme: String,
+        payment_address_type: String,
         account_index: u32,
         esplora_url: String,
         ord_url: String,
@@ -1495,6 +1498,7 @@ impl Presenter for HumanPresenter {
                 profile,
                 network,
                 scheme,
+                payment_address_type,
                 account_index,
                 esplora_url,
                 ord_url,
@@ -1511,6 +1515,11 @@ impl Presenter for HumanPresenter {
                 ));
                 out.push_str(&format!("  {:<12} {}\n", style("Network").dim(), network));
                 out.push_str(&format!("  {:<12} {}\n", style("Scheme").dim(), scheme));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Payment").dim(),
+                    payment_address_type
+                ));
                 out.push_str(&format!(
                     "  {:<12} {}\n",
                     style("Account").dim(),
@@ -1542,6 +1551,7 @@ impl Presenter for HumanPresenter {
             CommandOutput::WalletInit {
                 profile,
                 network,
+                payment_address_type,
                 phrase,
                 words,
                 ..
@@ -1553,6 +1563,11 @@ impl Presenter for HumanPresenter {
                     profile.as_deref().unwrap_or("default")
                 ));
                 out.push_str(&format!("  {:<12} {}\n", style("Network").dim(), network));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Payment").dim(),
+                    payment_address_type
+                ));
                 out.push_str(&format!(
                     "  {:<12} {}\n",
                     style("Phrase").dim(),
@@ -1570,6 +1585,7 @@ impl Presenter for HumanPresenter {
             CommandOutput::WalletImport {
                 profile,
                 network,
+                payment_address_type,
                 phrase,
                 ..
             } => {
@@ -1580,6 +1596,11 @@ impl Presenter for HumanPresenter {
                     profile.as_deref().unwrap_or("default")
                 ));
                 out.push_str(&format!("  {:<12} {}\n", style("Network").dim(), network));
+                out.push_str(&format!(
+                    "  {:<12} {}\n",
+                    style("Payment").dim(),
+                    payment_address_type
+                ));
                 if let Some(p) = phrase {
                     out.push_str(&format!(
                         "  {:<12} {}\n",

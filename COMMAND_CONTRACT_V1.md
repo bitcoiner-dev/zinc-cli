@@ -25,7 +25,7 @@ This document defines the active `v1` command contract. It is additive with curr
 
 ## 3) Global Flags (Supported)
 
-`--agent`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--thumb`, `--no-thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
+`--agent`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--payment-address-type`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--thumb`, `--no-thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
 
 Global flags are supported both before and after command tokens.
 
@@ -111,6 +111,7 @@ Idempotency for mutating commands:
 |---|---|
 | `Network` | `bitcoin \| signet \| testnet \| regtest` |
 | `Scheme` | `unified \| dual` |
+| `PaymentAddressType` | `native \| nested \| legacy` |
 | `SatsBreakdown` | `{ immature: u64, trusted_pending: u64, untrusted_pending: u64, confirmed: u64 }` |
 | `BalanceResponse` | `{ total: SatsBreakdown, spendable: SatsBreakdown, inscribed_sats: u64 }` |
 | `TxItem` | `{ txid: string, amount_sats: i64, fee_sats: u64, confirmation_time: u64 \| null, tx_type: "send" \| "receive", inscriptions: InscriptionDetails[], parent_txids: string[], index: usize }` |
@@ -126,10 +127,10 @@ All commands below describe `--agent` response payloads.
 ## 7.1 wallet init
 
 Command:
-`wallet init [--words 12|24] [--network ...] [--scheme ...] [--esplora-url <url>] [--ord-url <url>] [--overwrite]`
+`wallet init [--words 12|24] [--network ...] [--scheme ...] [--payment-address-type native|nested|legacy] [--esplora-url <url>] [--ord-url <url>] [--overwrite]`
 
 Success fields:
-`profile`, `version`, `network`, `scheme`, `account_index`, `esplora_url`, `ord_url`, `bitcoin_cli`, `bitcoin_cli_args`, `phrase`
+`profile`, `version`, `network`, `scheme`, `payment_address_type`, `account_index`, `esplora_url`, `ord_url`, `bitcoin_cli`, `bitcoin_cli_args`, `phrase`
 
 Notes:
 1. `phrase` is redacted by default and only shows the real mnemonic when `--reveal` is set.
@@ -138,10 +139,10 @@ Notes:
 ## 7.2 wallet import
 
 Command:
-`wallet import --mnemonic <phrase> [--network ...] [--scheme ...] [--esplora-url <url>] [--ord-url <url>] [--overwrite]`
+`wallet import --mnemonic <phrase> [--network ...] [--scheme ...] [--payment-address-type native|nested|legacy] [--esplora-url <url>] [--ord-url <url>] [--overwrite]`
 
 Success fields:
-`profile`, `network`, `scheme`, `account_index`, `imported`
+`profile`, `network`, `scheme`, `payment_address_type`, `account_index`, `imported`
 
 Optional fields:
 `phrase` (only when `--reveal` is set)
@@ -152,7 +153,7 @@ Command:
 `wallet info`
 
 Success fields:
-`profile`, `version`, `network`, `scheme`, `account_index`, `esplora_url`, `ord_url`, `bitcoin_cli`, `bitcoin_cli_args`, `has_persistence`, `has_inscriptions`, `updated_at_unix`
+`profile`, `version`, `network`, `scheme`, `payment_address_type`, `account_index`, `esplora_url`, `ord_url`, `bitcoin_cli`, `bitcoin_cli_args`, `has_persistence`, `has_inscriptions`, `updated_at_unix`
 
 ## 7.4 sync chain
 

@@ -22,6 +22,7 @@ Useful globals:
 - `--password-env <ENV_NAME>` (default env: `ZINC_WALLET_PASSWORD`)
 - `--password-stdin`
 - `--reveal` show mnemonic fields in `--agent` mode, and on `wallet import`
+- `--payment-address-type native|nested|legacy` override payment address branch
 - `--correlation-id <id>` set a stable workflow/request identifier
 - `--log-json` emit structured lifecycle logs to stderr (`command_start|command_finish|command_error`)
 - `--idempotency-key <key>` de-duplicate mutating commands for retry-safe automation
@@ -39,6 +40,7 @@ Environment defaults (optional):
 - `ZINC_CLI_OUTPUT` (`human|agent`)
 - `ZINC_CLI_NETWORK`
 - `ZINC_CLI_SCHEME`
+- `ZINC_CLI_PAYMENT_ADDRESS_TYPE` (`native|nested|legacy`)
 - `ZINC_CLI_ESPLORA_URL`
 - `ZINC_CLI_ORD_URL`
 - `ZINC_CLI_CORRELATION_ID`
@@ -61,6 +63,7 @@ zinc-cli setup
 zinc-cli setup --profile bot-a --data-dir /var/lib/zinc --password-env BOT_PASS
 zinc-cli config set network signet
 zinc-cli config set scheme unified
+zinc-cli config set payment-address-type nested
 ```
 
 `zinc-cli setup` starts an interactive wizard when run in a terminal and can initialize a wallet profile at the end (generate new or restore existing mnemonic).
@@ -83,6 +86,7 @@ Initialize wallet:
 
 ```bash
 zinc-cli wallet init --network signet --overwrite
+zinc-cli wallet init --network signet --payment-address-type legacy --overwrite
 ```
 
 Show wallet info:

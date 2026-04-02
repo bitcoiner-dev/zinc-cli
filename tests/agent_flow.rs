@@ -22,6 +22,8 @@ fn cargo_cmd() -> Command {
         "ZINC_CLI_JSON",
         "ZINC_CLI_NETWORK",
         "ZINC_CLI_SCHEME",
+        "ZINC_CLI_PAYMENT_ADDRESS_TYPE",
+        "ZINC_PAYMENT_ADDRESS_TYPE",
         "ZINC_CLI_ESPLORA_URL",
         "ZINC_CLI_ORD_URL",
     ] {

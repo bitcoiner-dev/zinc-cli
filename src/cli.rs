@@ -57,6 +57,13 @@ pub struct Cli {
     #[arg(long, global = true, help = "Override address scheme")]
     pub scheme: Option<String>,
 
+    #[arg(
+        long,
+        global = true,
+        help = "Override payment address type (native, nested, legacy)"
+    )]
+    pub payment_address_type: Option<String>,
+
     #[arg(long, global = true, help = "Override Esplora API URL")]
     pub esplora_url: Option<String>,
 
@@ -188,6 +195,8 @@ pub struct SetupArgs {
     #[arg(long)]
     pub default_scheme: Option<String>,
     #[arg(long)]
+    pub default_payment_address_type: Option<String>,
+    #[arg(long)]
     pub default_esplora_url: Option<String>,
     #[arg(long)]
     pub default_ord_url: Option<String>,
@@ -226,6 +235,8 @@ pub enum WalletAction {
         #[arg(long)]
         scheme: Option<String>,
         #[arg(long)]
+        payment_address_type: Option<String>,
+        #[arg(long)]
         overwrite: bool,
     },
     Import {
@@ -235,6 +246,8 @@ pub enum WalletAction {
         network: Option<String>,
         #[arg(long)]
         scheme: Option<String>,
+        #[arg(long)]
+        payment_address_type: Option<String>,
         #[arg(long)]
         overwrite: bool,
     },

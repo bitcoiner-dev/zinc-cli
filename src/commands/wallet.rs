@@ -2,7 +2,7 @@ use crate::cli::{Cli, WalletAction, WalletArgs};
 use crate::config::load_persisted_config;
 use crate::error::AppError;
 use crate::output::CommandOutput;
-use crate::utils::{parse_network, parse_scheme};
+use crate::utils::{parse_network, parse_payment_address_type, parse_scheme};
 use crate::wallet_service::{
     decrypt_wallet_internal, default_bitcoin_cli, default_bitcoin_cli_args, default_esplora_url,
     default_ord_url, encrypt_wallet_internal, generate_wallet_internal, validate_mnemonic_internal,
@@ -17,6 +17,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
             words,
             network,
             scheme,
+            payment_address_type,
             overwrite,
         } => {
             let words = words.unwrap_or(12);
@@ -40,6 +41,13 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 Some(s) => parse_scheme(s)?,
                 None => parse_scheme("dual")?, // fallback
             };
+            let payment_address_type_arg = match payment_address_type
+                .as_deref()
+                .or(cli.payment_address_type.as_deref())
+            {
+                Some(value) => parse_payment_address_type(value)?,
+                None => parse_payment_address_type("native")?,
+            };
 
             let password = wallet_password(cli)?;
             let wallet = generate_wallet_internal(words)
@@ -52,6 +60,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 scan_policy_version: crate::config::SCAN_POLICY_VERSION_MAIN_ONLY,
                 network: network_arg,
                 scheme: scheme_arg,
+                payment_address_type: payment_address_type_arg,
                 account_index: 0,
                 esplora_url: default_esplora_url(network_arg).to_string(),
                 ord_url: default_ord_url(network_arg).to_string(),
@@ -74,6 +83,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 version: 1,
                 network: network_arg.to_string(),
                 scheme: scheme_arg.to_string(),
+                payment_address_type: payment_address_type_arg.to_string(),
                 account_index: 0,
                 esplora_url: default_esplora_url(network_arg).to_string(),
                 ord_url: default_ord_url(network_arg).to_string(),
@@ -91,6 +101,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
             mnemonic,
             network,
             scheme,
+            payment_address_type,
             overwrite,
         } => {
             if !validate_mnemonic_internal(mnemonic) {
@@ -113,6 +124,13 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 Some(s) => crate::utils::parse_scheme(s)?,
                 None => crate::utils::parse_scheme("dual")?, // fallback
             };
+            let payment_address_type_arg = match payment_address_type
+                .as_deref()
+                .or(cli.payment_address_type.as_deref())
+            {
+                Some(value) => parse_payment_address_type(value)?,
+                None => parse_payment_address_type("native")?,
+            };
 
             let password = wallet_password(cli)?;
             let encrypted = encrypt_wallet_internal(mnemonic, &password)
@@ -122,6 +140,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 scan_policy_version: crate::config::SCAN_POLICY_VERSION_MAIN_ONLY,
                 network: network_arg,
                 scheme: scheme_arg,
+                payment_address_type: payment_address_type_arg,
                 account_index: 0,
                 esplora_url: default_esplora_url(network_arg).to_string(),
                 ord_url: default_ord_url(network_arg).to_string(),
@@ -137,6 +156,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 profile: cli.profile.clone(),
                 network: network_arg.to_string(),
                 scheme: scheme_arg.to_string(),
+                payment_address_type: payment_address_type_arg.to_string(),
                 account_index: 0,
                 imported: true,
                 phrase: if cli.reveal || !cli.agent {
@@ -159,6 +179,10 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 resolver.resolve_network(Some(&profile)).value.into();
             let resolved_scheme: crate::config::SchemeArg =
                 resolver.resolve_scheme(Some(&profile)).value.into();
+            let resolved_payment_address_type: crate::config::PaymentAddressTypeArg = resolver
+                .resolve_payment_address_type(Some(&profile))
+                .value
+                .into();
 
             let network_changed = profile.network.to_string() != resolved_network.to_string();
             if network_changed {
@@ -168,6 +192,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
 
             profile.network = resolved_network;
             profile.scheme = resolved_scheme;
+            profile.payment_address_type = resolved_payment_address_type;
 
             if let Some(e) = service_cfg.esplora_url_override {
                 profile.esplora_url = e.to_string();
@@ -182,6 +207,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 version: profile.version,
                 network: profile.network.to_string(),
                 scheme: profile.scheme.to_string(),
+                payment_address_type: profile.payment_address_type.to_string(),
                 account_index: profile.account_index,
                 esplora_url: profile.esplora_url.clone(),
                 ord_url: profile.ord_url.clone(),

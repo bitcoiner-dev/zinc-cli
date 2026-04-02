@@ -58,6 +58,7 @@ const GLOBAL_FLAGS: &[&str] = &[
     "--profile",
     "--network",
     "--scheme",
+    "--payment-address-type",
     "--esplora-url",
     "--ord-url",
     "--ascii",
@@ -418,6 +419,9 @@ fn resolve_effective_cli(mut cli: Cli) -> Result<Cli, AppError> {
     if cli.scheme.is_none() {
         cli.scheme = persisted.scheme.clone();
     }
+    if cli.payment_address_type.is_none() {
+        cli.payment_address_type = persisted.payment_address_type.clone();
+    }
     if cli.esplora_url.is_none() {
         cli.esplora_url = persisted.esplora_url.clone();
     }
@@ -440,6 +444,11 @@ fn resolve_effective_cli(mut cli: Cli) -> Result<Cli, AppError> {
     }
     if let Some(val) = env_non_empty("ZINC_CLI_SCHEME") {
         cli.scheme = Some(val);
+    }
+    if let Some(val) = env_non_empty("ZINC_CLI_PAYMENT_ADDRESS_TYPE") {
+        cli.payment_address_type = Some(val);
+    } else if let Some(val) = env_non_empty("ZINC_PAYMENT_ADDRESS_TYPE") {
+        cli.payment_address_type = Some(val);
     }
     if let Some(val) = env_non_empty("ZINC_CLI_ESPLORA_URL") {
         cli.esplora_url = Some(val);
@@ -585,6 +594,7 @@ fn flag_requires_value(flag: &str) -> bool {
             | "-n"
             | "--scheme"
             | "-s"
+            | "--payment-address-type"
             | "--esplora-url"
             | "-e"
             | "--ord-url"
@@ -967,6 +977,7 @@ pub(crate) fn service_config(cli: &Cli) -> ServiceConfig<'_> {
         network_override: cli.network.as_deref(),
         explicit_network: cli.explicit_network,
         scheme_override: cli.scheme.as_deref(),
+        payment_address_type_override: cli.payment_address_type.as_deref(),
         esplora_url_override: cli.esplora_url.as_deref(),
         ord_url_override: cli.ord_url.as_deref(),
         ascii_mode: cli.ascii,

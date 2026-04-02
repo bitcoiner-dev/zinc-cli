@@ -104,6 +104,17 @@ pub fn run_bitcoin_cli(
     profile: &Profile,
     args: &[String],
 ) -> Result<String, crate::error::AppError> {
+    let file_name = std::path::Path::new(&profile.bitcoin_cli)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+
+    if file_name != "bitcoin-cli" && file_name != "bitcoin-cli.exe" {
+        return Err(crate::error::AppError::Config(
+            "Invalid bitcoin-cli binary. Only 'bitcoin-cli' or 'bitcoin-cli.exe' are allowed for security reasons.".to_string(),
+        ));
+    }
+
     let mut cmd = std::process::Command::new(&profile.bitcoin_cli);
     for arg in &profile.bitcoin_cli_args {
         cmd.arg(arg);

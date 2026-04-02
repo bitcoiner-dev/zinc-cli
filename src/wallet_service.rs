@@ -6,7 +6,6 @@ use rpassword::read_password;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command as ShellCommand;
 
 pub use zinc_core::{
     decrypt_wallet_internal, encrypt_wallet_internal, generate_wallet_internal,
@@ -224,27 +223,6 @@ pub fn persist_wallet_session(session: &mut WalletSession) -> Result<(), AppErro
     });
 
     write_profile(&session.profile_path, &session.profile)
-}
-
-#[allow(dead_code)]
-pub fn run_bitcoin_cli(profile: &Profile, args: &[String]) -> Result<String, AppError> {
-    let output = ShellCommand::new(&profile.bitcoin_cli)
-        .args(&profile.bitcoin_cli_args)
-        .args(args)
-        .output()
-        .map_err(|e| AppError::Config(format!("failed to launch {}: {e}", profile.bitcoin_cli)))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let details = if !stderr.is_empty() { stderr } else { stdout };
-        return Err(AppError::Network(format!(
-            "bitcoin-cli command failed: {} {}",
-            profile.bitcoin_cli, details
-        )));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 #[cfg(test)]

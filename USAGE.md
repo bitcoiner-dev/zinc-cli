@@ -18,7 +18,6 @@ Useful globals:
 - `--agent` machine output mode (returns structured JSON)
 - `--profile <name>` select profile (default: `default`)
 - `--data-dir <path>` override data root
-- `--password <value>`
 - `--password-env <ENV_NAME>` (default env: `ZINC_WALLET_PASSWORD`)
 - `--password-stdin`
 - `--reveal` show mnemonic fields in `--agent` mode, and on `wallet import`
@@ -76,9 +75,8 @@ zinc-cli config set payment-address-type nested
 
 Password precedence:
 
-1. `--password`
-2. `--password-stdin`
-3. `--password-env`
+1. `--password-stdin`
+2. `--password-env`
 
 ## 2) Human Quick Start
 
@@ -390,7 +388,6 @@ zinc-cli --agent wait tx-confirmed --txid <txid> --timeout-secs 300
 
 - Prefer setting `ZINC_WALLET_PASSWORD` once for automation.
 - Use `--password-env` only when you need a non-default env var name.
-- Avoid `--password` in shared process environments.
 - `wallet init` in human mode prints the new seed phrase once; in `--agent` mode mnemonic output is redacted unless `--reveal` is set.
 - In `--agent` mode, consume stdout as machine data and treat stderr as diagnostics only.
 

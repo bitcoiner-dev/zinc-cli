@@ -1,9 +1,6 @@
-#[cfg(feature = "ui")]
-pub mod state;
-#[cfg(feature = "ui")]
-pub mod tui;
 use crate::cli::{Cli, SetupArgs};
 use crate::error::AppError;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Clone)]
 pub struct SetupValues {
@@ -19,7 +16,7 @@ pub struct SetupValues {
     pub initialize_wallet: bool,
     pub restore_mnemonic: Option<String>,
     pub words: Option<u8>,
-    pub password: Option<String>,
+    pub password: Option<Zeroizing<String>>,
 }
 
 pub(crate) fn resolve_setup_values(cli: &Cli, args: &SetupArgs) -> Result<SetupValues, AppError> {
@@ -30,7 +27,7 @@ pub(crate) fn resolve_setup_values(cli: &Cli, args: &SetupArgs) -> Result<SetupV
     let data_dir = args
         .data_dir
         .as_ref()
-        .map(|path| path.display().to_string());
+        .map(|path: &std::path::PathBuf| path.display().to_string());
     let password_env = args.password_env.clone().unwrap_or_else(|| {
         cli.password_env
             .clone()

@@ -225,7 +225,6 @@ pub(crate) fn unset_config_field(config: &mut PersistedConfig, key: ConfigField)
 pub struct ServiceConfig<'a> {
     pub data_dir: Option<&'a Path>,
     pub profile: &'a str,
-    pub password: Option<&'a str>,
     pub password_env: &'a str,
     pub password_stdin: bool,
     pub agent: bool,

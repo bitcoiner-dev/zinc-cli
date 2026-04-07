@@ -8,60 +8,56 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command as ShellCommand;
 
-pub use zinc_core::{
-    decrypt_wallet_internal, encrypt_wallet_internal, generate_wallet_internal,
-    validate_mnemonic_internal, Inscription, WalletBuilder, ZincMnemonic, ZincWallet,
-};
-
-use crate::error::AppError;
-
-pub struct WalletSession {
-    pub wallet: ZincWallet,
-    pub profile: Profile,
-    pub profile_path: PathBuf,
-}
-
-#[must_use]
-pub fn map_wallet_error(message: String) -> AppError {
-    let lower = message.to_ascii_lowercase();
-    if lower.contains("wrong password") || lower.contains("decryption failed") {
-        return AppError::Auth(message);
-    }
-    if lower.contains("insufficient") || lower.contains("not enough") {
-        return AppError::InsufficientFunds(message);
-    }
-    if lower.contains("security violation")
-        || lower.contains("safety lock")
-        || lower.contains("ordinal shield")
-    {
-        return AppError::Policy(message);
-    }
-    if lower.contains("http")
-        || lower.contains("network")
-        || lower.contains("esplora")
-        || lower.contains("request")
-    {
-        return AppError::Network(message);
-    }
-    if lower.contains("not found") {
-        return AppError::NotFound(message);
-    }
-    AppError::Internal(message)
-}
-
-#[must_use]
-pub fn read_lock_metadata(path: &Path) -> Option<LockMetadata> {
-    let data = fs::read_to_string(path).ok()?;
-    serde_json::from_str::<LockMetadata>(&data).ok()
-}
-
-pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<String, AppError> {
-    if let Some(pass) = config.password {
-        if pass.is_empty() {
-            return Err(AppError::Auth("--password cannot be empty".to_string()));
-        }
-        return Ok(pass.to_string());
-    }
+use zeroize::Zeroizing;
+ 
+ pub use zinc_core::{
+     decrypt_wallet_internal, encrypt_wallet_internal, generate_wallet_internal,
+     validate_mnemonic_internal, Inscription, WalletBuilder, ZincMnemonic, ZincWallet,
+ };
+ 
+ use crate::error::AppError;
+ 
+ pub struct WalletSession {
+     pub wallet: ZincWallet,
+     pub profile: Profile,
+     pub profile_path: PathBuf,
+ }
+ 
+ #[must_use]
+ pub fn map_wallet_error(message: String) -> AppError {
+     let lower = message.to_ascii_lowercase();
+     if lower.contains("wrong password") || lower.contains("decryption failed") {
+         return AppError::Auth(message);
+     }
+     if lower.contains("insufficient") || lower.contains("not enough") {
+         return AppError::InsufficientFunds(message);
+     }
+     if lower.contains("security violation")
+         || lower.contains("safety lock")
+         || lower.contains("ordinal shield")
+     {
+         return AppError::Policy(message);
+     }
+     if lower.contains("http")
+         || lower.contains("network")
+         || lower.contains("esplora")
+         || lower.contains("request")
+     {
+         return AppError::Network(message);
+     }
+     if lower.contains("not found") {
+         return AppError::NotFound(message);
+     }
+     AppError::Internal(message)
+ }
+ 
+ #[must_use]
+ pub fn read_lock_metadata(path: &Path) -> Option<LockMetadata> {
+     let data = fs::read_to_string(path).ok()?;
+     serde_json::from_str::<LockMetadata>(&data).ok()
+ }
+ 
+ pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<Zeroizing<String>, AppError> {
 
     if config.password_stdin {
         let mut buffer = String::new();
@@ -72,7 +68,7 @@ pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<String, AppError> {
         if pass.is_empty() {
             return Err(AppError::Auth("password from stdin is empty".to_string()));
         }
-        return Ok(pass);
+        return Ok(Zeroizing::new(pass));
     }
 
     if let Some(pass) = std::env::var_os(config.password_env) {
@@ -83,12 +79,12 @@ pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<String, AppError> {
                 config.password_env
             )));
         }
-        return Ok(pass);
+        return Ok(Zeroizing::new(pass));
     }
 
     if config.agent {
         return Err(AppError::Auth(format!(
-            "wallet password missing (use --password, --password-stdin, or set {})",
+            "wallet password missing (use --password-env or set {}, or --password-stdin)",
             config.password_env
         )));
     }
@@ -127,11 +123,11 @@ pub fn wallet_password(config: &ServiceConfig<'_>) -> Result<String, AppError> {
             return Err(AppError::Auth("password cannot be empty".to_string()));
         }
 
-        return Ok(pass);
+        return Ok(Zeroizing::new(pass));
     }
 
     Err(AppError::Auth(format!(
-        "wallet password missing (use --password, --password-stdin, set {}, or run in interactive terminal)",
+        "wallet password missing (use --password-env, set {}, or run in interactive terminal)",
         config.password_env
     )))
 }

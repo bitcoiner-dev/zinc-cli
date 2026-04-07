@@ -226,7 +226,6 @@ mod tests {
         ServiceConfig {
             data_dir: Some(Path::new("/tmp")),
             profile: "default",
-            password: None,
             password_env: "ZINC_WALLET_PASSWORD",
             password_stdin: false,
             agent: false,

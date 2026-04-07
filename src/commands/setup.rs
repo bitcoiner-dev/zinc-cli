@@ -11,6 +11,7 @@ use crate::wizard::{resolve_setup_values, run_tui_setup_wizard, should_run_setup
 use crate::{now_unix, profile_path, wallet_password, write_profile};
 use serde_json::json;
 use std::io::IsTerminal;
+use zeroize::Zeroizing;
 use zinc_core::{encrypt_wallet_internal, generate_wallet_internal};
 
 pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError> {
@@ -68,7 +69,6 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
                 .data_dir
                 .as_ref()
                 .map(|s| std::path::PathBuf::from(s)),
-            password: values.password.clone().or(cli.password.clone()),
             password_env: Some(values.password_env.clone()),
             password_stdin: cli.password_stdin,
             reveal: cli.reveal,
@@ -96,7 +96,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             command: crate::cli::Command::Doctor, // placeholder, not used
         };
 
-        let password = if let Some(ref p) = values.password {
+        let password: Zeroizing<String> = if let Some(ref p) = values.password {
             p.clone()
         } else {
             wallet_password(&wallet_cli)?
@@ -110,7 +110,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
         }
 
         let (phrase, word_count) = if let Some(ref mnemonic) = values.restore_mnemonic {
-            let p = mnemonic.trim().to_string();
+            let p: String = mnemonic.trim().to_string();
             if !validate_mnemonic_internal(&p) {
                 return Err(AppError::Invalid(
                     "setup restore mnemonic is invalid".to_string(),

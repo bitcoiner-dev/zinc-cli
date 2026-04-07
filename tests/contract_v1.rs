@@ -41,6 +41,7 @@ fn cargo_cmd() -> Command {
 
 fn init_wallet(data_dir: &str, password: &str) {
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", password);
     cmd.args(&[
         "run",
         "--quiet",
@@ -48,8 +49,6 @@ fn init_wallet(data_dir: &str, password: &str) {
         "--agent",
         "--data-dir",
         data_dir,
-        "--password",
-        password,
         "wallet",
         "init",
         "--overwrite",
@@ -196,6 +195,7 @@ fn test_mnemonic_hiding() {
     let _ = fs::remove_dir_all(data_dir);
 
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     cmd.args(&[
         "run",
         "--quiet",
@@ -203,8 +203,6 @@ fn test_mnemonic_hiding() {
         "--agent",
         "--data-dir",
         data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--overwrite",
@@ -225,14 +223,13 @@ fn test_wallet_init_human_mode_shows_mnemonic() {
     let _ = fs::remove_dir_all(&data_dir);
 
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     cmd.args(&[
         "run",
         "--quiet",
         "--",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--overwrite",
@@ -252,6 +249,7 @@ fn test_mnemonic_reveal() {
     let _ = fs::remove_dir_all(data_dir);
 
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     cmd.args(&[
         "run",
         "--quiet",
@@ -260,8 +258,6 @@ fn test_mnemonic_reveal() {
         "--reveal",
         "--data-dir",
         data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--overwrite",
@@ -472,6 +468,7 @@ fn test_psbt_analyze_stdin_empty_is_invalid() {
     init_wallet(&data_dir, "testpass");
 
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     cmd.args(&[
         "run",
         "--quiet",
@@ -479,8 +476,6 @@ fn test_psbt_analyze_stdin_empty_is_invalid() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "psbt",
         "analyze",
         "--psbt-stdin",
@@ -515,6 +510,7 @@ fn test_atomic_write_ignores_corrupt_temp_file() {
     fs::write(&corrupt_temp, "{ not-valid-json").expect("failed to write temp");
 
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     cmd.args(&[
         "run",
         "--quiet",
@@ -522,8 +518,6 @@ fn test_atomic_write_ignores_corrupt_temp_file() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "account",
         "use",
         "--index",
@@ -548,6 +542,7 @@ fn test_account_use_reports_same_addresses_as_address_commands() {
     init_wallet(&data_dir, "testpass");
 
     let mut switch_cmd = cargo_cmd();
+    switch_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     switch_cmd.args(&[
         "run",
         "--quiet",
@@ -555,8 +550,6 @@ fn test_account_use_reports_same_addresses_as_address_commands() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "account",
         "use",
         "--index",
@@ -581,6 +574,7 @@ fn test_account_use_reports_same_addresses_as_address_commands() {
         .to_string();
 
     let mut taproot_cmd = cargo_cmd();
+    taproot_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     taproot_cmd.args(&[
         "run",
         "--quiet",
@@ -588,8 +582,6 @@ fn test_account_use_reports_same_addresses_as_address_commands() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "address",
         "taproot",
     ]);
@@ -601,6 +593,7 @@ fn test_account_use_reports_same_addresses_as_address_commands() {
         .expect("taproot address should be present");
 
     let mut payment_cmd = cargo_cmd();
+    payment_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     payment_cmd.args(&[
         "run",
         "--quiet",
@@ -608,8 +601,6 @@ fn test_account_use_reports_same_addresses_as_address_commands() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "address",
         "payment",
     ]);
@@ -712,13 +703,12 @@ fn test_unknown_global_flag_has_suggestion() {
 #[test]
 fn test_unknown_option_is_rejected_with_hint() {
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     cmd.args(&[
         "run",
         "--quiet",
         "--",
         "--agent",
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--word",
@@ -746,6 +736,7 @@ fn test_global_flags_work_after_command() {
     init_wallet(&data_dir, "testpass");
 
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     cmd.args(&[
         "run",
         "--quiet",
@@ -754,8 +745,6 @@ fn test_global_flags_work_after_command() {
         "info",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "--agent",
     ]);
 
@@ -797,6 +786,7 @@ fn test_wallet_init_uses_env_network_defaults() {
     let _ = fs::remove_dir_all(&data_dir);
 
     let mut init_cmd = cargo_cmd();
+    init_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     init_cmd.args(&[
         "run",
         "--quiet",
@@ -804,8 +794,6 @@ fn test_wallet_init_uses_env_network_defaults() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--overwrite",
@@ -821,6 +809,7 @@ fn test_wallet_init_uses_env_network_defaults() {
     );
 
     let mut info_cmd = cargo_cmd();
+    info_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     info_cmd.args(&[
         "run",
         "--quiet",
@@ -828,8 +817,6 @@ fn test_wallet_init_uses_env_network_defaults() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "info",
     ]);
@@ -847,14 +834,13 @@ fn test_json_mode_can_be_enabled_by_env() {
     init_wallet(&data_dir, "testpass");
 
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     cmd.args(&[
         "run",
         "--quiet",
         "--",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "info",
     ]);
@@ -913,6 +899,7 @@ fn test_wallet_outputs_include_payment_address_type_default_native() {
     let _ = fs::remove_dir_all(&data_dir);
 
     let mut init_cmd = cargo_cmd();
+    init_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     init_cmd.args(&[
         "run",
         "--quiet",
@@ -920,8 +907,6 @@ fn test_wallet_outputs_include_payment_address_type_default_native() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--overwrite",
@@ -932,6 +917,7 @@ fn test_wallet_outputs_include_payment_address_type_default_native() {
     assert_eq!(init_json["payment_address_type"], "native");
 
     let mut info_cmd = cargo_cmd();
+    info_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     info_cmd.args(&[
         "run",
         "--quiet",
@@ -939,8 +925,6 @@ fn test_wallet_outputs_include_payment_address_type_default_native() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "info",
     ]);
@@ -982,6 +966,7 @@ fn test_payment_address_type_config_and_cli_override_precedence() {
     assert_eq!(show_json["effective_payment_address_type"], "nested");
 
     let mut init_cmd = cargo_cmd();
+    init_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     init_cmd.args(&[
         "run",
         "--quiet",
@@ -989,8 +974,6 @@ fn test_payment_address_type_config_and_cli_override_precedence() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--overwrite",
@@ -1002,6 +985,7 @@ fn test_payment_address_type_config_and_cli_override_precedence() {
     assert_eq!(init_json["payment_address_type"], "nested");
 
     let mut info_cmd = cargo_cmd();
+    info_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     info_cmd.args(&[
         "run",
         "--quiet",
@@ -1009,8 +993,6 @@ fn test_payment_address_type_config_and_cli_override_precedence() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "info",
     ]);
@@ -1021,6 +1003,7 @@ fn test_payment_address_type_config_and_cli_override_precedence() {
     assert_eq!(info_json["payment_address_type"], "nested");
 
     let mut info_override_cmd = cargo_cmd();
+    info_override_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     info_override_cmd.args(&[
         "run",
         "--quiet",
@@ -1030,8 +1013,6 @@ fn test_payment_address_type_config_and_cli_override_precedence() {
         "legacy",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "info",
     ]);
@@ -1053,6 +1034,7 @@ fn test_profile_network_wins_over_global_config_network() {
     let _ = fs::remove_dir_all(&data_dir);
 
     let mut init_cmd = cargo_cmd();
+    init_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     init_cmd.args(&[
         "run",
         "--quiet",
@@ -1062,8 +1044,6 @@ fn test_profile_network_wins_over_global_config_network() {
         &data_dir,
         "--profile",
         "presto",
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--network",
@@ -1081,6 +1061,7 @@ fn test_profile_network_wins_over_global_config_network() {
     );
 
     let mut warm_cache_cmd = cargo_cmd();
+    warm_cache_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     warm_cache_cmd.args(&[
         "run",
         "--quiet",
@@ -1090,8 +1071,6 @@ fn test_profile_network_wins_over_global_config_network() {
         &data_dir,
         "--profile",
         "presto",
-        "--password",
-        "testpass",
         "address",
         "payment",
     ]);
@@ -1130,6 +1109,7 @@ fn test_profile_network_wins_over_global_config_network() {
     );
 
     let mut address_cmd = cargo_cmd();
+    address_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     address_cmd.args(&[
         "run",
         "--quiet",
@@ -1139,8 +1119,6 @@ fn test_profile_network_wins_over_global_config_network() {
         &data_dir,
         "--profile",
         "presto",
-        "--password",
-        "testpass",
         "address",
         "payment",
     ]);
@@ -1157,6 +1135,7 @@ fn test_profile_network_wins_over_global_config_network() {
     );
 
     let mut info_cmd = cargo_cmd();
+    info_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     info_cmd.args(&[
         "run",
         "--quiet",
@@ -1166,8 +1145,6 @@ fn test_profile_network_wins_over_global_config_network() {
         &data_dir,
         "--profile",
         "presto",
-        "--password",
-        "testpass",
         "wallet",
         "info",
     ]);
@@ -1182,12 +1159,13 @@ fn test_profile_network_wins_over_global_config_network() {
 
 #[test]
 fn test_wallet_info_keeps_profile_network_when_global_config_changes() {
-    let home = unique_data_dir("zinc_test_wallet_info_network_home");
+    let home = unique_data_dir("zinc_test_network_data");
     fs::create_dir_all(&home).expect("failed to create test home");
     let data_dir = unique_data_dir("zinc_test_wallet_info_network_data");
     let _ = fs::remove_dir_all(&data_dir);
 
     let mut init_cmd = cargo_cmd();
+    init_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     init_cmd.args(&[
         "run",
         "--quiet",
@@ -1197,8 +1175,6 @@ fn test_wallet_info_keeps_profile_network_when_global_config_changes() {
         &data_dir,
         "--profile",
         "presto",
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--network",
@@ -1309,6 +1285,7 @@ fn test_env_network_override_applies_to_wallet_info_and_address() {
     assert_eq!(overridden_info_json["ord_url"], "https://o.exittheloop.com");
 
     let mut overridden_address_cmd = cargo_cmd();
+    overridden_address_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     overridden_address_cmd.args(&[
         "run",
         "--quiet",
@@ -1316,8 +1293,6 @@ fn test_env_network_override_applies_to_wallet_info_and_address() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "address",
         "payment",
     ]);
@@ -1345,6 +1320,7 @@ fn test_scheme_config_switch_updates_wallet_info_and_payment_branch() {
     let _ = fs::remove_dir_all(&data_dir);
 
     let mut init_cmd = cargo_cmd();
+    init_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     init_cmd.args(&[
         "run",
         "--quiet",
@@ -1354,8 +1330,6 @@ fn test_scheme_config_switch_updates_wallet_info_and_payment_branch() {
         &data_dir,
         "--profile",
         "presto",
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--network",
@@ -1369,6 +1343,7 @@ fn test_scheme_config_switch_updates_wallet_info_and_payment_branch() {
     assert!(init_output.status.success());
 
     let mut baseline_payment_cmd = cargo_cmd();
+    baseline_payment_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     baseline_payment_cmd.args(&[
         "run",
         "--quiet",
@@ -1378,8 +1353,6 @@ fn test_scheme_config_switch_updates_wallet_info_and_payment_branch() {
         &data_dir,
         "--profile",
         "presto",
-        "--password",
-        "testpass",
         "address",
         "payment",
     ]);
@@ -1435,6 +1408,7 @@ fn test_scheme_config_switch_updates_wallet_info_and_payment_branch() {
     assert_eq!(info_json["scheme"], "unified");
 
     let mut payment_cmd = cargo_cmd();
+    payment_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     payment_cmd.args(&[
         "run",
         "--quiet",
@@ -1444,8 +1418,6 @@ fn test_scheme_config_switch_updates_wallet_info_and_payment_branch() {
         &data_dir,
         "--profile",
         "presto",
-        "--password",
-        "testpass",
         "address",
         "payment",
     ]);
@@ -1463,6 +1435,7 @@ fn test_scheme_config_switch_updates_wallet_info_and_payment_branch() {
     );
 
     let mut taproot_cmd = cargo_cmd();
+    taproot_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     taproot_cmd.args(&[
         "run",
         "--quiet",
@@ -1472,8 +1445,6 @@ fn test_scheme_config_switch_updates_wallet_info_and_payment_branch() {
         &data_dir,
         "--profile",
         "presto",
-        "--password",
-        "testpass",
         "address",
         "taproot",
     ]);
@@ -1496,6 +1467,7 @@ fn test_setup_persists_defaults_and_wallet_uses_them() {
     let _ = fs::remove_dir_all(&data_dir);
 
     let mut setup_cmd = cargo_cmd();
+    setup_cmd.env("BOT_PASS_ENV", "testpass");
     setup_cmd.args(&[
         "run",
         "--quiet",
@@ -1518,13 +1490,12 @@ fn test_setup_persists_defaults_and_wallet_uses_them() {
     assert!(setup_output.status.success());
 
     let mut init_cmd = cargo_cmd();
+    init_cmd.env("BOT_PASS_ENV", "testpass");
     init_cmd.args(&[
         "run",
         "--quiet",
         "--",
         "--agent",
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--overwrite",
@@ -1537,16 +1508,8 @@ fn test_setup_persists_defaults_and_wallet_uses_them() {
     assert_eq!(init_json["scheme"], "unified");
 
     let mut info_cmd = cargo_cmd();
-    info_cmd.args(&[
-        "run",
-        "--quiet",
-        "--",
-        "--agent",
-        "--password",
-        "testpass",
-        "wallet",
-        "info",
-    ]);
+    info_cmd.env("BOT_PASS_ENV", "testpass");
+    info_cmd.args(&["run", "--quiet", "--", "--agent", "wallet", "info"]);
     info_cmd.env("HOME", &home);
     let info_output = info_cmd.output().expect("failed to execute process");
     assert!(info_output.status.success());
@@ -1595,6 +1558,7 @@ fn test_wallet_reveal_mnemonic_matches_created_wallet_phrase() {
     let _ = fs::remove_dir_all(&data_dir);
 
     let mut init_cmd = cargo_cmd();
+    init_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     init_cmd.args(&[
         "run",
         "--quiet",
@@ -1603,8 +1567,6 @@ fn test_wallet_reveal_mnemonic_matches_created_wallet_phrase() {
         "--reveal",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "init",
         "--overwrite",
@@ -1618,6 +1580,7 @@ fn test_wallet_reveal_mnemonic_matches_created_wallet_phrase() {
         .to_string();
 
     let mut reveal_cmd = cargo_cmd();
+    reveal_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     reveal_cmd.args(&[
         "run",
         "--quiet",
@@ -1625,8 +1588,6 @@ fn test_wallet_reveal_mnemonic_matches_created_wallet_phrase() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "reveal-mnemonic",
     ]);
@@ -1647,6 +1608,7 @@ fn test_wallet_reveal_mnemonic_requires_correct_password() {
     init_wallet(&data_dir, "testpass");
 
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "wrong-pass");
     cmd.args(&[
         "run",
         "--quiet",
@@ -1654,8 +1616,6 @@ fn test_wallet_reveal_mnemonic_requires_correct_password() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "wrong-pass",
         "wallet",
         "reveal-mnemonic",
     ]);
@@ -1693,13 +1653,12 @@ fn test_setup_propagates_password_env_and_restore_mnemonic() {
     let mnemonic = "rotate text off rich waste jump grab doctor today renew fault exotic";
 
     let mut setup_cmd = cargo_cmd();
+    setup_cmd.env("BOT_PASS", "testpass");
     setup_cmd.args(&[
         "run",
         "--quiet",
         "--",
         "--agent",
-        "--password",
-        "testpass",
         "setup",
         "--data-dir",
         &data_dir,
@@ -1727,6 +1686,7 @@ fn test_setup_propagates_password_env_and_restore_mnemonic() {
     assert_eq!(config_json["password_env"], "BOT_PASS");
 
     let mut reveal_cmd = cargo_cmd();
+    reveal_cmd.env("BOT_PASS", "testpass");
     reveal_cmd.args(&[
         "run",
         "--quiet",
@@ -1734,8 +1694,6 @@ fn test_setup_propagates_password_env_and_restore_mnemonic() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wallet",
         "reveal-mnemonic",
     ]);
@@ -1755,13 +1713,12 @@ fn test_setup_words_24_generates_24_word_wallet() {
     let _ = fs::remove_dir_all(&data_dir);
 
     let mut setup_cmd = cargo_cmd();
+    setup_cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     setup_cmd.args(&[
         "run",
         "--quiet",
         "--",
         "--agent",
-        "--password",
-        "testpass",
         "setup",
         "--data-dir",
         &data_dir,
@@ -1786,6 +1743,7 @@ fn test_wait_balance_zero_target_includes_contract_fields() {
     init_wallet(&data_dir, "testpass");
 
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     cmd.args(&[
         "run",
         "--quiet",
@@ -1793,8 +1751,6 @@ fn test_wait_balance_zero_target_includes_contract_fields() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "wait",
         "balance",
         "--confirmed-at-least",
@@ -1817,6 +1773,7 @@ fn test_sync_chain_network_error_maps_to_network_type() {
     init_wallet(&data_dir, "testpass");
 
     let mut cmd = cargo_cmd();
+    cmd.env("ZINC_WALLET_PASSWORD", "testpass");
     cmd.args(&[
         "run",
         "--quiet",
@@ -1824,8 +1781,6 @@ fn test_sync_chain_network_error_maps_to_network_type() {
         "--agent",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "--esplora-url",
         "http://127.0.0.1:1",
         "sync",
@@ -1867,6 +1822,7 @@ fn test_idempotency_replays_mutating_command_response() {
     init_wallet(&data_dir, "testpass");
 
     let mut first = cargo_cmd();
+    first.env("ZINC_WALLET_PASSWORD", "testpass");
     first.args(&[
         "run",
         "--quiet",
@@ -1876,8 +1832,6 @@ fn test_idempotency_replays_mutating_command_response() {
         "idem-001",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "account",
         "use",
         "--index",
@@ -1891,6 +1845,7 @@ fn test_idempotency_replays_mutating_command_response() {
     assert_eq!(first_json["idempotency"]["replayed"], false);
 
     let mut second = cargo_cmd();
+    second.env("ZINC_WALLET_PASSWORD", "testpass");
     second.args(&[
         "run",
         "--quiet",
@@ -1900,8 +1855,6 @@ fn test_idempotency_replays_mutating_command_response() {
         "idem-001",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "account",
         "use",
         "--index",
@@ -1922,6 +1875,7 @@ fn test_idempotency_key_reuse_with_different_payload_is_rejected() {
     init_wallet(&data_dir, "testpass");
 
     let mut first = cargo_cmd();
+    first.env("ZINC_WALLET_PASSWORD", "testpass");
     first.args(&[
         "run",
         "--quiet",
@@ -1931,8 +1885,6 @@ fn test_idempotency_key_reuse_with_different_payload_is_rejected() {
         "idem-conflict",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "account",
         "use",
         "--index",
@@ -1942,6 +1894,7 @@ fn test_idempotency_key_reuse_with_different_payload_is_rejected() {
     assert!(first_output.status.success());
 
     let mut second = cargo_cmd();
+    second.env("ZINC_WALLET_PASSWORD", "testpass");
     second.args(&[
         "run",
         "--quiet",
@@ -1951,8 +1904,6 @@ fn test_idempotency_key_reuse_with_different_payload_is_rejected() {
         "idem-conflict",
         "--data-dir",
         &data_dir,
-        "--password",
-        "testpass",
         "account",
         "use",
         "--index",

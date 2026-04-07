@@ -28,10 +28,7 @@ pub struct Cli {
 
     #[arg(long, global = true, help = "Automatically say yes to prompts")]
     pub yes: bool,
-
-    #[arg(long, global = true, help = "Password for wallet operations")]
-    pub password: Option<String>,
-
+ 
     #[arg(
         long,
         global = true,

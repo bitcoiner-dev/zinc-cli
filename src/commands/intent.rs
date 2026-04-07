@@ -2627,10 +2627,9 @@ mod tests {
     #[test]
     fn resolve_agent_secret_key_bootstraps_and_reuses_store() {
         let data_dir = unique_data_dir("agent-key-bootstrap");
+        std::env::set_var("ZINC_WALLET_PASSWORD", "test-password");
         let cli = Cli::try_parse_from(vec![
             "zinc-cli".to_string(),
-            "--password".to_string(),
-            "test-password".to_string(),
             "--data-dir".to_string(),
             data_dir,
             "pair".to_string(),

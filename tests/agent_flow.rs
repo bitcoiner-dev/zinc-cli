@@ -34,12 +34,11 @@ fn cargo_cmd() -> Command {
 
 fn run_zinc(args: &[&str], data_dir: &str, password: &str) -> Value {
     let mut cmd = cargo_cmd();
-    cmd.args(&["run", "--quiet", "--"])
+    cmd.env("ZINC_WALLET_PASSWORD", password)
+        .args(&["run", "--quiet", "--"])
         .arg("--agent")
         .arg("--data-dir")
-        .arg(data_dir)
-        .arg("--password")
-        .arg(password);
+        .arg(data_dir);
     for arg in args {
         cmd.arg(arg);
     }
@@ -62,12 +61,11 @@ fn run_zinc(args: &[&str], data_dir: &str, password: &str) -> Value {
 
 fn run_zinc_ignore_error(args: &[&str], data_dir: &str, password: &str) -> Value {
     let mut cmd = cargo_cmd();
-    cmd.args(&["run", "--quiet", "--"])
+    cmd.env("ZINC_WALLET_PASSWORD", password)
+        .args(&["run", "--quiet", "--"])
         .arg("--agent")
         .arg("--data-dir")
-        .arg(data_dir)
-        .arg("--password")
-        .arg(password);
+        .arg(data_dir);
     for arg in args {
         cmd.arg(arg);
     }

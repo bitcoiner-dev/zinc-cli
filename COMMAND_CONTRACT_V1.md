@@ -25,7 +25,7 @@ This document defines the active `v1` command contract. It is additive with curr
 
 ## 3) Global Flags (Supported)
 
-`--agent`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--payment-address-type`, `--esplora-url`, `--ord-url`, `--pulse-url`, `--pulse-api-token`, `--ascii`, `--no-images`, `--thumb`, `--no-thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
+`--agent`, `--yes`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--payment-address-type`, `--esplora-url`, `--ord-url`, `--pulse-url`, `--pulse-api-token`, `--ascii`, `--no-images`, `--thumb`, `--no-thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
 
 Global flags are supported both before and after command tokens.
 
@@ -490,7 +490,7 @@ When `--policy-mode strict` is set, `psbt sign`, `psbt broadcast`, and `offer ac
 ## 10) Security Contract for Agent Usage
 
 1. Agents should always use `--agent`.
-2. Agents should prefer password env variables over plaintext flags.
+2. Agents must use password env variables or stdin; the insecure plaintext --password flag has been removed.
 3. Policy/ordinals failures must be surfaced as `error.type = "policy"` with actionable messages.
 4. Commands that mutate wallet state should remain explicit and single-purpose.
 5. Agents should set `--idempotency-key` on mutating commands and tune `--network-timeout-secs`/`--network-retries` for reliability.

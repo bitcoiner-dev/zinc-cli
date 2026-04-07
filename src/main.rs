@@ -31,6 +31,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use supports_unicode::{self, Stream};
+use zeroize::Zeroizing;
 
 pub use wallet_service::{
     default_bitcoin_cli as svc_default_bitcoin_cli,
@@ -50,7 +51,6 @@ static CORRELATION_SEQ: AtomicU64 = AtomicU64::new(1);
 const GLOBAL_FLAGS: &[&str] = &[
     "--agent",
     "--yes",
-    "--password",
     "--password-env",
     "--password-stdin",
     "--reveal",
@@ -611,7 +611,6 @@ fn flag_requires_value(flag: &str) -> bool {
             | "--ord-url"
             | "-o"
             | "--password-env"
-            | "--password"
             | "--correlation-id"
             | "--idempotency-key"
             | "--network-timeout-secs"
@@ -982,7 +981,6 @@ pub(crate) fn service_config(cli: &Cli) -> ServiceConfig<'_> {
     ServiceConfig {
         data_dir: cli.data_dir.as_deref(),
         profile: cli.profile.as_deref().unwrap_or("default"),
-        password: cli.password.as_deref(),
         password_env: cli
             .password_env
             .as_deref()
@@ -1037,7 +1035,7 @@ pub(crate) fn write_bytes_atomic(path: &Path, bytes: &[u8], label: &str) -> Resu
     svc_write_bytes_atomic(path, bytes, label).map_err(AppError::from)
 }
 
-pub(crate) fn wallet_password(cli: &Cli) -> Result<String, AppError> {
+pub(crate) fn wallet_password(cli: &Cli) -> Result<Zeroizing<String>, AppError> {
     svc_wallet_password(&service_config(cli)).map_err(AppError::from)
 }
 

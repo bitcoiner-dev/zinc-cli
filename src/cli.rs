@@ -15,6 +15,7 @@ pub enum PolicyMode {
     version,
     about = "CLI wallet for Zinc Bitcoin + Ordinals"
 )]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -28,7 +29,7 @@ pub struct Cli {
 
     #[arg(long, global = true, help = "Automatically say yes to prompts")]
     pub yes: bool,
- 
+
     #[arg(
         long,
         global = true,
@@ -141,6 +142,9 @@ pub struct Cli {
 
     #[arg(skip)]
     pub started_at_unix_ms: u128,
+
+    #[arg(skip)]
+    pub password: Option<String>,
 }
 
 impl Cli {

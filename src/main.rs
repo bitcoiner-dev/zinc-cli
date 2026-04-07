@@ -17,7 +17,7 @@ mod wallet_service;
 mod wizard;
 
 use crate::cli::{Cli, Command, PolicyMode};
-use crate::config::*;
+use crate::config::load_persisted_config;
 use crate::error::AppError;
 use crate::utils::{env_bool, env_non_empty};
 use clap::Parser;
@@ -193,7 +193,7 @@ async fn main() -> miette::Result<()> {
                     "global_flags": GLOBAL_FLAGS,
                 });
                 println!("{}", serde_json::to_string(&error_json).unwrap());
-                std::process::exit(if is_help { 0 } else { 1 });
+                std::process::exit(i32::from(!is_help));
             } else {
                 err.exit();
             }
@@ -389,7 +389,7 @@ fn resolve_effective_cli(mut cli: Cli) -> Result<Cli, AppError> {
     // Global flags override persisted config
     if cli.agent {
         cli.ascii = true;
-    } else if let Some(val) = std::env::var("ZINC_CLI_OUTPUT").ok() {
+    } else if let Ok(val) = std::env::var("ZINC_CLI_OUTPUT") {
         if val.to_lowercase() == "agent" {
             cli.agent = true;
             cli.ascii = true;
@@ -746,7 +746,6 @@ fn is_mutating_command(command: &Command) -> bool {
             crate::cli::SnapshotAction::Save { .. } | crate::cli::SnapshotAction::Restore { .. }
         ),
         Command::Scenario(_) => true,
-        Command::Insight(_) => false,
         _ => false,
     }
 }
@@ -962,19 +961,19 @@ mod tests {
 }
 
 pub(crate) fn needs_lock(command: &Command) -> bool {
-    match command {
+    !matches!(
+        command,
         Command::Setup { .. }
-        | Command::Config { .. }
-        | Command::Doctor
-        | Command::Version
-        | Command::Lock { .. }
-        | Command::Psbt { .. }
-        | Command::Intent(..)
-        | Command::Pair(..)
-        | Command::Offer { .. }
-        | Command::Insight { .. } => false,
-        _ => true,
-    }
+            | Command::Config { .. }
+            | Command::Doctor
+            | Command::Version
+            | Command::Lock { .. }
+            | Command::Psbt { .. }
+            | Command::Intent(..)
+            | Command::Pair(..)
+            | Command::Offer { .. }
+            | Command::Insight { .. }
+    )
 }
 
 pub(crate) fn service_config(cli: &Cli) -> ServiceConfig<'_> {
@@ -986,6 +985,7 @@ pub(crate) fn service_config(cli: &Cli) -> ServiceConfig<'_> {
             .as_deref()
             .unwrap_or("ZINC_WALLET_PASSWORD"),
         password_stdin: cli.password_stdin,
+        password_override: cli.password.as_deref(),
         agent: cli.agent,
         network_override: cli.network.as_deref(),
         explicit_network: cli.explicit_network,
@@ -1000,31 +1000,31 @@ pub(crate) fn service_config(cli: &Cli) -> ServiceConfig<'_> {
 }
 
 pub(crate) fn load_wallet_session(cli: &Cli) -> Result<WalletSession, AppError> {
-    svc_load_wallet_session(&service_config(cli)).map_err(AppError::from)
+    svc_load_wallet_session(&service_config(cli))
 }
 
 pub(crate) fn persist_wallet_session(session: &mut WalletSession) -> Result<(), AppError> {
-    svc_persist_wallet_session(session).map_err(AppError::from)
+    svc_persist_wallet_session(session)
 }
 
 pub(crate) fn profile_path(cli: &Cli) -> Result<PathBuf, AppError> {
-    svc_profile_path(&service_config(cli)).map_err(AppError::from)
+    svc_profile_path(&service_config(cli))
 }
 
 pub(crate) fn profile_lock_path(cli: &Cli) -> Result<PathBuf, AppError> {
-    svc_profile_lock_path(&service_config(cli)).map_err(AppError::from)
+    svc_profile_lock_path(&service_config(cli))
 }
 
 pub(crate) fn snapshot_dir(cli: &Cli) -> Result<PathBuf, AppError> {
-    svc_snapshot_dir(&service_config(cli)).map_err(AppError::from)
+    svc_snapshot_dir(&service_config(cli))
 }
 
 pub(crate) fn read_profile(path: &Path) -> Result<Profile, AppError> {
-    svc_read_profile(path).map_err(AppError::from)
+    svc_read_profile(path)
 }
 
 pub(crate) fn write_profile(path: &Path, profile: &Profile) -> Result<(), AppError> {
-    svc_write_profile(path, profile).map_err(AppError::from)
+    svc_write_profile(path, profile)
 }
 
 pub(crate) fn read_lock_metadata(path: &Path) -> Option<LockMetadata> {
@@ -1032,11 +1032,11 @@ pub(crate) fn read_lock_metadata(path: &Path) -> Option<LockMetadata> {
 }
 
 pub(crate) fn write_bytes_atomic(path: &Path, bytes: &[u8], label: &str) -> Result<(), AppError> {
-    svc_write_bytes_atomic(path, bytes, label).map_err(AppError::from)
+    svc_write_bytes_atomic(path, bytes, label)
 }
 
 pub(crate) fn wallet_password(cli: &Cli) -> Result<Zeroizing<String>, AppError> {
-    svc_wallet_password(&service_config(cli)).map_err(AppError::from)
+    svc_wallet_password(&service_config(cli))
 }
 
 pub(crate) fn confirm(prompt: &str, cli: &Cli) -> bool {
@@ -1075,8 +1075,7 @@ fn remap_suggestions(mut msg: String) -> String {
     let mut result = String::new();
     for line in msg.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("did you mean ") {
-            let suggestions_str = &trimmed["did you mean ".len()..];
+        if let Some(suggestions_str) = trimmed.strip_prefix("did you mean ") {
             let suggestions: Vec<&str> = suggestions_str.split(", ").collect();
             for (i, s) in suggestions.iter().enumerate() {
                 if i > 0 {

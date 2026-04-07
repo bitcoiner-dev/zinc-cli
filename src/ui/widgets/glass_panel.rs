@@ -2,7 +2,7 @@ use crate::ui::ZincTheme;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
-use ratatui::widgets::*;
+use ratatui::widgets::{Block, BorderType, Borders};
 
 #[derive(Debug, Clone)]
 pub struct GlassPanel<'a> {

@@ -228,6 +228,7 @@ mod tests {
             profile: "default",
             password_env: "ZINC_WALLET_PASSWORD",
             password_stdin: false,
+            password_override: None,
             agent: false,
             network_override: None,
             explicit_network: false,

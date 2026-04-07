@@ -50,9 +50,7 @@ impl AppError {
     pub fn tag(&self) -> &str {
         match self {
             Self::Invalid(_) => "invalid",
-            Self::Config(_) => "config",
-            // Keep IO failures in the documented config/storage bucket for v1.
-            Self::Io(_) => "config",
+            Self::Config(_) | Self::Io(_) => "config",
             Self::NotFound(_) => "not_found",
             Self::Auth(_) => "auth",
             Self::Network(_) => "network",
@@ -65,8 +63,7 @@ impl AppError {
     pub fn exit_code(&self) -> i32 {
         match self {
             Self::Invalid(_) => 2,
-            Self::Config(_) => 10,
-            Self::Io(_) => 10,
+            Self::Config(_) | Self::Io(_) => 10,
             Self::NotFound(_) => 15,
             Self::Auth(_) => 11,
             Self::Network(_) => 12,

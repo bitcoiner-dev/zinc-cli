@@ -138,7 +138,7 @@ fn spawn_balance_task(
                 .await;
 
             match sync_rx.recv().await {
-                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {}
                 Err(broadcast::error::RecvError::Closed) => break,
             }
         }
@@ -173,11 +173,11 @@ fn spawn_inscription_task(
             tokio::select! {
                 res = sync_rx.recv() => {
                     match res {
-                        Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                        Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {}
                         Err(broadcast::error::RecvError::Closed) => break,
                     }
                 },
-                _ = tokio::time::sleep(Duration::from_secs(60)) => {},
+                () = tokio::time::sleep(Duration::from_secs(60)) => {},
             }
         }
     })

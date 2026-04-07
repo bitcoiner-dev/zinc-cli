@@ -5,8 +5,8 @@ use crate::output::CommandOutput;
 use crate::utils::{parse_network, parse_payment_address_type, parse_scheme};
 use crate::wallet_service::{
     decrypt_wallet_internal, default_bitcoin_cli, default_bitcoin_cli_args, default_esplora_url,
-    default_ord_url, default_pulse_url, encrypt_wallet_internal, generate_wallet_internal, validate_mnemonic_internal,
-    Profile,
+    default_ord_url, default_pulse_url, encrypt_wallet_internal, generate_wallet_internal,
+    validate_mnemonic_internal, Profile,
 };
 use crate::{now_unix, profile_path, read_profile, wallet_password, write_profile};
 use std::collections::BTreeMap;
@@ -164,7 +164,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 pulse_url: profile.pulse_url.clone(),
                 imported: true,
                 phrase: if cli.reveal || !cli.agent {
-                    Some(mnemonic.to_string())
+                    Some(mnemonic.clone())
                 } else {
                     None
                 },

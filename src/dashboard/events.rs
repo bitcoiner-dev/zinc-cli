@@ -14,7 +14,7 @@ pub fn handle_dashboard_event(
     event: DashboardEvent,
     state: &mut DashboardState,
     cli: &Cli,
-    wallet_mutex: &Option<Arc<tokio::sync::Mutex<ZincWallet>>>,
+    wallet_mutex: Option<&Arc<tokio::sync::Mutex<ZincWallet>>>,
     pending_session: &mut Option<crate::wallet_service::WalletSession>,
     event_tx: &mpsc::Sender<DashboardEvent>,
 ) {
@@ -115,7 +115,7 @@ pub fn handle_dashboard_event(
 
 fn switch_account(
     state: &mut DashboardState,
-    wallet_mutex: &Option<Arc<tokio::sync::Mutex<ZincWallet>>>,
+    wallet_mutex: Option<&Arc<tokio::sync::Mutex<ZincWallet>>>,
     new_account: u32,
 ) {
     state.account_index = new_account;
@@ -146,7 +146,7 @@ fn navigate_inscriptions(state: &mut DashboardState, key_code: KeyCode) {
     let cols = state.gallery_cols.max(1);
     let current_idx = state.inscription_index;
     let (row, col) = (current_idx / cols, current_idx % cols);
-    let total_rows = (state.inscriptions.len() + cols - 1) / cols;
+    let total_rows = state.inscriptions.len().div_ceil(cols);
 
     let (new_row, new_col) = match key_code {
         KeyCode::Left if col > 0 => (row, col - 1),

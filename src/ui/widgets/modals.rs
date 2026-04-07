@@ -4,7 +4,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::text::Span;
-use ratatui::widgets::*;
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 
 pub struct PasswordModal<'a> {
     pub input: &'a str,
@@ -12,7 +12,7 @@ pub struct PasswordModal<'a> {
     pub error: Option<&'a str>,
 }
 
-impl<'a> Widget for PasswordModal<'a> {
+impl Widget for PasswordModal<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         Block::default()
             .style(Style::default().bg(self.theme.surface_base))
@@ -79,7 +79,17 @@ impl<'a> Widget for PasswordModal<'a> {
         let input_inner = input_block.inner(input_area);
         input_block.render(input_area, buf);
 
-        if !self.input.is_empty() {
+        if self.input.is_empty() {
+            let cursor_hint = "·";
+            Paragraph::new(Span::styled(
+                cursor_hint,
+                Style::default()
+                    .fg(self.theme.text_muted)
+                    .add_modifier(Modifier::DIM),
+            ))
+            .alignment(Alignment::Center)
+            .render(input_inner, buf);
+        } else {
             let masked = "*".repeat(self.input.len());
             let display_text = format!("{:^width$}", masked, width = input_inner.width as usize);
             Paragraph::new(Span::styled(
@@ -88,16 +98,6 @@ impl<'a> Widget for PasswordModal<'a> {
                     .fg(self.theme.cream)
                     .bg(self.theme.charcoal)
                     .add_modifier(Modifier::BOLD),
-            ))
-            .alignment(Alignment::Center)
-            .render(input_inner, buf);
-        } else {
-            let cursor_hint = "·";
-            Paragraph::new(Span::styled(
-                cursor_hint,
-                Style::default()
-                    .fg(self.theme.text_muted)
-                    .add_modifier(Modifier::DIM),
             ))
             .alignment(Alignment::Center)
             .render(input_inner, buf);
@@ -152,7 +152,7 @@ pub struct ExitOverlay<'a> {
     pub tick: u64,
 }
 
-impl<'a> Widget for ExitOverlay<'a> {
+impl Widget for ExitOverlay<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         Block::default()
             .style(Style::default().bg(self.theme.charcoal))

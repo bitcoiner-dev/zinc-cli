@@ -580,7 +580,8 @@ fn resolve_offer_source(
     offer_file: Option<&Path>,
     offer_stdin: bool,
 ) -> Result<String, AppError> {
-    let count = (offer_json.is_some() as u8) + (offer_file.is_some() as u8) + (offer_stdin as u8);
+    let count =
+        u8::from(offer_json.is_some()) + u8::from(offer_file.is_some()) + u8::from(offer_stdin);
     if count > 1 {
         return Err(AppError::Invalid(
             "accepts only one of --offer-json, --offer-file, --offer-stdin".to_string(),

@@ -4,7 +4,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::*;
+use ratatui::widgets::Paragraph;
 use ratatui_image::protocol::Protocol;
 use zinc_core::ordinals::Inscription;
 
@@ -20,7 +20,7 @@ pub struct InscriptionWidget<'a> {
     pub ascii_mode: bool,
 }
 
-impl<'a> Widget for InscriptionWidget<'a> {
+impl Widget for InscriptionWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let panel = GlassPanel::new(self.theme)
             .selected(self.is_selected || self.is_hovered)
@@ -119,7 +119,7 @@ impl<'a> Widget for InscriptionWidget<'a> {
     }
 }
 
-impl<'a> InscriptionWidget<'a> {
+impl InscriptionWidget<'_> {
     fn render_ascii_fallback(&self, area: Rect, buf: &mut Buffer) {
         if let Some(lines) = self.ascii {
             let p = Paragraph::new((*lines).clone()).alignment(Alignment::Center);

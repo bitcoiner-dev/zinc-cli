@@ -6,14 +6,14 @@ use crate::utils::{maybe_write_text, parse_indices, resolve_psbt_source};
 use crate::wallet_service::map_wallet_error;
 use crate::{load_wallet_session, persist_wallet_session};
 use serde_json::{json, Value};
-use zinc_core::*;
+use zinc_core::{CreatePsbtRequest, SignOptions, ZincError, ZincWallet};
 
 pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<CommandOutput, AppError> {
     let psbt_stdin = match &args.action {
         PsbtAction::Create { .. } => false,
-        PsbtAction::Analyze { psbt_stdin, .. } => *psbt_stdin,
-        PsbtAction::Sign { psbt_stdin, .. } => *psbt_stdin,
-        PsbtAction::Broadcast { psbt_stdin, .. } => *psbt_stdin,
+        PsbtAction::Analyze { psbt_stdin, .. }
+        | PsbtAction::Sign { psbt_stdin, .. }
+        | PsbtAction::Broadcast { psbt_stdin, .. } => *psbt_stdin,
     };
     if cli.password_stdin && psbt_stdin {
         return Err(AppError::Invalid(
@@ -85,7 +85,7 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<CommandOutput, AppError> 
             };
             let signed_res: Result<String, String> =
                 session.wallet.sign_psbt(&source, Some(options));
-            let signed = signed_res.map_err(|e| AppError::Invalid(e.to_string()))?;
+            let signed = signed_res.map_err(|e| AppError::Invalid(e.clone()))?;
             if let Some(path) = out_file {
                 maybe_write_text(Some(&path.display().to_string()), &signed)?;
             }
@@ -211,7 +211,7 @@ pub(crate) fn analyze_psbt_with_policy(
     source: &str,
 ) -> Result<(Value, PsbtPolicyDecision), AppError> {
     let analysis_res: Result<String, String> = wallet.analyze_psbt(source);
-    let analysis = analysis_res.map_err(|e| AppError::Invalid(e.to_string()))?;
+    let analysis = analysis_res.map_err(|e| AppError::Invalid(e.clone()))?;
     let parsed: Value = serde_json::from_str(&analysis)
         .map_err(|e| AppError::Invalid(format!("invalid analysis json: {e}")))?;
     let policy = derive_psbt_policy(&parsed);

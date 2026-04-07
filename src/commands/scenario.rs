@@ -39,7 +39,7 @@ pub async fn run(cli: &Cli, args: &ScenarioArgs) -> Result<CommandOutput, AppErr
             )?;
 
             CommandOutput::ScenarioMine {
-                blocks: *blocks as u64,
+                blocks: u64::from(*blocks),
                 address: mining_address,
                 raw_output: generated,
             }
@@ -83,7 +83,7 @@ pub async fn run(cli: &Cli, args: &ScenarioArgs) -> Result<CommandOutput, AppErr
                 address: destination,
                 amount_btc: amount_btc.clone(),
                 txid: txid.trim().to_string(),
-                mine_blocks: *mine_blocks as u64,
+                mine_blocks: u64::from(*mine_blocks),
                 mine_address,
                 generated_blocks: generated,
             }
@@ -97,16 +97,16 @@ pub async fn run(cli: &Cli, args: &ScenarioArgs) -> Result<CommandOutput, AppErr
             }
             should_persist = false;
             let mut removed = Vec::new();
-            if *remove_profile || (!remove_profile && !remove_snapshots) {
-                if session.profile_path.exists() {
-                    fs::remove_file(&session.profile_path).map_err(|e| {
-                        AppError::Config(format!(
-                            "failed to remove profile {}: {e}",
-                            session.profile_path.display()
-                        ))
-                    })?;
-                    removed.push(session.profile_path.display().to_string());
-                }
+            if (*remove_profile || (!remove_profile && !remove_snapshots))
+                && session.profile_path.exists()
+            {
+                fs::remove_file(&session.profile_path).map_err(|e| {
+                    AppError::Config(format!(
+                        "failed to remove profile {}: {e}",
+                        session.profile_path.display()
+                    ))
+                })?;
+                removed.push(session.profile_path.display().to_string());
             }
             if *remove_snapshots || (!remove_profile && !remove_snapshots) {
                 let snap_dir = snapshot_dir(cli)?;

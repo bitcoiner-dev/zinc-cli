@@ -32,7 +32,7 @@ pub struct BalanceWidget<'a> {
     pub payment_address: Option<String>,
 }
 
-impl<'a> Widget for BalanceWidget<'a> {
+impl Widget for BalanceWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let display = BalanceDisplay::from_sats(self.confirmed);
 
@@ -88,7 +88,7 @@ impl<'a> Widget for BalanceWidget<'a> {
     }
 }
 
-impl<'a> BalanceWidget<'a> {
+impl BalanceWidget<'_> {
     fn render_balance(&self, display: BalanceDisplay, area: Rect, buf: &mut Buffer) {
         if self.ascii_mode {
             let amount_str = format!("{} BTC", display.hero_btc);
@@ -181,7 +181,7 @@ impl<'a> BalanceWidget<'a> {
             let x = area.x + (area.width.saturating_sub(line.len() as u16)) / 2;
             buf.set_string(
                 x,
-                y_center.saturating_sub(if line2.is_some() { 0 } else { 1 }),
+                y_center.saturating_sub(u16::from(line2.is_none())),
                 &line,
                 Style::default()
                     .fg(self.theme.text_muted)

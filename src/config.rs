@@ -12,6 +12,7 @@ use zinc_core::{AddressScheme, Network, PaymentAddressType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct PersistedConfig {
     pub profile: Option<String>,
     pub data_dir: Option<String>,
@@ -24,24 +25,6 @@ pub struct PersistedConfig {
     pub pulse_url: Option<String>,
     pub pulse_api_token: Option<String>,
     pub ascii: Option<bool>,
-}
-
-impl Default for PersistedConfig {
-    fn default() -> Self {
-        Self {
-            profile: None,
-            data_dir: None,
-            password_env: None,
-            network: None,
-            scheme: None,
-            payment_address_type: None,
-            esplora_url: None,
-            ord_url: None,
-            pulse_url: None,
-            pulse_api_token: None,
-            ascii: None,
-        }
-    }
 }
 
 pub(crate) fn persisted_config_path() -> PathBuf {
@@ -66,7 +49,7 @@ pub(crate) fn save_persisted_config(config: &PersistedConfig) -> Result<(), AppE
     let path = persisted_config_path();
     let bytes = serde_json::to_vec_pretty(config)
         .map_err(|e| AppError::Internal(format!("failed to serialize config: {e}")))?;
-    Ok(write_bytes_atomic(&path, &bytes, "config")?)
+    write_bytes_atomic(&path, &bytes, "config")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,7 +82,7 @@ pub const CONFIG_KEYS: &[&str] = &[
 ];
 
 impl ConfigField {
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Profile => "profile",
             Self::DataDir => "data-dir",
@@ -222,11 +205,13 @@ pub(crate) fn unset_config_field(config: &mut PersistedConfig, key: ConfigField)
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ServiceConfig<'a> {
     pub data_dir: Option<&'a Path>,
     pub profile: &'a str,
     pub password_env: &'a str,
     pub password_stdin: bool,
+    pub password_override: Option<&'a str>,
     pub agent: bool,
     pub network_override: Option<&'a str>,
     pub explicit_network: bool,
@@ -315,7 +300,7 @@ impl From<Network> for NetworkArg {
             Network::Signet => NetworkArg::Signet,
             Network::Testnet => NetworkArg::Testnet,
             Network::Regtest => NetworkArg::Regtest,
-            _ => NetworkArg::Bitcoin, // Fallback for other variants if any
+            Network::Testnet4 => NetworkArg::Testnet,
         }
     }
 }

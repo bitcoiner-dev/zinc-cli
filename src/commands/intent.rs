@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
 use crate::cli::{Cli, IntentAction, IntentArgs, IntentPairAction, IntentPairArgs};
 use crate::error::AppError;
 use crate::output::{CommandOutput, IntentPairLinkEntry};
@@ -1013,7 +1014,7 @@ fn run_pair_set_status(
     let current_status = normalize_link_status(&link.status).to_string();
     validate_status_transition(&current_status, &target_status)?;
 
-    link.status = target_status.clone();
+    link.status.clone_from(&target_status);
     link.status_updated_at_unix = Some(now_unix);
     if target_status == LINK_STATUS_PAUSED {
         link.paused_at_unix = Some(now_unix);
@@ -1066,7 +1067,6 @@ fn link_to_entry(link: &LinkedWalletV1) -> IntentPairLinkEntry {
 fn normalize_link_status(status: &str) -> &'static str {
     match status.trim().to_ascii_lowercase().as_str() {
         LINK_STATUS_ACTIVE => LINK_STATUS_ACTIVE,
-        LINK_STATUS_PAUSED => LINK_STATUS_PAUSED,
         LINK_STATUS_REVOKED => LINK_STATUS_REVOKED,
         LINK_STATUS_ROTATED => LINK_STATUS_ROTATED,
         _ => LINK_STATUS_PAUSED,
@@ -1079,10 +1079,8 @@ fn validate_status_transition(current: &str, next: &str) -> Result<(), AppError>
     }
 
     match (current, next) {
-        (LINK_STATUS_ACTIVE, LINK_STATUS_PAUSED)
-        | (LINK_STATUS_ACTIVE, LINK_STATUS_REVOKED)
-        | (LINK_STATUS_PAUSED, LINK_STATUS_ACTIVE)
-        | (LINK_STATUS_PAUSED, LINK_STATUS_REVOKED)
+        (LINK_STATUS_ACTIVE, LINK_STATUS_PAUSED | LINK_STATUS_REVOKED)
+        | (LINK_STATUS_PAUSED, LINK_STATUS_ACTIVE | LINK_STATUS_REVOKED)
         | (LINK_STATUS_ROTATED, LINK_STATUS_REVOKED) => Ok(()),
         (LINK_STATUS_REVOKED, _) => Err(AppError::Invalid(
             "revoked links cannot change state".to_string(),
@@ -1940,7 +1938,7 @@ async fn discover_sign_intent_receipt_from_relay(
         DEFAULT_PAIRING_RELAY_LIMIT,
     )?;
     socket
-        .send(Message::Text(req.into()))
+        .send(Message::Text(req))
         .await
         .map_err(|e| AppError::Network(format!("failed to send relay req frame: {e}")))?;
 
@@ -2048,7 +2046,7 @@ async fn discover_sign_intent_receipt_from_relay(
     })??;
 
     let close = close_frame(&subscription_id)?;
-    let _ = socket.send(Message::Text(close.into())).await;
+    let _ = socket.send(Message::Text(close)).await;
     Ok(newest)
 }
 
@@ -2121,7 +2119,7 @@ async fn discover_pairing_ack_from_relay(
         DEFAULT_PAIRING_RELAY_LIMIT,
     )?;
     socket
-        .send(Message::Text(req.into()))
+        .send(Message::Text(req))
         .await
         .map_err(|e| AppError::Network(format!("failed to send relay req frame: {e}")))?;
 
@@ -2193,7 +2191,7 @@ async fn discover_pairing_ack_from_relay(
     .map_err(|_| AppError::Network(format!("relay {relay_url} timed out reading ack events")))??;
 
     let close = close_frame(&subscription_id)?;
-    let _ = socket.send(Message::Text(close.into())).await;
+    let _ = socket.send(Message::Text(close)).await;
     Ok(newest)
 }
 
@@ -2288,7 +2286,7 @@ async fn publish_transport_event(
         .map_err(|e| AppError::Network(format!("failed to connect relay {relay_url}: {e}")))?;
     let frame = event_frame(event)?;
     socket
-        .send(Message::Text(frame.into()))
+        .send(Message::Text(frame))
         .await
         .map_err(|e| AppError::Network(format!("failed to send relay event frame: {e}")))?;
 

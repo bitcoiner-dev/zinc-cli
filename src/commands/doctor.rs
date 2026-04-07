@@ -22,7 +22,7 @@ pub async fn run(cli: &Cli) -> Result<CommandOutput, AppError> {
         esplora_reachable: esplora_ok,
         ord_url: profile.ord_url.clone(),
         ord_reachable: ord_ok,
-        ord_indexing_height: ord_height.map(|h| h as u64),
+        ord_indexing_height: ord_height.map(u64::from),
         ord_error,
     })
 }

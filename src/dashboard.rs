@@ -112,7 +112,7 @@ pub async fn run(cli: &Cli) -> Result<Value, AppError> {
                 event,
                 &mut state,
                 cli,
-                &wallet_mutex,
+                wallet_mutex.as_ref(),
                 &mut pending_session,
                 &event_tx,
             );

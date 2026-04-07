@@ -1,7 +1,6 @@
 /// Grid layout renderer for arranging "cards" (header + thumbnail) side-by-side
 /// in pure terminal output. Handles ANSI escape sequences when calculating
 /// visible column widths.
-
 /// Strip ANSI escape sequences to measure visible character width.
 fn visible_len(s: &str) -> usize {
     let mut len = 0usize;

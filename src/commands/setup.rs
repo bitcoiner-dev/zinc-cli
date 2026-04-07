@@ -32,13 +32,15 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
     // ── Persist config ──────────────────────────────────────────────────
     let mut config = load_persisted_config()?;
     config.profile = Some(values.profile.clone());
-    config.data_dir = values.data_dir.clone();
+    config.data_dir.clone_from(&values.data_dir);
     config.password_env = Some(values.password_env.clone());
-    config.network = values.default_network.clone();
-    config.scheme = values.default_scheme.clone();
-    config.payment_address_type = values.default_payment_address_type.clone();
-    config.esplora_url = values.default_esplora_url.clone();
-    config.ord_url = values.default_ord_url.clone();
+    config.network.clone_from(&values.default_network);
+    config.scheme.clone_from(&values.default_scheme);
+    config
+        .payment_address_type
+        .clone_from(&values.default_payment_address_type);
+    config.esplora_url.clone_from(&values.default_esplora_url);
+    config.ord_url.clone_from(&values.default_ord_url);
     save_persisted_config(&config)?;
 
     // ── Optionally initialize wallet ────────────────────────────────────
@@ -65,10 +67,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
         // Build a temporary Cli for wallet operations
         let wallet_cli = Cli {
             profile: Some(values.profile.clone()),
-            data_dir: values
-                .data_dir
-                .as_ref()
-                .map(|s| std::path::PathBuf::from(s)),
+            data_dir: values.data_dir.as_ref().map(std::path::PathBuf::from),
             password_env: Some(values.password_env.clone()),
             password_stdin: cli.password_stdin,
             reveal: cli.reveal,
@@ -94,6 +93,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             pulse_url: values.default_pulse_url.clone(),
             pulse_api_token: cli.pulse_api_token.clone(),
             command: crate::cli::Command::Doctor, // placeholder, not used
+            password: None,
         };
 
         let password: Zeroizing<String> = if let Some(ref p) = values.password {
@@ -160,7 +160,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
         write_profile(&profile_path, &profile)?;
 
         let display_phrase = if cli.reveal {
-            phrase.to_string()
+            phrase.clone()
         } else {
             "<hidden; use --reveal to show>".to_string()
         };
@@ -227,9 +227,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             .default_pulse_url
             .as_deref()
             .or(cli.pulse_url.as_deref())
-            .unwrap_or_else(|| {
-                crate::config::default_pulse_url(parse_network("regtest").unwrap())
-            })
+            .unwrap_or_else(|| crate::config::default_pulse_url(parse_network("regtest").unwrap()))
             .to_string(),
         password_env: values.password_env.clone(),
         wallet_requested: values.initialize_wallet,

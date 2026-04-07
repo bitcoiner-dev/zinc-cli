@@ -50,8 +50,8 @@ pub async fn run(cli: &Cli, args: &ConfigArgs) -> Result<CommandOutput, AppError
                     .as_str()
                     .unwrap_or("")
                     .to_string()
-                    .replace("\"", "")
-                    .to_string(),
+                    .replace('"', "")
+                    .clone(),
                 saved: true,
             })
         }

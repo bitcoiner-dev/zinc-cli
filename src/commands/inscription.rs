@@ -9,10 +9,10 @@ pub async fn run(cli: &Cli, _args: &InscriptionArgs) -> Result<CommandOutput, Ap
     let session = load_wallet_session(cli)?;
     let sorted_inscriptions = sort_inscriptions_latest_first(session.wallet.inscriptions());
 
-    let display_items = if !cli.thumb_enabled() {
-        None
-    } else {
+    let display_items = if cli.thumb_enabled() {
         Some(get_inscription_display_items(&session.profile.ord_url, &sorted_inscriptions).await)
+    } else {
+        None
     };
 
     Ok(CommandOutput::InscriptionList {

@@ -1,6 +1,6 @@
 use ratatui::layout::{Constraint, Rect};
 use ratatui::prelude::*;
-use ratatui::widgets::*;
+use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::ui::widgets::{
     BalanceWidget, BrandedHeader, ControlsBar, ExitOverlay, InscriptionWidget, PasswordModal,
@@ -87,7 +87,7 @@ pub fn render_dashboard(
     }
 }
 
-pub fn render_quitting<'a>(theme: &'a ZincTheme, tick_count: u64, _area: Rect) -> impl Widget + 'a {
+pub fn render_quitting(theme: &ZincTheme, tick_count: u64, _area: Rect) -> impl Widget + '_ {
     ExitOverlay {
         theme,
         tick: tick_count,
@@ -136,7 +136,7 @@ fn draw_gallery(
     }
 
     let num_cols = gallery_cols;
-    let num_rows = (state.inscriptions.len() as u16 + num_cols as u16 - 1) / num_cols as u16;
+    let num_rows = (state.inscriptions.len() as u16).div_ceil(num_cols as u16);
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -149,14 +149,11 @@ fn draw_gallery(
     for (r, row_area) in rows.iter().enumerate() {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints(vec![
-                Constraint::Ratio(1, num_cols as u32);
-                num_cols as usize
-            ])
+            .constraints(vec![Constraint::Ratio(1, num_cols as u32); num_cols])
             .split(*row_area);
 
         for (c, chunk) in cols.iter().enumerate() {
-            let idx = (r * num_cols as usize) + c;
+            let idx = (r * num_cols) + c;
             if let Some(inscription) = state.inscriptions.get(idx) {
                 InscriptionWidget {
                     inscription,

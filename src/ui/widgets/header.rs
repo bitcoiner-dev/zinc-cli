@@ -3,7 +3,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::*;
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use zinc_core::Network;
 
 pub struct BrandedHeader<'a> {
@@ -17,7 +17,7 @@ pub struct BrandedHeader<'a> {
     pub _ascii_mode: bool,
 }
 
-impl<'a> Widget for BrandedHeader<'a> {
+impl Widget for BrandedHeader<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default()
             .borders(Borders::BOTTOM)
@@ -70,7 +70,7 @@ impl<'a> Widget for BrandedHeader<'a> {
             format!("{}  ·  ", self.profile_name.to_uppercase())
         };
 
-        let dot_color = if self.tick % 2 == 0 {
+        let dot_color = if self.tick.is_multiple_of(2) {
             self.theme.selection
         } else {
             self.theme.accent
@@ -93,7 +93,7 @@ impl<'a> Widget for BrandedHeader<'a> {
             let mut spans = vec![Span::raw(" ")];
 
             for i in 0..track_width {
-                let dist = if i <= head { head - i } else { 0 };
+                let dist = head.saturating_sub(i);
 
                 let (ch, color) = if dist == 0 {
                     ("█", self.theme.accent)

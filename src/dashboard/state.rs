@@ -67,6 +67,7 @@ impl DashboardLayout {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct DashboardState {
     pub confirmed_balance: u64,
     pub pending_balance: u64,

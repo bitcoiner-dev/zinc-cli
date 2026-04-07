@@ -1,3 +1,4 @@
+#![allow(clippy::unused_self)]
 use serde::Serialize;
 use serde_json::Value;
 use zinc_core::{Account, TxItem};
@@ -573,7 +574,7 @@ impl HumanPresenter {
     fn print_inscription_list(
         &self,
         inscriptions: &[zinc_core::ordinals::Inscription],
-        display_items: &Option<Vec<InscriptionItemDisplay>>,
+        display_items: Option<&Vec<InscriptionItemDisplay>>,
         thumb_mode_enabled: bool,
     ) -> String {
         use crate::presenter::thumbnail::print_thumbnail_at;
@@ -2024,14 +2025,14 @@ impl Presenter for HumanPresenter {
                         out.push_str(&format!("  {:<15} {}\n", style("Mode:").dim(), mode));
                     }
                     if let Some(phrase) = wallet_phrase {
-                        if phrase != "<hidden; use --reveal to show>" {
+                        if phrase == "<hidden; use --reveal to show>" {
+                            out.push_str(&format!("  {:<15} {}\n", style("Phrase:").dim(), phrase));
+                        } else {
                             out.push_str(&format!(
                                 "\n{}\n{}\n",
                                 style("Mnemonic Phrase (keep this safe!):").red().bold(),
                                 phrase
                             ));
-                        } else {
-                            out.push_str(&format!("  {:<15} {}\n", style("Phrase:").dim(), phrase));
                         }
                     }
                 }
@@ -2081,7 +2082,11 @@ impl Presenter for HumanPresenter {
                 inscriptions,
                 display_items,
                 thumb_mode_enabled,
-            } => self.print_inscription_list(inscriptions, display_items, *thumb_mode_enabled),
+            } => self.print_inscription_list(
+                inscriptions,
+                display_items.as_ref(),
+                *thumb_mode_enabled,
+            ),
             CommandOutput::OfferCreate { .. } => self.print_offer_create(output),
             CommandOutput::OfferPublish { .. } => self.print_offer_publish(output),
             CommandOutput::OfferDiscover { .. } => self.print_offer_discover(output),

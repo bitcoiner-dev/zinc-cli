@@ -163,7 +163,7 @@ pub fn resolve_psbt_source(
     psbt_file: Option<&Path>,
     psbt_stdin: bool,
 ) -> Result<String, AppError> {
-    let count = (psbt.is_some() as u8) + (psbt_file.is_some() as u8) + (psbt_stdin as u8);
+    let count = u8::from(psbt.is_some()) + u8::from(psbt_file.is_some()) + u8::from(psbt_stdin);
     if count > 1 {
         return Err(AppError::Invalid(
             "accepts only one of --psbt, --psbt-file, --psbt-stdin".to_string(),

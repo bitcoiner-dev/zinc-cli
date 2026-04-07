@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+// Redundant allow(dead_code) removed, provided by mod.rs
 
 use image::DynamicImage;
 use ratatui::style::{Color, Style};
@@ -90,9 +90,9 @@ impl ShapeArt {
                 let l = luma.get_pixel(x, y)[0];
                 let c = rgb.get_pixel(x, y);
 
-                sum_r += c[0] as u32;
-                sum_g += c[1] as u32;
-                sum_b += c[2] as u32;
+                sum_r += u32::from(c[0]);
+                sum_g += u32::from(c[1]);
+                sum_b += u32::from(c[2]);
 
                 if l < min_luma {
                     min_luma = l;
@@ -105,7 +105,7 @@ impl ShapeArt {
             }
         }
 
-        let avg_luma = ((sum_r + sum_g + sum_b) / (3 * count)) as u32;
+        let avg_luma = (sum_r + sum_g + sum_b) / (3 * count);
         let contrast = max_luma.saturating_sub(min_luma);
 
         // FEATURE PRESERVATION LOGIC:
@@ -115,12 +115,12 @@ impl ShapeArt {
         if contrast > 40 {
             // If the average is relatively bright, and we found a very dark spot,
             // it's likely an eye or a line. Prioritize the dark spot.
-            if avg_luma > 100 && (avg_luma as i32 - min_luma as i32) > 30 {
+            if avg_luma > 100 && (avg_luma as i32 - i32::from(min_luma)) > 30 {
                 let c = rgb.get_pixel(min_idx.0, min_idx.1);
                 return Color::Rgb(c[0], c[1], c[2]);
             }
             // If the average is dark and we found a bright spot, prioritize the bright spot.
-            if avg_luma < 100 && (max_luma as i32 - avg_luma as i32) > 30 {
+            if avg_luma < 100 && (i32::from(max_luma) - avg_luma as i32) > 30 {
                 let c = rgb.get_pixel(max_idx.0, max_idx.1);
                 return Color::Rgb(c[0], c[1], c[2]);
             }

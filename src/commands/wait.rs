@@ -11,7 +11,9 @@ use tokio::time::sleep;
 pub async fn run(cli: &Cli, args: &WaitArgs) -> Result<CommandOutput, AppError> {
     let mut session = load_wallet_session(cli)?;
 
-    let spinner = if !cli.agent {
+    let spinner = if cli.agent {
+        None
+    } else {
         let pb = ProgressBar::new_spinner();
         pb.set_style(
             ProgressStyle::default_spinner()
@@ -20,8 +22,6 @@ pub async fn run(cli: &Cli, args: &WaitArgs) -> Result<CommandOutput, AppError> 
         );
         pb.enable_steady_tick(std::time::Duration::from_millis(100));
         Some(pb)
-    } else {
-        None
     };
 
     match &args.action {

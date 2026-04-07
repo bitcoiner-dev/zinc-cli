@@ -2,7 +2,7 @@ use crate::ui::ZincTheme;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
-use ratatui::widgets::*;
+use ratatui::widgets::{Block, Borders, Paragraph};
 
 pub struct InfoCard<'a> {
     pub title: &'a str,
@@ -10,7 +10,7 @@ pub struct InfoCard<'a> {
     pub theme: &'a ZincTheme,
 }
 
-impl<'a> Widget for InfoCard<'a> {
+impl Widget for InfoCard<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default()
             .borders(Borders::ALL)
@@ -39,13 +39,13 @@ pub struct ControlsBar<'a> {
     pub is_syncing: bool,
 }
 
-impl<'a> Widget for ControlsBar<'a> {
+impl Widget for ControlsBar<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         Block::default()
             .style(Style::default().bg(self.theme.surface_base))
             .render(area, buf);
 
-        let controls = vec![
+        let controls = [
             ("Q", "quit"),
             ("S", "sync"),
             ("Tab/ShiftTab", "account"),

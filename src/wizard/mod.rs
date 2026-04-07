@@ -1,4 +1,8 @@
 use crate::cli::{Cli, SetupArgs};
+#[cfg(feature = "ui")]
+mod state;
+#[cfg(feature = "ui")]
+mod tui;
 use crate::error::AppError;
 use zeroize::Zeroizing;
 

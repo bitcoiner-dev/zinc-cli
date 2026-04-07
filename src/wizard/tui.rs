@@ -71,7 +71,7 @@ impl TuiWizard {
                     ])
                     .split(f.area());
                 let network = match self.state.values.default_network.as_deref() {
-                    Some("mainnet") | Some("bitcoin") => zinc_core::Network::Bitcoin,
+                    Some("mainnet" | "bitcoin") => zinc_core::Network::Bitcoin,
                     Some("testnet") => zinc_core::Network::Testnet,
                     Some("regtest") => zinc_core::Network::Regtest,
                     Some("signet") => zinc_core::Network::Signet,
@@ -139,10 +139,7 @@ impl TuiWizard {
 
                         let words: Vec<&str> = self.input_buffer.split_whitespace().collect();
                         if words.len() == 12 || words.len() == 24 {
-                            match validate_mnemonic_internal(&self.input_buffer) {
-                                true => display_content.push_str("\n\n✅ Mnemonic is VALID. Press Enter to continue."),
-                                false => display_content.push_str("\n\n❌ Mnemonic is INVALID. Please check the words and order."),
-                            }
+                            if validate_mnemonic_internal(&self.input_buffer) { display_content.push_str("\n\n✅ Mnemonic is VALID. Press Enter to continue.") } else { display_content.push_str("\n\n❌ Mnemonic is INVALID. Please check the words and order.") }
                         } else if !words.is_empty() {
                             display_content.push_str(&format!("\n\n({} words entered...)", words.len()));
 
@@ -172,143 +169,134 @@ impl TuiWizard {
             })?;
 
             if let Some(event) = rx.recv().await {
-                match event {
-                    TuiEvent::Input(Event::Key(key)) => {
-                        self.error_message = None; // Clear error message on any key input
-                        match key.code {
-                            KeyCode::Char('c')
-                                if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
-                            {
-                                break
+                if let TuiEvent::Input(Event::Key(key)) = event {
+                    self.error_message = None; // Clear error message on any key input
+                    match key.code {
+                        KeyCode::Char('c')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
+                            break
+                        }
+                        KeyCode::Esc => {
+                            if self.state.current == SetupStep::ConfirmPassword {
+                                self.state.password_temp = None;
                             }
-                            KeyCode::Esc => {
-                                if self.state.current == SetupStep::ConfirmPassword {
-                                    self.state.password_temp = None;
-                                }
-                                if !self.state.back() {
-                                    break;
-                                }
-                                self.input_buffer.clear();
+                            if !self.state.back() {
+                                break;
                             }
-                            KeyCode::Enter => {
-                                match self.state.current {
-                                    SetupStep::Welcome => {
-                                        // Support both Enter and immediate keys
-                                        let choice = self.input_buffer.to_lowercase();
-                                        if choice == "c" {
-                                            self.start_create_flow();
-                                        } else if choice == "r" {
-                                            self.state.next_step(Some("restore".to_string()));
+                            self.input_buffer.clear();
+                        }
+                        KeyCode::Enter => {
+                            match self.state.current {
+                                SetupStep::Welcome => {
+                                    // Support both Enter and immediate keys
+                                    let choice = self.input_buffer.to_lowercase();
+                                    if choice == "c" {
+                                        self.start_create_flow();
+                                    } else if choice == "r" {
+                                        self.state.next_step(Some("restore".to_string()));
+                                    }
+                                }
+                                SetupStep::CreateShowSeed => {
+                                    self.state.next_step(None);
+                                }
+                                SetupStep::CreateVerifySeed => {
+                                    if let Some(m) = &self.state.temp_mnemonic {
+                                        let m_words: Vec<&str> = m.split_whitespace().collect();
+                                        let input_words: Vec<&str> =
+                                            self.input_buffer.split_whitespace().collect();
+
+                                        if input_words.len() == 3 {
+                                            let mut all_match = true;
+                                            for (idx, &v_idx) in
+                                                self.state.verify_indices.iter().enumerate()
+                                            {
+                                                if input_words[idx].to_lowercase()
+                                                    != m_words[v_idx].to_lowercase()
+                                                {
+                                                    all_match = false;
+                                                    break;
+                                                }
+                                            }
+
+                                            if all_match {
+                                                self.error_message = None;
+                                                self.state.next_step(None);
+                                            } else {
+                                                self.error_message = Some("❌ Verification failed. Please check the words and try again.".to_string());
+                                                self.input_buffer.clear();
+                                            }
+                                        } else {
+                                            self.error_message = Some(
+                                                "❌ Please enter exactly 3 words.".to_string(),
+                                            );
                                         }
                                     }
-                                    SetupStep::CreateShowSeed => {
+                                }
+                                SetupStep::RestoreInputSeed => {
+                                    let phrase = self.input_buffer.trim();
+                                    let words: Vec<&str> = phrase.split_whitespace().collect();
+                                    if !(words.len() == 12 || words.len() == 24) {
+                                        self.error_message = Some(
+                                            "❌ Recovery phrase must be 12 or 24 words."
+                                                .to_string(),
+                                        );
+                                    } else if !validate_mnemonic_internal(phrase) {
+                                        self.error_message = Some(
+                                            "❌ Recovery phrase is invalid. Check spelling and order."
+                                                .to_string(),
+                                        );
+                                    } else {
+                                        self.state.values.restore_mnemonic =
+                                            Some(phrase.to_string());
                                         self.state.next_step(None);
                                     }
-                                    SetupStep::CreateVerifySeed => {
-                                        if let Some(m) = &self.state.temp_mnemonic {
-                                            let m_words: Vec<&str> = m.split_whitespace().collect();
-                                            let input_words: Vec<&str> =
-                                                self.input_buffer.split_whitespace().collect();
-
-                                            if input_words.len() == 3 {
-                                                let mut all_match = true;
-                                                for (idx, &v_idx) in
-                                                    self.state.verify_indices.iter().enumerate()
-                                                {
-                                                    if input_words[idx].to_lowercase()
-                                                        != m_words[v_idx].to_lowercase()
-                                                    {
-                                                        all_match = false;
-                                                        break;
-                                                    }
-                                                }
-
-                                                if all_match {
-                                                    self.error_message = None;
-                                                    self.state.next_step(None);
-                                                } else {
-                                                    self.error_message = Some("❌ Verification failed. Please check the words and try again.".to_string());
-                                                    self.input_buffer.clear();
-                                                }
-                                            } else {
-                                                self.error_message = Some(
-                                                    "❌ Please enter exactly 3 words.".to_string(),
-                                                );
-                                            }
-                                        }
-                                    }
-                                    SetupStep::RestoreInputSeed => {
-                                        let phrase = self.input_buffer.trim();
-                                        let words: Vec<&str> = phrase.split_whitespace().collect();
-                                        if !(words.len() == 12 || words.len() == 24) {
-                                            self.error_message = Some(
-                                                "❌ Recovery phrase must be 12 or 24 words."
-                                                    .to_string(),
-                                            );
-                                        } else if !validate_mnemonic_internal(phrase) {
-                                            self.error_message = Some(
-                                                "❌ Recovery phrase is invalid. Check spelling and order."
-                                                    .to_string(),
-                                            );
-                                        } else {
-                                            self.state.values.restore_mnemonic =
-                                                Some(phrase.to_string());
-                                            self.state.next_step(None);
-                                        }
-                                    }
-                                    SetupStep::SetPassword => {
-                                        if self.input_buffer.is_empty() {
-                                            self.error_message =
-                                                Some("❌ Password cannot be empty.".to_string());
-                                        } else {
-                                            self.state.password_temp =
-                                                Some(self.input_buffer.clone());
-                                            self.state.next_step(None);
-                                        }
-                                    }
-                                    SetupStep::ConfirmPassword => {
-                                        if Some(&self.input_buffer)
-                                            == self.state.password_temp.as_ref()
-                                        {
-                                            self.state.values.password =
-                                                Some(self.input_buffer.clone());
-                                            self.state.values.initialize_wallet = true;
-                                            self.state.next_step(None);
-                                        } else {
-                                            self.error_message = Some(
-                                                "❌ Passwords do not match. Please try again."
-                                                    .to_string(),
-                                            );
-                                            self.input_buffer.clear();
-                                            // Stay in ConfirmPassword
-                                        }
-                                    }
-                                    SetupStep::Done => break,
                                 }
-                                self.input_buffer.clear();
+                                SetupStep::SetPassword => {
+                                    if self.input_buffer.is_empty() {
+                                        self.error_message =
+                                            Some("❌ Password cannot be empty.".to_string());
+                                    } else {
+                                        self.state.password_temp = Some(self.input_buffer.clone());
+                                        self.state.next_step(None);
+                                    }
+                                }
+                                SetupStep::ConfirmPassword => {
+                                    if Some(&self.input_buffer) == self.state.password_temp.as_ref()
+                                    {
+                                        self.state.values.password =
+                                            Some(self.input_buffer.clone().into());
+                                        self.state.values.initialize_wallet = true;
+                                        self.state.next_step(None);
+                                    } else {
+                                        self.error_message = Some(
+                                            "❌ Passwords do not match. Please try again."
+                                                .to_string(),
+                                        );
+                                        self.input_buffer.clear();
+                                        // Stay in ConfirmPassword
+                                    }
+                                }
+                                SetupStep::Done => break,
                             }
-                            KeyCode::Char('c') | KeyCode::Char('C')
-                                if self.state.current == SetupStep::Welcome =>
-                            {
-                                self.start_create_flow();
-                                self.input_buffer.clear();
-                            }
-                            KeyCode::Char('r') | KeyCode::Char('R')
-                                if self.state.current == SetupStep::Welcome =>
-                            {
-                                self.state.next_step(Some("restore".to_string()));
-                                self.input_buffer.clear();
-                            }
-                            KeyCode::Char(c) => {
-                                self.input_buffer.push(c);
-                            }
-                            KeyCode::Backspace => {
-                                self.input_buffer.pop();
-                            }
-                            _ => {}
+                            self.input_buffer.clear();
                         }
+                        KeyCode::Char('c' | 'C') if self.state.current == SetupStep::Welcome => {
+                            self.start_create_flow();
+                            self.input_buffer.clear();
+                        }
+                        KeyCode::Char('r' | 'R') if self.state.current == SetupStep::Welcome => {
+                            self.state.next_step(Some("restore".to_string()));
+                            self.input_buffer.clear();
+                        }
+                        KeyCode::Char(c) => {
+                            self.input_buffer.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            self.input_buffer.pop();
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
@@ -320,7 +308,7 @@ impl TuiWizard {
     fn start_create_flow(&mut self) {
         // Generate mnemonic using zinc_core
         let mnemonic = match ZincMnemonic::generate(12) {
-            Ok(mnemonic) => mnemonic.phrase().to_string(),
+            Ok(mnemonic) => mnemonic.phrase().clone(),
             Err(err) => {
                 self.error_message = Some(format!("❌ failed to generate seed phrase: {err}"));
                 return;

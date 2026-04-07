@@ -184,18 +184,16 @@ fn tx_list_contains(tx_list_json: &Value, txid: &str) -> bool {
     tx_list_json
         .get("transactions")
         .and_then(Value::as_array)
-        .map(|txs| {
+        .is_some_and(|txs| {
             txs.iter()
                 .any(|tx| tx.get("txid").and_then(Value::as_str) == Some(txid))
         })
-        .unwrap_or(false)
 }
 
 fn live_tests_enabled() -> bool {
     std::env::var("ZINC_CLI_LIVE_TESTS")
         .ok()
-        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(false)
+        .is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
 }
 
 fn ensure_live_test_enabled(test_name: &str) -> bool {

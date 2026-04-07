@@ -1,13 +1,14 @@
 use crate::cli::{Cli, SnapshotAction, SnapshotArgs};
 use crate::error::AppError;
 use crate::output::CommandOutput;
+use crate::paths::create_secure_dir_all;
 use crate::{confirm, profile_path, read_profile, snapshot_dir, write_bytes_atomic};
 use std::fs;
 
 pub async fn run(cli: &Cli, args: &SnapshotArgs) -> Result<CommandOutput, AppError> {
     let profile_path = profile_path(cli)?;
     let snap_dir = snapshot_dir(cli)?;
-    fs::create_dir_all(&snap_dir)
+    create_secure_dir_all(&snap_dir)
         .map_err(|e| AppError::Config(format!("failed to create snapshot dir: {e}")))?;
 
     match &args.action {

@@ -21,6 +21,8 @@ pub struct PersistedConfig {
     pub payment_address_type: Option<String>,
     pub esplora_url: Option<String>,
     pub ord_url: Option<String>,
+    pub pulse_url: Option<String>,
+    pub pulse_api_token: Option<String>,
     pub ascii: Option<bool>,
 }
 
@@ -35,6 +37,8 @@ impl Default for PersistedConfig {
             payment_address_type: None,
             esplora_url: None,
             ord_url: None,
+            pulse_url: None,
+            pulse_api_token: None,
             ascii: None,
         }
     }
@@ -75,6 +79,8 @@ pub enum ConfigField {
     PaymentAddressType,
     EsploraUrl,
     OrdUrl,
+    PulseUrl,
+    PulseApiToken,
     Ascii,
 }
 
@@ -87,6 +93,8 @@ pub const CONFIG_KEYS: &[&str] = &[
     "payment-address-type",
     "esplora-url",
     "ord-url",
+    "pulse-url",
+    "pulse-api-token",
     "ascii",
 ];
 
@@ -101,6 +109,8 @@ impl ConfigField {
             Self::PaymentAddressType => "payment-address-type",
             Self::EsploraUrl => "esplora-url",
             Self::OrdUrl => "ord-url",
+            Self::PulseUrl => "pulse-url",
+            Self::PulseApiToken => "pulse-api-token",
             Self::Ascii => "ascii",
         }
     }
@@ -115,6 +125,8 @@ impl ConfigField {
             "payment-address-type" | "payment_address_type" => Ok(Self::PaymentAddressType),
             "esplora-url" | "esplora_url" => Ok(Self::EsploraUrl),
             "ord-url" | "ord_url" => Ok(Self::OrdUrl),
+            "pulse-url" | "pulse_url" => Ok(Self::PulseUrl),
+            "pulse-api-token" | "pulse_api_token" => Ok(Self::PulseApiToken),
             "ascii" => Ok(Self::Ascii),
             other => Err(AppError::Invalid(unknown_with_hint(
                 "config key",
@@ -177,6 +189,14 @@ pub(crate) fn set_config_field(
             config.ord_url = Some(value.to_string());
             Ok(Value::String(value.to_string()))
         }
+        ConfigField::PulseUrl => {
+            config.pulse_url = Some(value.to_string());
+            Ok(Value::String(value.to_string()))
+        }
+        ConfigField::PulseApiToken => {
+            config.pulse_api_token = Some(value.to_string());
+            Ok(Value::String(value.to_string()))
+        }
         ConfigField::Ascii => {
             let parsed = parse_bool_value(value, "config ascii").map_err(AppError::Invalid)?;
             config.ascii = Some(parsed);
@@ -195,6 +215,8 @@ pub(crate) fn unset_config_field(config: &mut PersistedConfig, key: ConfigField)
         ConfigField::PaymentAddressType => config.payment_address_type.take().is_some(),
         ConfigField::EsploraUrl => config.esplora_url.take().is_some(),
         ConfigField::OrdUrl => config.ord_url.take().is_some(),
+        ConfigField::PulseUrl => config.pulse_url.take().is_some(),
+        ConfigField::PulseApiToken => config.pulse_api_token.take().is_some(),
         ConfigField::Ascii => config.ascii.take().is_some(),
     }
 }
@@ -213,6 +235,8 @@ pub struct ServiceConfig<'a> {
     pub payment_address_type_override: Option<&'a str>,
     pub esplora_url_override: Option<&'a str>,
     pub ord_url_override: Option<&'a str>,
+    pub pulse_url_override: Option<&'a str>,
+    pub pulse_api_token_override: Option<&'a str>,
     pub ascii_mode: bool,
 }
 
@@ -355,6 +379,7 @@ pub struct Profile {
     pub account_index: u32,
     pub esplora_url: String,
     pub ord_url: String,
+    pub pulse_url: String,
     #[serde(default = "default_bitcoin_cli")]
     pub bitcoin_cli: String,
     #[serde(default = "default_bitcoin_cli_args")]
@@ -399,6 +424,14 @@ pub fn default_ord_url(network: NetworkArg) -> &'static str {
         NetworkArg::Signet => "https://signet.ordinals.com",
         NetworkArg::Testnet => "https://testnet.ordinals.com",
         NetworkArg::Regtest => "https://ord-regtest.exittheloop.com",
+    }
+}
+
+#[must_use]
+pub fn default_pulse_url(network: NetworkArg) -> &'static str {
+    match network {
+        NetworkArg::Regtest => "http://localhost:8080",
+        _ => "",
     }
 }
 

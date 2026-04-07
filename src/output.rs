@@ -39,6 +39,7 @@ pub enum CommandOutput {
         account_index: u32,
         esplora_url: String,
         ord_url: String,
+        pulse_url: String,
         bitcoin_cli: String,
         bitcoin_cli_args: String,
         phrase: String,
@@ -51,6 +52,7 @@ pub enum CommandOutput {
         scheme: String,
         payment_address_type: String,
         account_index: u32,
+        pulse_url: String,
         imported: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         phrase: Option<String>,
@@ -64,6 +66,7 @@ pub enum CommandOutput {
         account_index: u32,
         esplora_url: String,
         ord_url: String,
+        pulse_url: String,
         bitcoin_cli: String,
         bitcoin_cli_args: String,
         has_persistence: bool,
@@ -330,6 +333,7 @@ pub enum CommandOutput {
         default_scheme: String,
         default_esplora_url: String,
         default_ord_url: String,
+        default_pulse_url: String,
         wallet_requested: bool,
         wallet_initialized: bool,
         wallet_mode: Option<String>,
@@ -352,6 +356,8 @@ pub enum CommandOutput {
     ScenarioReset {
         removed: Vec<String>,
     },
+    Message(String),
+    RawJson(serde_json::Value),
     Generic(Value),
 }
 
@@ -448,6 +454,7 @@ impl Presenter for AgentPresenter {
                 default_scheme,
                 default_esplora_url,
                 default_ord_url,
+                default_pulse_url,
                 wallet_requested,
                 wallet_initialized,
                 wallet_mode,
@@ -479,11 +486,14 @@ impl Presenter for AgentPresenter {
                         "scheme": default_scheme,
                         "esplora_url": default_esplora_url,
                         "ord_url": default_ord_url,
+                        "pulse_url": default_pulse_url,
                     },
                     "wallet": wallet_info
                 });
                 serde_json::to_string_pretty(&base).unwrap_or_default()
             }
+            CommandOutput::Message(msg) => msg.clone(),
+            CommandOutput::RawJson(val) => serde_json::to_string_pretty(val).unwrap_or_default(),
             _ => serde_json::to_string_pretty(output).unwrap_or_default(),
         }
     }
@@ -2094,6 +2104,8 @@ impl Presenter for HumanPresenter {
             CommandOutput::IntentPairStatusUpdate { .. } => {
                 self.print_intent_pair_status_update(output)
             }
+            CommandOutput::Message(msg) => msg.clone(),
+            CommandOutput::RawJson(val) => serde_json::to_string_pretty(val).unwrap_or_default(),
             CommandOutput::Generic(val) => {
                 // Fallback for human mode when a command hasn't been fully refactored yet
                 serde_json::to_string_pretty(val).unwrap_or_default()

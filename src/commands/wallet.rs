@@ -5,7 +5,7 @@ use crate::output::CommandOutput;
 use crate::utils::{parse_network, parse_payment_address_type, parse_scheme};
 use crate::wallet_service::{
     decrypt_wallet_internal, default_bitcoin_cli, default_bitcoin_cli_args, default_esplora_url,
-    default_ord_url, encrypt_wallet_internal, generate_wallet_internal, validate_mnemonic_internal,
+    default_ord_url, default_pulse_url, encrypt_wallet_internal, generate_wallet_internal, validate_mnemonic_internal,
     Profile,
 };
 use crate::{now_unix, profile_path, read_profile, wallet_password, write_profile};
@@ -64,6 +64,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 account_index: 0,
                 esplora_url: default_esplora_url(network_arg).to_string(),
                 ord_url: default_ord_url(network_arg).to_string(),
+                pulse_url: default_pulse_url(network_arg).to_string(),
                 bitcoin_cli: default_bitcoin_cli(),
                 bitcoin_cli_args: default_bitcoin_cli_args(),
                 encrypted_mnemonic: encrypted,
@@ -87,6 +88,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 account_index: 0,
                 esplora_url: default_esplora_url(network_arg).to_string(),
                 ord_url: default_ord_url(network_arg).to_string(),
+                pulse_url: default_pulse_url(network_arg).to_string(),
                 bitcoin_cli: default_bitcoin_cli(),
                 bitcoin_cli_args: default_bitcoin_cli_args().join(" "),
                 phrase,
@@ -144,6 +146,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 account_index: 0,
                 esplora_url: default_esplora_url(network_arg).to_string(),
                 ord_url: default_ord_url(network_arg).to_string(),
+                pulse_url: default_pulse_url(network_arg).to_string(),
                 bitcoin_cli: default_bitcoin_cli(),
                 bitcoin_cli_args: default_bitcoin_cli_args(),
                 encrypted_mnemonic: encrypted,
@@ -158,6 +161,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 scheme: scheme_arg.to_string(),
                 payment_address_type: payment_address_type_arg.to_string(),
                 account_index: 0,
+                pulse_url: profile.pulse_url.clone(),
                 imported: true,
                 phrase: if cli.reveal || !cli.agent {
                     Some(mnemonic.to_string())
@@ -200,6 +204,9 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
             if let Some(url) = service_cfg.ord_url_override {
                 profile.ord_url = url.to_string();
             }
+            if let Some(url) = service_cfg.pulse_url_override {
+                profile.pulse_url = url.to_string();
+            }
 
             let state = profile.account_state();
             Ok(CommandOutput::WalletInfo {
@@ -211,6 +218,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 account_index: profile.account_index,
                 esplora_url: profile.esplora_url.clone(),
                 ord_url: profile.ord_url.clone(),
+                pulse_url: profile.pulse_url.clone(),
                 bitcoin_cli: profile.bitcoin_cli.clone(),
                 bitcoin_cli_args: profile.bitcoin_cli_args.join(" "),
                 has_persistence: state.persistence_json.is_some(),

@@ -69,6 +69,10 @@ pub struct Cli {
 
     #[arg(long, global = true, help = "Override Ordinals indexer URL")]
     pub ord_url: Option<String>,
+    #[arg(long, global = true, help = "Override Pulse Oracle URL")]
+    pub pulse_url: Option<String>,
+    #[arg(long, global = true, help = "Override Pulse Oracle API Token")]
+    pub pulse_api_token: Option<String>,
 
     #[arg(
         long,
@@ -180,6 +184,8 @@ pub enum Command {
     #[cfg(feature = "ui")]
     Dashboard,
     Doctor,
+    Insight(InsightArgs),
+    Pulse(PulseArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -200,6 +206,8 @@ pub struct SetupArgs {
     pub default_esplora_url: Option<String>,
     #[arg(long)]
     pub default_ord_url: Option<String>,
+    #[arg(long)]
+    pub default_pulse_url: Option<String>,
     #[arg(long)]
     pub restore_mnemonic: Option<String>,
     #[arg(long)]
@@ -639,6 +647,26 @@ pub struct LockArgs {
 pub enum LockAction {
     Info,
     Clear,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct InsightArgs {
+    #[command(subcommand)]
+    pub action: InsightAction,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum InsightAction {
+    #[command(about = "Appraise all assets in the current wallet")]
+    Appraise {
+        #[arg(long, help = "Only show assets with a known collection")]
+        known_only: bool,
+    },
+    #[command(about = "Search for a collection by name")]
+    Search {
+        #[arg(index = 1, help = "Search query")]
+        query: String,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -1254,4 +1282,19 @@ pub struct InscriptionArgs {
 #[derive(Subcommand, Debug, Clone)]
 pub enum InscriptionAction {
     List,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct PulseArgs {
+    #[command(subcommand)]
+    pub action: PulseAction,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum PulseAction {
+    #[command(about = "Login to Pulse Metadata Oracle")]
+    Login {
+        #[arg(index = 1, help = "Pulse API Token")]
+        token: String,
+    },
 }

@@ -16,3 +16,5 @@ pub mod tx;
 pub mod version;
 pub mod wait;
 pub mod wallet;
+pub mod insight;
+pub mod pulse;

@@ -29,6 +29,10 @@ Useful globals:
 - `--network-timeout-secs <n>` timeout for remote calls (default: `30`)
 - `--network-retries <n>` retry count for transient network failures/timeouts (default: `0`)
 - `--policy-mode warn|strict` transaction safety behavior (default: `warn`)
+- `--esplora-url <url>` override Esplora API URL
+- `--ord-url <url>` override Ordinals indexer URL
+- `--pulse-url <url>` override Pulse Oracle URL
+- `--pulse-api-token <token>` override Pulse Oracle API Token
 - `--thumb` force inscription thumbnails on
 - `--no-thumb` disable inscription thumbnails
 
@@ -43,6 +47,8 @@ Environment defaults (optional):
 - `ZINC_CLI_PAYMENT_ADDRESS_TYPE` (`native|nested|legacy`)
 - `ZINC_CLI_ESPLORA_URL`
 - `ZINC_CLI_ORD_URL`
+- `ZINC_CLI_PULSE_URL`
+- `ZINC_CLI_PULSE_API_TOKEN`
 - `ZINC_CLI_CORRELATION_ID`
 - `ZINC_CLI_LOG_JSON` (`1|true|yes|on`)
 - `ZINC_CLI_IDEMPOTENCY_KEY`
@@ -326,8 +332,41 @@ Rules:
 - `--thumb` and `--no-thumb` are boolean toggles.
 - In human mode, thumbnails are enabled by default unless `--no-thumb` or `--no-images` is set.
 - In `--agent` mode, thumbnails are disabled by default unless `--thumb` is explicitly set.
+- `insight appraise` uses the configured Pulse Oracle to provide collection metadata and floor prices for all inscriptions in the current account.
+- `pulse login <token>` persists your Pulse Oracle API token to secure your connection.
 
-## 7) Profiles, Accounts, and Waits
+## 7) Oracle & Market Insight
+
+Appraise your wallet (requires Pulse Oracle):
+
+```bash
+zinc-cli insight appraise
+```
+
+Filter for recognized collections only:
+
+```bash
+zinc-cli insight appraise --known-only
+```
+
+Search for collections and floor prices:
+
+```bash
+zinc-cli insight search "pizza comrades"
+```
+
+Authenticate with Pulse:
+
+```bash
+zinc-cli pulse login <your-api-token>
+```
+
+Authentication precedence for Pulse:
+1. `--pulse-api-token`
+2. `ZINC_CLI_PULSE_API_TOKEN`
+3. Persisted value in `~/.zinc/config.json` (from `pulse login`)
+
+## 8) Profiles, Accounts, and Waits
 
 Use named profile and custom data directory:
 

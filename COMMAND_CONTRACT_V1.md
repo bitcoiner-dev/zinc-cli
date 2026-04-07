@@ -25,7 +25,7 @@ This document defines the active `v1` command contract. It is additive with curr
 
 ## 3) Global Flags (Supported)
 
-`--agent`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--payment-address-type`, `--esplora-url`, `--ord-url`, `--ascii`, `--no-images`, `--thumb`, `--no-thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
+`--agent`, `--yes`, `--password`, `--password-env`, `--password-stdin`, `--reveal`, `--data-dir`, `--profile`, `--network`, `--scheme`, `--payment-address-type`, `--esplora-url`, `--ord-url`, `--pulse-url`, `--pulse-api-token`, `--ascii`, `--no-images`, `--thumb`, `--no-thumb`, `--correlation-id`, `--log-json`, `--idempotency-key`, `--network-timeout-secs`, `--network-retries`, `--policy-mode`
 
 Global flags are supported both before and after command tokens.
 
@@ -117,6 +117,7 @@ Idempotency for mutating commands:
 | `TxItem` | `{ txid: string, amount_sats: i64, fee_sats: u64, confirmation_time: u64 \| null, tx_type: "send" \| "receive", inscriptions: InscriptionDetails[], parent_txids: string[], index: usize }` |
 | `InscriptionDetails` | `{ id: string, number: i64, content_type: string \| null }` |
 | `Account` | `{ index: u32, label: string, taprootAddress: string, taprootPublicKey: string, paymentAddress: string \| null, paymentPublicKey: string \| null }` |
+| `CollectionResult` | `{ stats: { slug: string, floor_sats: u64, ... }, metadata: { name: string, description: string, image_url: string, ... } }` |
 
 `u64` and `i64` are JSON numbers in v1.
 
@@ -417,7 +418,41 @@ Command:
 Success fields:
 `inscription`, `ask_sats`, `txid`, `dry_run`, `inscription_risk`, `thumbnail_lines?`, `hide_inscription_ids`, `raw_response`
 
-## 8) Input Source Rules (PSBT and Offer Commands)
+## 7.33 pulse login
+
+Command:
+`pulse login <token>`
+
+Success fields:
+`message`
+
+Notes:
+1. Securely persists the Pulse API token to the global `config.json`.
+
+## 7.34 insight appraise
+
+Command:
+`insight appraise [--known-only]`
+
+Success fields:
+Array of `{ inscription_id: string, number: i64, collection: string | null, floor_sats: u64 | null }`
+
+Notes:
+1. Returns appraisal and collection data for all inscriptions in the current account.
+2. Uses the configured Pulse Oracle.
+
+## 7.35 insight search
+
+Command:
+`insight search <query>`
+
+Success fields:
+Array of `CollectionResult`
+
+Notes:
+1. Searches for collection metadata and floor prices matching the query string.
+
+## 8) Input Source Rules...
 
 For `psbt analyze`, `psbt sign`, `psbt broadcast`, and `offer submit-ord` exactly one PSBT input source must be present:
 

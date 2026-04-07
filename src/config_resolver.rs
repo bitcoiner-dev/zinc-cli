@@ -151,6 +151,65 @@ impl<'a> ConfigResolver<'a> {
             source: ConfigSource::Default,
         }
     }
+
+    pub fn resolve_pulse_api_token(&self) -> ResolvedValue<Option<String>> {
+        // Priority 1: Explicit CLI
+        if let Some(token) = self.service.pulse_api_token_override {
+            return ResolvedValue {
+                value: Some(token.to_string()),
+                source: ConfigSource::ExplicitCli,
+            };
+        }
+
+        // Priority 2: Global Config
+        if let Some(token) = self.persisted.pulse_api_token.as_ref() {
+            return ResolvedValue {
+                value: Some(token.clone()),
+                source: ConfigSource::GlobalConfig,
+            };
+        }
+
+        // Priority 3: Default fallback
+        ResolvedValue {
+            value: None,
+            source: ConfigSource::Default,
+        }
+    }
+
+    pub fn resolve_pulse_url(&self, profile: Option<&Profile>) -> ResolvedValue<String> {
+        // Priority 1: Explicit CLI
+        if let Some(url) = self.service.pulse_url_override {
+            return ResolvedValue {
+                value: url.to_string(),
+                source: ConfigSource::ExplicitCli,
+            };
+        }
+
+        // Priority 2: Profile
+        if let Some(profile) = profile {
+            return ResolvedValue {
+                value: profile.pulse_url.clone(),
+                source: ConfigSource::Profile,
+            };
+        }
+
+        // Priority 3: Global Config
+        if let Some(url) = self.persisted.pulse_url.as_ref() {
+            return ResolvedValue {
+                value: url.clone(),
+                source: ConfigSource::GlobalConfig,
+            };
+        }
+
+        // Priority 4: Default fallback (regtest only, otherwise empty)
+        let network = self.resolve_network(profile).value;
+        let default_url = crate::config::default_pulse_url(network.into());
+
+        ResolvedValue {
+            value: default_url.to_string(),
+            source: ConfigSource::Default,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -177,6 +236,8 @@ mod tests {
             payment_address_type_override: override_payment_type,
             esplora_url_override: None,
             ord_url_override: None,
+            pulse_url_override: None,
+            pulse_api_token_override: None,
             ascii_mode: false,
         }
     }
@@ -191,6 +252,7 @@ mod tests {
             account_index: 0,
             esplora_url: "https://regtest.exittheloop.com/api".to_string(),
             ord_url: "https://ord-regtest.exittheloop.com".to_string(),
+            pulse_url: "http://localhost:8080".to_string(),
             bitcoin_cli: "bitcoin-cli".to_string(),
             bitcoin_cli_args: vec!["-regtest".to_string()],
             encrypted_mnemonic: "encrypted".to_string(),
@@ -232,5 +294,28 @@ mod tests {
         let default_result = resolver_default.resolve_payment_address_type(None);
         assert_eq!(default_result.value, PaymentAddressType::NativeSegwit);
         assert_eq!(default_result.source, ConfigSource::Default);
+    }
+
+    #[test]
+    fn resolve_pulse_url_returns_empty_on_mainnet_by_default() {
+        let mut persisted = PersistedConfig::default();
+        persisted.network = Some("bitcoin".to_string());
+        let cfg = service_config(None);
+        let resolver = ConfigResolver::new(&persisted, &cfg);
+
+        let result = resolver.resolve_pulse_url(None);
+        assert_eq!(result.value, "");
+        assert_eq!(result.source, ConfigSource::Default);
+    }
+
+    #[test]
+    fn resolve_pulse_url_returns_localhost_on_regtest_by_default() {
+        let persisted = PersistedConfig::default();
+        let cfg = service_config(None);
+        let resolver = ConfigResolver::new(&persisted, &cfg);
+
+        let result = resolver.resolve_pulse_url(None);
+        assert_eq!(result.value, "http://localhost:8080");
+        assert_eq!(result.source, ConfigSource::Default);
     }
 }

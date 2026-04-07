@@ -182,6 +182,7 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
     if network_changed {
         profile.esplora_url = crate::config::default_esplora_url(new_network).to_string();
         profile.ord_url = crate::config::default_ord_url(new_network).to_string();
+        profile.pulse_url = crate::config::default_pulse_url(new_network).to_string();
     }
 
     profile.network = new_network;
@@ -193,6 +194,9 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
     }
     if let Some(url) = config.ord_url_override {
         profile.ord_url = url.to_string();
+    }
+    if let Some(url) = config.pulse_url_override {
+        profile.pulse_url = url.to_string();
     }
 
     let password = wallet_password(config)?;
@@ -229,7 +233,7 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
             .iter()
             .map(|inscription| inscription.satpoint.outpoint)
             .collect();
-        wallet.apply_verified_ordinals_update(inscriptions, protected_outpoints);
+        wallet.apply_verified_ordinals_update(inscriptions, protected_outpoints, Vec::new());
     }
 
     Ok(WalletSession {
@@ -328,6 +332,7 @@ mod tests {
             account_index: 0,
             esplora_url: "https://regtest.exittheloop.com/api".to_string(),
             ord_url: "https://ord-regtest.exittheloop.com".to_string(),
+            pulse_url: "http://localhost:8080".to_string(),
             bitcoin_cli: "bitcoin-cli".to_string(),
             bitcoin_cli_args: vec!["-regtest".to_string()],
             encrypted_mnemonic: "encrypted".to_string(),

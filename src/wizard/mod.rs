@@ -15,6 +15,7 @@ pub struct SetupValues {
     pub default_payment_address_type: Option<String>,
     pub default_esplora_url: Option<String>,
     pub default_ord_url: Option<String>,
+    pub default_pulse_url: Option<String>,
     pub initialize_wallet: bool,
     pub restore_mnemonic: Option<String>,
     pub words: Option<u8>,
@@ -43,6 +44,7 @@ pub(crate) fn resolve_setup_values(cli: &Cli, args: &SetupArgs) -> Result<SetupV
         .or(cli.payment_address_type.clone());
     let default_esplora_url = args.default_esplora_url.clone().or(cli.esplora_url.clone());
     let default_ord_url = args.default_ord_url.clone().or(cli.ord_url.clone());
+    let default_pulse_url = args.default_pulse_url.clone().or(cli.pulse_url.clone());
 
     Ok(SetupValues {
         profile,
@@ -53,6 +55,7 @@ pub(crate) fn resolve_setup_values(cli: &Cli, args: &SetupArgs) -> Result<SetupV
         default_payment_address_type,
         default_esplora_url,
         default_ord_url,
+        default_pulse_url,
         initialize_wallet: args.restore_mnemonic.is_some() || args.words.is_some(),
         restore_mnemonic: args.restore_mnemonic.clone(),
         words: args.words,
@@ -80,6 +83,7 @@ pub(crate) fn should_run_setup_wizard(
             && args.password_env.is_none()
             && args.default_esplora_url.is_none()
             && args.default_ord_url.is_none()
+            && args.default_pulse_url.is_none()
             && args.default_payment_address_type.is_none()
             && args.restore_mnemonic.is_none()
             && args.words.is_none();

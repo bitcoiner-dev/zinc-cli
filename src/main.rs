@@ -61,6 +61,8 @@ const GLOBAL_FLAGS: &[&str] = &[
     "--payment-address-type",
     "--esplora-url",
     "--ord-url",
+    "--pulse-url",
+    "--pulse-api-token",
     "--ascii",
     "--no-images",
     "--correlation-id",
@@ -97,6 +99,9 @@ const COMMAND_LIST: &[&str] = &[
     "offer submit-ord",
     "offer list-ord",
     "offer accept",
+    "insight search",
+    "insight appraise",
+    "pulse login",
     "account list",
     "account use",
     "wait tx-confirmed",
@@ -456,6 +461,12 @@ fn resolve_effective_cli(mut cli: Cli) -> Result<Cli, AppError> {
     if let Some(val) = env_non_empty("ZINC_CLI_ORD_URL") {
         cli.ord_url = Some(val);
     }
+    if let Some(val) = env_non_empty("ZINC_CLI_PULSE_URL") {
+        cli.pulse_url = Some(val);
+    }
+    if let Some(val) = env_non_empty("ZINC_CLI_PULSE_API_TOKEN") {
+        cli.pulse_api_token = Some(val);
+    }
     if let Some(val) = env_bool("ZINC_CLI_ASCII") {
         cli.ascii = val;
     }
@@ -736,6 +747,7 @@ fn is_mutating_command(command: &Command) -> bool {
             crate::cli::SnapshotAction::Save { .. } | crate::cli::SnapshotAction::Restore { .. }
         ),
         Command::Scenario(_) => true,
+        Command::Insight(_) => false,
         _ => false,
     }
 }
@@ -925,6 +937,8 @@ pub(crate) async fn dispatch(cli: &Cli) -> Result<crate::output::CommandOutput, 
         Command::Lock(args) => crate::commands::lock::run(cli, args).await,
         Command::Scenario(args) => crate::commands::scenario::run(cli, args).await,
         Command::Inscription(args) => crate::commands::inscription::run(cli, args).await,
+        Command::Insight(args) => crate::commands::insight::run(cli, args).await,
+        Command::Pulse(args) => crate::commands::pulse::run(cli, args).await,
         Command::Version => crate::commands::version::run(cli).await,
         Command::Doctor => crate::commands::doctor::run(cli).await,
         #[cfg(feature = "ui")]
@@ -958,7 +972,8 @@ pub(crate) fn needs_lock(command: &Command) -> bool {
         | Command::Psbt { .. }
         | Command::Intent(..)
         | Command::Pair(..)
-        | Command::Offer { .. } => false,
+        | Command::Offer { .. }
+        | Command::Insight { .. } => false,
         _ => true,
     }
 }
@@ -980,6 +995,8 @@ pub(crate) fn service_config(cli: &Cli) -> ServiceConfig<'_> {
         payment_address_type_override: cli.payment_address_type.as_deref(),
         esplora_url_override: cli.esplora_url.as_deref(),
         ord_url_override: cli.ord_url.as_deref(),
+        pulse_url_override: cli.pulse_url.as_deref(),
+        pulse_api_token_override: cli.pulse_api_token.as_deref(),
         ascii_mode: cli.ascii,
     }
 }

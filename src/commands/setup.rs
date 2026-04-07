@@ -91,6 +91,8 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             payment_address_type: values.default_payment_address_type.clone(),
             esplora_url: values.default_esplora_url.clone(),
             ord_url: values.default_ord_url.clone(),
+            pulse_url: values.default_pulse_url.clone(),
+            pulse_api_token: cli.pulse_api_token.clone(),
             command: crate::cli::Command::Doctor, // placeholder, not used
         };
 
@@ -133,6 +135,10 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             .default_ord_url
             .clone()
             .unwrap_or_else(|| default_ord_url(network).to_string());
+        let pulse_url = values
+            .default_pulse_url
+            .clone()
+            .unwrap_or_else(|| crate::config::default_pulse_url(network).to_string());
 
         let profile = Profile {
             version: 1,
@@ -143,6 +149,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             account_index: 0,
             esplora_url,
             ord_url,
+            pulse_url,
             bitcoin_cli: default_bitcoin_cli(),
             bitcoin_cli_args: default_bitcoin_cli_args(),
             encrypted_mnemonic: encrypted,
@@ -215,6 +222,14 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             .as_deref()
             .or(cli.ord_url.as_deref())
             .unwrap_or_else(|| default_ord_url(parse_network("regtest").unwrap()))
+            .to_string(),
+        default_pulse_url: values
+            .default_pulse_url
+            .as_deref()
+            .or(cli.pulse_url.as_deref())
+            .unwrap_or_else(|| {
+                crate::config::default_pulse_url(parse_network("regtest").unwrap())
+            })
             .to_string(),
         password_env: values.password_env.clone(),
         wallet_requested: values.initialize_wallet,

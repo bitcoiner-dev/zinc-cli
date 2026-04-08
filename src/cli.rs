@@ -250,7 +250,13 @@ pub enum WalletAction {
     },
     Import {
         #[arg(long)]
-        mnemonic: String,
+        mnemonic: Option<String>,
+        #[arg(long = "taproot-xpub", visible_alias = "xpub")]
+        taproot_xpub: Option<String>,
+        #[arg(long = "payment-xpub")]
+        payment_xpub: Option<String>,
+        #[arg(long)]
+        address: Option<String>,
         #[arg(long)]
         network: Option<String>,
         #[arg(long)]

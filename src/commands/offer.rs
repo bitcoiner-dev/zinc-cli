@@ -45,6 +45,7 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<CommandOutput, AppError>
             psbt_out_file,
         } => {
             let mut session = load_wallet_session(cli)?;
+            session.require_seed_mode()?;
             if session
                 .wallet
                 .inscriptions()
@@ -273,6 +274,7 @@ pub async fn run(cli: &Cli, args: &OfferArgs) -> Result<CommandOutput, AppError>
             assert_offer_expectations(&offer, expect_inscription.as_deref(), *expect_ask_sats)?;
 
             let mut session = load_wallet_session(cli)?;
+            session.require_seed_mode()?;
             assert_offer_network_matches_profile(&offer, session.profile.network)?;
             let now_unix = i64::try_from(current_unix()).unwrap_or(i64::MAX);
             let plan = prepare_offer_acceptance(&offer, now_unix).map_err(map_offer_error)?;

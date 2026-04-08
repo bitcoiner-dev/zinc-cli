@@ -233,7 +233,7 @@ pub enum NetworkArg {
     Regtest,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SchemeArg {
     Unified,
@@ -247,6 +247,15 @@ pub enum PaymentAddressTypeArg {
     Native,
     Nested,
     Legacy,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileModeArg {
+    #[default]
+    Seed,
+    Watch,
+    WatchAddress,
 }
 
 impl std::fmt::Display for NetworkArg {
@@ -266,6 +275,17 @@ impl std::fmt::Display for SchemeArg {
         let s = match self {
             SchemeArg::Unified => "unified",
             SchemeArg::Dual => "dual",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl std::fmt::Display for ProfileModeArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            ProfileModeArg::Seed => "seed",
+            ProfileModeArg::Watch => "watch",
+            ProfileModeArg::WatchAddress => "watch-address",
         };
         write!(f, "{}", s)
     }
@@ -301,6 +321,24 @@ impl From<Network> for NetworkArg {
             Network::Testnet => NetworkArg::Testnet,
             Network::Regtest => NetworkArg::Regtest,
             Network::Testnet4 => NetworkArg::Testnet,
+        }
+    }
+}
+
+impl From<ProfileModeArg> for zinc_core::ProfileMode {
+    fn from(value: ProfileModeArg) -> Self {
+        match value {
+            ProfileModeArg::Seed => zinc_core::ProfileMode::Seed,
+            ProfileModeArg::Watch | ProfileModeArg::WatchAddress => zinc_core::ProfileMode::Watch,
+        }
+    }
+}
+
+impl From<zinc_core::ProfileMode> for ProfileModeArg {
+    fn from(value: zinc_core::ProfileMode) -> Self {
+        match value {
+            zinc_core::ProfileMode::Seed => ProfileModeArg::Seed,
+            zinc_core::ProfileMode::Watch => ProfileModeArg::Watch,
         }
     }
 }
@@ -363,14 +401,35 @@ pub struct Profile {
     pub account_index: u32,
     pub esplora_url: String,
     pub ord_url: String,
+    #[serde(default)]
     pub pulse_url: String,
     #[serde(default = "default_bitcoin_cli")]
     pub bitcoin_cli: String,
     #[serde(default = "default_bitcoin_cli_args")]
     pub bitcoin_cli_args: Vec<String>,
-    pub encrypted_mnemonic: String,
+    pub encrypted_mnemonic: Option<String>,
+    #[serde(default)]
+    pub mode: ProfileModeArg,
+    #[serde(default, alias = "xpub")]
+    pub taproot_xpub: Option<String>,
+    #[serde(default)]
+    pub payment_xpub: Option<String>,
+    #[serde(default)]
+    pub watch_address: Option<String>,
+    #[serde(default = "default_gap_limit")]
+    pub account_gap_limit: u32,
+    #[serde(default = "default_scan_depth")]
+    pub address_scan_depth: u32,
     pub accounts: BTreeMap<u32, AccountState>,
     pub updated_at_unix: u64,
+}
+
+pub fn default_gap_limit() -> u32 {
+    20
+}
+
+pub fn default_scan_depth() -> u32 {
+    1
 }
 
 impl Profile {

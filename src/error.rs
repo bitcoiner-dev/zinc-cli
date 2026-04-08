@@ -44,6 +44,13 @@ pub enum AppError {
     #[error("Policy error: {0}")]
     #[diagnostic(code(zinc::policy_error))]
     Policy(String),
+
+    #[error("Capability error: {0}")]
+    #[diagnostic(
+        code(zinc::capability_error),
+        help("This command requires a 'Seed' profile. Your current profile is 'Watch' only.")
+    )]
+    Capability(String),
 }
 
 impl AppError {
@@ -56,6 +63,7 @@ impl AppError {
             Self::Network(_) => "network",
             Self::InsufficientFunds(_) => "insufficient_funds",
             Self::Policy(_) => "policy",
+            Self::Capability(_) => "capability",
             Self::Internal(_) => "internal",
         }
     }
@@ -69,6 +77,7 @@ impl AppError {
             Self::Network(_) => 12,
             Self::InsufficientFunds(_) => 13,
             Self::Policy(_) => 14,
+            Self::Capability(_) => 16,
             Self::Internal(_) => 1,
         }
     }

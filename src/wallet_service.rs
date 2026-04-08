@@ -23,11 +23,30 @@ pub struct WalletSession {
     pub profile_path: PathBuf,
 }
 
+impl WalletSession {
+    /// Ensure the profile is in Seed mode. Returns a Capability error otherwise.
+    pub fn require_seed_mode(&self) -> Result<(), AppError> {
+        if self.profile.mode != ProfileModeArg::Seed {
+            return Err(AppError::Capability(
+                "This command requires a 'Seed' profile and cannot be performed in 'Watch' mode."
+                    .to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[must_use]
 pub fn map_wallet_error(message: String) -> AppError {
     let lower = message.to_ascii_lowercase();
     if lower.contains("wrong password") || lower.contains("decryption failed") {
         return AppError::Auth(message);
+    }
+    if lower.contains("capability missing")
+        || lower.contains("read-only")
+        || lower.contains("requires a seed-mode profile")
+    {
+        return AppError::Capability(message);
     }
     if lower.contains("insufficient") || lower.contains("not enough") {
         return AppError::InsufficientFunds(message);
@@ -198,32 +217,103 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
         profile.pulse_url = url.to_string();
     }
 
-    let password = wallet_password(config)?;
-
-    let wallet_phrase = decrypt_wallet_internal(&profile.encrypted_mnemonic, &password)
-        .map_err(|_| {
-            AppError::Auth("wallet decrypt failed (wrong password or corrupted vault)".to_string())
-        })?
-        .phrase;
-
-    let mnemonic = ZincMnemonic::parse(&wallet_phrase)
-        .map_err(|e| AppError::Internal(format!("invalid mnemonic in vault: {e}")))?;
-
-    let mut builder = WalletBuilder::from_mnemonic(profile.network.into(), &mnemonic)
-        .with_scheme(profile.scheme.into())
-        .with_payment_address_type(profile.payment_address_type.into())
-        .with_account_index(profile.account_index);
-
     let state = profile.account_state();
-    if let Some(persistence_json) = &state.persistence_json {
-        builder = builder
-            .with_persistence(persistence_json)
-            .map_err(|e| AppError::Config(format!("failed to load persistence: {e}")))?;
-    }
+    let mut wallet = match profile.mode {
+        ProfileModeArg::Seed => {
+            let password = wallet_password(config)?;
+            let encrypted = profile.encrypted_mnemonic.as_ref().ok_or_else(|| {
+                AppError::Config("Seed profile missing encrypted mnemonic".to_string())
+            })?;
+            let wallet_phrase = decrypt_wallet_internal(encrypted, &password)
+                .map_err(|_| {
+                    AppError::Auth(
+                        "wallet decrypt failed (wrong password or corrupted vault)".to_string(),
+                    )
+                })?
+                .phrase;
 
-    let mut wallet = builder
-        .build()
-        .map_err(|e| AppError::Internal(format!("wallet build failed: {e}")))?;
+            let mnemonic = ZincMnemonic::parse(&wallet_phrase)
+                .map_err(|e| AppError::Internal(format!("invalid mnemonic in vault: {e}")))?;
+
+            let mut builder = WalletBuilder::from_mnemonic(profile.network.into(), &mnemonic)
+                .with_scheme(profile.scheme.into())
+                .with_payment_address_type(profile.payment_address_type.into())
+                .with_account_index(profile.account_index)
+                .with_scan_policy(zinc_core::ScanPolicy {
+                    account_gap_limit: profile.account_gap_limit,
+                    address_scan_depth: profile.address_scan_depth,
+                });
+
+            if let Some(persistence_json) = &state.persistence_json {
+                builder = builder
+                    .with_persistence(persistence_json)
+                    .map_err(|e| AppError::Config(format!("failed to load persistence: {e}")))?;
+            }
+
+            builder
+                .build()
+                .map_err(|e| AppError::Internal(format!("wallet build failed: {e}")))?
+        }
+        ProfileModeArg::Watch => {
+            let taproot_xpub = profile.taproot_xpub.as_ref().ok_or_else(|| {
+                AppError::Config("Watch profile requires a taproot xpub".to_string())
+            })?;
+
+            let mut builder = WalletBuilder::from_watch_only(profile.network.into())
+                .with_scheme(profile.scheme.into())
+                .with_payment_address_type(profile.payment_address_type.into())
+                .with_account_index(profile.account_index)
+                .with_scan_policy(zinc_core::ScanPolicy {
+                    account_gap_limit: profile.account_gap_limit,
+                    address_scan_depth: profile.address_scan_depth,
+                });
+
+            builder = builder
+                .with_taproot_xpub(taproot_xpub)
+                .map_err(|e| AppError::Config(format!("invalid taproot xpub: {e}")))?;
+            if let Some(payment_xpub) = &profile.payment_xpub {
+                builder = builder
+                    .with_payment_xpub(payment_xpub)
+                    .map_err(|e| AppError::Config(format!("invalid payment xpub: {e}")))?;
+            }
+
+            if let Some(persistence_json) = &state.persistence_json {
+                builder = builder
+                    .with_persistence(persistence_json)
+                    .map_err(|e| AppError::Config(format!("failed to load persistence: {e}")))?;
+            }
+
+            builder
+                .build()
+                .map_err(|e| AppError::Internal(format!("wallet build failed: {e}")))?
+        }
+        ProfileModeArg::WatchAddress => {
+            let watch_address = profile.watch_address.as_ref().ok_or_else(|| {
+                AppError::Config("Watch-address profile requires an address".to_string())
+            })?;
+
+            let mut builder = WalletBuilder::from_watch_only(profile.network.into())
+                .with_scheme(profile.scheme.into())
+                .with_payment_address_type(profile.payment_address_type.into())
+                .with_account_index(profile.account_index)
+                .with_scan_policy(zinc_core::ScanPolicy {
+                    account_gap_limit: profile.account_gap_limit,
+                    address_scan_depth: profile.address_scan_depth,
+                })
+                .with_watch_address(watch_address)
+                .map_err(|e| AppError::Config(format!("invalid watch address: {e}")))?;
+
+            if let Some(persistence_json) = &state.persistence_json {
+                builder = builder
+                    .with_persistence(persistence_json)
+                    .map_err(|e| AppError::Config(format!("failed to load persistence: {e}")))?;
+            }
+
+            builder
+                .build()
+                .map_err(|e| AppError::Internal(format!("wallet build failed: {e}")))?
+        }
+    };
 
     if let Some(inscriptions_json) = &state.inscriptions_json {
         let inscriptions: Vec<Inscription> = serde_json::from_str(inscriptions_json)
@@ -251,6 +341,7 @@ fn apply_scan_policy_migration(profile: &mut Profile) -> bool {
         state.persistence_json = None;
         state.inscriptions_json = None;
     }
+
     profile.scan_policy_version = SCAN_POLICY_VERSION_MAIN_ONLY;
     profile.updated_at_unix = now_unix();
     true
@@ -334,7 +425,13 @@ mod tests {
             pulse_url: "http://localhost:8080".to_string(),
             bitcoin_cli: "bitcoin-cli".to_string(),
             bitcoin_cli_args: vec!["-regtest".to_string()],
-            encrypted_mnemonic: "encrypted".to_string(),
+            encrypted_mnemonic: Some("encrypted".to_string()),
+            mode: crate::config::ProfileModeArg::Seed,
+            taproot_xpub: None,
+            payment_xpub: None,
+            watch_address: None,
+            account_gap_limit: crate::config::default_gap_limit(),
+            address_scan_depth: crate::config::default_scan_depth(),
             accounts,
             updated_at_unix: 123,
         };

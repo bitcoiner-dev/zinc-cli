@@ -925,10 +925,7 @@ pub(crate) async fn dispatch(cli: &Cli) -> Result<crate::output::CommandOutput, 
         Command::Psbt(args) => crate::commands::psbt::run(cli, args).await,
         Command::Intent(args) => crate::commands::intent::run(cli, args).await,
         Command::Pair(args) => crate::commands::intent::run_pair(cli, args).await,
-        Command::Offer(_) => Err(crate::error::AppError::Invalid(
-            "The 'offer' command is currently in development and not available in this release."
-                .to_string(),
-        )),
+        Command::Offer(args) => crate::commands::offer::run(cli, args).await,
         Command::Account(args) => crate::commands::account::run(cli, args).await,
         Command::Wait(args) => crate::commands::wait::run(cli, args).await,
         Command::Snapshot(args) => crate::commands::snapshot::run(cli, args).await,

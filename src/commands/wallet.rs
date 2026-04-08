@@ -6,7 +6,7 @@ use crate::utils::{parse_network, parse_payment_address_type, parse_scheme};
 use crate::wallet_service::{
     decrypt_wallet_internal, default_bitcoin_cli, default_bitcoin_cli_args, default_esplora_url,
     default_ord_url, default_pulse_url, encrypt_wallet_internal, generate_wallet_internal,
-    validate_mnemonic_internal, Profile,
+    validate_mnemonic_internal, Profile, WalletBuilder,
 };
 use crate::{now_unix, profile_path, read_profile, wallet_password, write_profile};
 use std::collections::BTreeMap;
@@ -67,7 +67,13 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 pulse_url: default_pulse_url(network_arg).to_string(),
                 bitcoin_cli: default_bitcoin_cli(),
                 bitcoin_cli_args: default_bitcoin_cli_args(),
-                encrypted_mnemonic: encrypted,
+                encrypted_mnemonic: Some(encrypted),
+                mode: crate::config::ProfileModeArg::Seed,
+                taproot_xpub: None,
+                payment_xpub: None,
+                watch_address: None,
+                account_gap_limit: crate::config::default_gap_limit(),
+                address_scan_depth: crate::config::default_scan_depth(),
                 accounts: BTreeMap::new(),
                 updated_at_unix: now_unix(),
             };
@@ -101,13 +107,47 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
         }
         WalletAction::Import {
             mnemonic,
+            taproot_xpub,
+            payment_xpub,
+            address,
             network,
             scheme,
             payment_address_type,
             overwrite,
         } => {
-            if !validate_mnemonic_internal(mnemonic) {
-                return Err(AppError::Invalid("invalid mnemonic".to_string()));
+            if let Some(m) = mnemonic {
+                if !validate_mnemonic_internal(m) {
+                    return Err(AppError::Invalid("invalid mnemonic".to_string()));
+                }
+            }
+
+            let is_seed_import = mnemonic.is_some();
+            let has_taproot_xpub = taproot_xpub.is_some();
+            let has_payment_xpub = payment_xpub.is_some();
+            let is_address_watch_import = address.is_some();
+
+            if is_seed_import && (has_taproot_xpub || has_payment_xpub || is_address_watch_import) {
+                return Err(AppError::Invalid(
+                    "Seed import cannot be combined with --taproot-xpub, --payment-xpub, or --address"
+                        .to_string(),
+                ));
+            }
+            if !is_seed_import && is_address_watch_import && (has_taproot_xpub || has_payment_xpub)
+            {
+                return Err(AppError::Invalid(
+                    "Address watch import cannot be combined with xpub flags".to_string(),
+                ));
+            }
+            if !is_seed_import && !is_address_watch_import && !has_taproot_xpub {
+                return Err(AppError::Invalid(
+                    "Provide one of: --mnemonic, --taproot-xpub (or --xpub), or --address"
+                        .to_string(),
+                ));
+            }
+            if has_payment_xpub && !has_taproot_xpub {
+                return Err(AppError::Invalid(
+                    "--payment-xpub requires --taproot-xpub".to_string(),
+                ));
             }
 
             let profile_path = profile_path(cli)?;
@@ -124,7 +164,13 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
             };
             let scheme_arg = match scheme.as_deref().or(cli.scheme.as_deref()) {
                 Some(s) => crate::utils::parse_scheme(s)?,
-                None => crate::utils::parse_scheme("dual")?, // fallback
+                None => {
+                    if is_address_watch_import {
+                        crate::utils::parse_scheme("unified")?
+                    } else {
+                        crate::utils::parse_scheme("dual")?
+                    }
+                }
             };
             let payment_address_type_arg = match payment_address_type
                 .as_deref()
@@ -134,9 +180,47 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 None => parse_payment_address_type("native")?,
             };
 
-            let password = wallet_password(cli)?;
-            let encrypted = encrypt_wallet_internal(mnemonic, &password)
-                .map_err(|e| AppError::Internal(format!("failed to encrypt mnemonic: {e}")))?;
+            if is_address_watch_import && scheme_arg != crate::config::SchemeArg::Unified {
+                return Err(AppError::Invalid(
+                    "Address watch import supports unified scheme only".to_string(),
+                ));
+            }
+
+            let (encrypted, mode, taproot_xpub_field, payment_xpub_field, watch_address_field) =
+                if let Some(m) = mnemonic {
+                    let password = wallet_password(cli)?;
+                    let enc = encrypt_wallet_internal(m, &password).map_err(|e| {
+                        AppError::Internal(format!("failed to encrypt mnemonic: {e}"))
+                    })?;
+                    (
+                        Some(enc),
+                        crate::config::ProfileModeArg::Seed,
+                        None,
+                        None,
+                        None,
+                    )
+                } else if let Some(addr) = address {
+                    WalletBuilder::from_watch_only(network_arg.into())
+                        .with_watch_address(addr)
+                        .map_err(|e| AppError::Invalid(format!("invalid watch address: {e}")))?;
+
+                    (
+                        None,
+                        crate::config::ProfileModeArg::WatchAddress,
+                        None,
+                        None,
+                        Some(addr.clone()),
+                    )
+                } else {
+                    (
+                        None,
+                        crate::config::ProfileModeArg::Watch,
+                        taproot_xpub.clone(),
+                        payment_xpub.clone(),
+                        None,
+                    )
+                };
+
             let profile = Profile {
                 version: 1,
                 scan_policy_version: crate::config::SCAN_POLICY_VERSION_MAIN_ONLY,
@@ -150,6 +234,12 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 bitcoin_cli: default_bitcoin_cli(),
                 bitcoin_cli_args: default_bitcoin_cli_args(),
                 encrypted_mnemonic: encrypted,
+                mode,
+                taproot_xpub: taproot_xpub_field,
+                payment_xpub: payment_xpub_field,
+                watch_address: watch_address_field,
+                account_gap_limit: crate::config::default_gap_limit(),
+                address_scan_depth: crate::config::default_scan_depth(),
                 accounts: BTreeMap::new(),
                 updated_at_unix: now_unix(),
             };
@@ -163,8 +253,8 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 account_index: 0,
                 pulse_url: profile.pulse_url.clone(),
                 imported: true,
-                phrase: if cli.reveal || !cli.agent {
-                    Some(mnemonic.clone())
+                phrase: if mnemonic.is_some() && (cli.reveal || !cli.agent) {
+                    mnemonic.clone()
                 } else {
                     None
                 },
@@ -228,8 +318,17 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
         }
         WalletAction::RevealMnemonic => {
             let profile = read_profile(&profile_path(cli)?)?;
+            if profile.mode != crate::config::ProfileModeArg::Seed {
+                return Err(AppError::Capability(
+                    "This command requires a 'Seed' profile and cannot be performed in 'Watch' mode."
+                        .to_string(),
+                ));
+            }
             let password = wallet_password(cli)?;
-            let result = decrypt_wallet_internal(&profile.encrypted_mnemonic, &password)
+            let encrypted = profile.encrypted_mnemonic.as_ref().ok_or_else(|| {
+                AppError::Config("Seed profile missing encrypted mnemonic".to_string())
+            })?;
+            let result = decrypt_wallet_internal(encrypted, &password)
                 .map_err(|e| crate::wallet_service::map_wallet_error(e.to_string()))?;
             Ok(CommandOutput::RevealMnemonic {
                 phrase: result.phrase.clone(),

@@ -71,6 +71,7 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<CommandOutput, AppError> 
         } => {
             let source = resolve_psbt_source(psbt.as_deref(), psbt_file.as_deref(), *psbt_stdin)?;
             let mut session = load_wallet_session(cli)?;
+            session.require_seed_mode()?;
             let (analysis, policy) = analyze_psbt_with_policy(&session.wallet, &source)?;
             enforce_policy_mode(cli, &policy)?;
             let sign_input_indices = parse_indices(sign_inputs.as_deref())?;
@@ -105,6 +106,7 @@ pub async fn run(cli: &Cli, args: &PsbtArgs) -> Result<CommandOutput, AppError> 
         } => {
             let source = resolve_psbt_source(psbt.as_deref(), psbt_file.as_deref(), *psbt_stdin)?;
             let mut session = load_wallet_session(cli)?;
+            session.require_seed_mode()?;
             let (analysis, policy) = analyze_psbt_with_policy(&session.wallet, &source)?;
             enforce_policy_mode(cli, &policy)?;
             let esplora_url = session.profile.esplora_url.clone();

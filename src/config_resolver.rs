@@ -216,7 +216,8 @@ impl<'a> ConfigResolver<'a> {
 mod tests {
     use super::{ConfigResolver, ConfigSource};
     use crate::config::{
-        NetworkArg, PaymentAddressTypeArg, PersistedConfig, Profile, SchemeArg, ServiceConfig,
+        default_gap_limit, default_scan_depth, NetworkArg, PaymentAddressTypeArg, PersistedConfig,
+        Profile, ProfileModeArg, SchemeArg, ServiceConfig,
     };
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -255,7 +256,13 @@ mod tests {
             pulse_url: "http://localhost:8080".to_string(),
             bitcoin_cli: "bitcoin-cli".to_string(),
             bitcoin_cli_args: vec!["-regtest".to_string()],
-            encrypted_mnemonic: "encrypted".to_string(),
+            encrypted_mnemonic: Some("encrypted".to_string()),
+            mode: ProfileModeArg::Seed,
+            taproot_xpub: None,
+            payment_xpub: None,
+            watch_address: None,
+            account_gap_limit: default_gap_limit(),
+            address_scan_depth: default_scan_depth(),
             accounts: BTreeMap::new(),
             updated_at_unix: 1,
         }

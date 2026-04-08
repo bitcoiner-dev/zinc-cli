@@ -3,8 +3,7 @@ use crate::config::load_persisted_config;
 use crate::error::AppError;
 use crate::load_wallet_session;
 use crate::output::CommandOutput;
-use comfy_table::Table;
-use console::style;
+use comfy_table::{Cell, Color, Table};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -235,24 +234,31 @@ async fn handle_appraise(
 
     // Human output
     let mut table = Table::new();
-    table.set_header(vec!["Inscription", "Collection", "Floor (Sats)", "Status"]);
+    table.set_header(vec![
+        Cell::new("Inscription").fg(Color::Cyan),
+        Cell::new("Collection").fg(Color::Green),
+        Cell::new("Floor (Sats)").fg(Color::Yellow),
+        Cell::new("Status").fg(Color::Magenta),
+    ]);
 
     for ins in inscriptions {
         let res = all_resolved.get(&ins.id);
 
-        let (col_name, floor, status) = match res {
+        let (col_name, floor, status, status_color) = match res {
             Some(ResolutionResult::Success(p)) => {
                 if let Some(collection) = collection_map.get(&p.collection_slug) {
                     (
                         p.collection_slug.clone(),
                         collection.stats.floor_sats.to_string(),
-                        style("Resolved").green().to_string(),
+                        "Resolved".to_string(),
+                        Some(Color::Green),
                     )
                 } else {
                     (
                         p.collection_slug.clone(),
                         "N/A".to_string(),
-                        style("Stats Unavailable").yellow().to_string(),
+                        "Stats Unavailable".to_string(),
+                        Some(Color::Yellow),
                     )
                 }
             }
@@ -261,9 +267,10 @@ async fn handle_appraise(
                     continue;
                 }
                 (
-                    style("Unknown").dim().to_string(),
+                    "Unknown".to_string(),
                     "-".to_string(),
-                    style("Not Found").yellow().to_string(),
+                    "Not Found".to_string(),
+                    Some(Color::Yellow),
                 )
             }
             _ => {
@@ -271,15 +278,25 @@ async fn handle_appraise(
                     continue;
                 }
                 (
-                    style("Error").red().to_string(),
+                    "Error".to_string(),
                     "-".to_string(),
-                    style("Failed").red().to_string(),
+                    "Failed".to_string(),
+                    Some(Color::Red),
                 )
             }
         };
 
         let label = format!("#{}", ins.number);
-        table.add_row(vec![label, col_name, floor, status]);
+        let mut status_cell = Cell::new(status);
+        if let Some(color) = status_color {
+            status_cell = status_cell.fg(color);
+        }
+        table.add_row(vec![
+            Cell::new(label),
+            Cell::new(col_name),
+            Cell::new(floor),
+            status_cell,
+        ]);
     }
 
     Ok(CommandOutput::Message(format!(
@@ -308,7 +325,12 @@ async fn handle_search(
     }
 
     let mut table = Table::new();
-    table.set_header(vec!["Collection", "Slug", "Floor (Sats)", "Listings"]);
+    table.set_header(vec![
+        Cell::new("Collection").fg(Color::Cyan),
+        Cell::new("Slug").fg(Color::Green),
+        Cell::new("Floor (Sats)").fg(Color::Yellow),
+        Cell::new("Listings").fg(Color::Magenta),
+    ]);
 
     for res in results {
         let name = res
@@ -316,10 +338,10 @@ async fn handle_search(
             .and_then(|m| m.name)
             .unwrap_or_else(|| "Unknown".to_string());
         table.add_row(vec![
-            style(name).bold().to_string(),
-            res.stats.slug,
-            res.stats.floor_sats.to_string(),
-            res.stats.listings.to_string(),
+            Cell::new(name),
+            Cell::new(res.stats.slug),
+            Cell::new(res.stats.floor_sats.to_string()),
+            Cell::new(res.stats.listings.to_string()),
         ]);
     }
 

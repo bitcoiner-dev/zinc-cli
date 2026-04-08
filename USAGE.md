@@ -69,6 +69,8 @@ zinc-cli setup --profile bot-a --data-dir /var/lib/zinc --password-env BOT_PASS
 zinc-cli config set network signet
 zinc-cli config set scheme unified
 zinc-cli config set payment-address-type nested
+zinc-cli config set account-gap-limit 20
+zinc-cli config set address-scan-depth 5
 ```
 
 `zinc-cli setup` starts an interactive wizard when run in a terminal and can initialize a wallet profile at the end (generate new or restore existing mnemonic).
@@ -91,6 +93,24 @@ Initialize wallet:
 ```bash
 zinc-cli wallet init --network signet --overwrite
 zinc-cli wallet init --network signet --payment-address-type legacy --overwrite
+```
+
+Import existing mnemonic:
+
+```bash
+zinc-cli wallet import --mnemonic "your twelve word mnemonic ..." --network signet --overwrite
+```
+
+Import watch-only xpubs (Taproot + Payment):
+
+```bash
+zinc-cli wallet import --taproot-xpub "xpub..." --payment-xpub "xpub..." --network signet --overwrite
+```
+
+Import watch-only single address:
+
+```bash
+zinc-cli wallet import --address "bc1p..." --network signet --overwrite
 ```
 
 Show wallet info:
@@ -222,8 +242,6 @@ Rules:
 - `--password-stdin` cannot be combined with `--psbt-stdin` in one invocation.
 
 ## 6) Offer Commands (Nostr + Ord, Advanced)
-
-`offer` is callable directly (`zinc-cli offer ...`) but intentionally hidden from top-level `zinc-cli --help`.
 
 Create an ord-compatible buyer offer PSBT and a relay-ready offer envelope:
 

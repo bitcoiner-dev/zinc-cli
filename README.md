@@ -83,7 +83,7 @@ Reports are written to `demo/artifacts/`.
 
 ## What You Can Do
 
-- wallet lifecycle: `wallet init|import|info|reveal-mnemonic`
+- wallet lifecycle: `wallet init|import|info|reveal-mnemonic` (supports Seed, Watch, and WatchAddress modes)
 - sync: `sync chain|ordinals`
 - addresses and balance: `address taproot|payment`, `balance`
 - transfers: `psbt create|analyze|sign|broadcast`

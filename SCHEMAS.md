@@ -40,7 +40,7 @@ Error:
   - `phrase` is hidden unless `--reveal` is set
   - `words` appears only when `--reveal` is set
 - `wallet import`:
-  - `profile`, `network`, `scheme`, `payment_address_type`, `account_index`, `imported`
+  - `profile`, `network`, `scheme`, `payment_address_type`, `account_index`, `mode`, `imported`
   - `phrase` appears only when `--reveal` is set
 - `wallet info`:
   - `profile`, `version`, `network`, `scheme`, `payment_address_type`, `account_index`, `esplora_url`, `ord_url`, `bitcoin_cli`, `bitcoin_cli_args`, `has_persistence`, `has_inscriptions`, `updated_at_unix`

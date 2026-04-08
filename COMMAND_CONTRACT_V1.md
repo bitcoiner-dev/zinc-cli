@@ -117,6 +117,7 @@ Idempotency for mutating commands:
 | `TxItem` | `{ txid: string, amount_sats: i64, fee_sats: u64, confirmation_time: u64 \| null, tx_type: "send" \| "receive", inscriptions: InscriptionDetails[], parent_txids: string[], index: usize }` |
 | `InscriptionDetails` | `{ id: string, number: i64, content_type: string \| null }` |
 | `Account` | `{ index: u32, label: string, taprootAddress: string, taprootPublicKey: string, paymentAddress: string \| null, paymentPublicKey: string \| null }` |
+| `ProfileMode` | `"seed" \| "watch" \| "watch_address"` |
 | `CollectionResult` | `{ stats: { slug: string, floor_sats: u64, ... }, metadata: { name: string, description: string, image_url: string, ... } }` |
 
 `u64` and `i64` are JSON numbers in v1.
@@ -140,10 +141,10 @@ Notes:
 ## 7.2 wallet import
 
 Command:
-`wallet import --mnemonic <phrase> [--network ...] [--scheme ...] [--payment-address-type native|nested|legacy] [--esplora-url <url>] [--ord-url <url>] [--overwrite]`
+`wallet import [--mnemonic <phrase>] [--taproot-xpub <xpub>] [--payment-xpub <xpub>] [--address <addr>] [--network ...] [--scheme ...] [--payment-address-type native|nested|legacy] [--esplora-url <url>] [--ord-url <url>] [--overwrite]`
 
 Success fields:
-`profile`, `network`, `scheme`, `payment_address_type`, `account_index`, `imported`
+`profile`, `network`, `scheme`, `payment_address_type`, `account_index`, `mode`, `imported`
 
 Optional fields:
 `phrase` (only when `--reveal` is set)
@@ -154,7 +155,7 @@ Command:
 `wallet info`
 
 Success fields:
-`profile`, `version`, `network`, `scheme`, `payment_address_type`, `account_index`, `esplora_url`, `ord_url`, `bitcoin_cli`, `bitcoin_cli_args`, `has_persistence`, `has_inscriptions`, `updated_at_unix`
+`profile`, `version`, `network`, `scheme`, `mode`, `payment_address_type`, `account_index`, `esplora_url`, `ord_url`, `bitcoin_cli`, `bitcoin_cli_args`, `account_gap_limit`, `address_scan_depth`, `has_persistence`, `has_inscriptions`, `updated_at_unix`
 
 ## 7.4 sync chain
 

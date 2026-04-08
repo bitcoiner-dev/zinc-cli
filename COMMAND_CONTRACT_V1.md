@@ -422,13 +422,38 @@ Success fields:
 ## 7.33 pulse login
 
 Command:
-`pulse login <token>`
+`pulse login [--token <token>] [--global] [--no-open]`
 
 Success fields:
 `message`
 
 Notes:
-1. Securely persists the Pulse API token to the global `config.json`.
+1. Defaults to OAuth2 Device Authorization flow (URL + code).
+2. Auto-opens browser unless `--no-open` is specified.
+3. Use `--token <token>` for manual/CI login (legacy behavior).
+4. Supports `--global` to persist session in global config; otherwise per-profile.
+
+## 7.33.1 pulse whoami
+
+Command:
+`pulse whoami [--global]`
+
+Success fields:
+`logged_in`, `sub`, `client_id`, `expires_at`, `scopes`, `scope`
+
+Notes:
+1. Displays current authentication status for Pulse services.
+
+## 7.33.2 pulse logout
+
+Command:
+`pulse logout [--global]`
+
+Success fields:
+`message`
+
+Notes:
+1. Revokes the active session and clears local credentials.
 
 ## 7.34 insight appraise
 

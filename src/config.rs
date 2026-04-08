@@ -24,7 +24,16 @@ pub struct PersistedConfig {
     pub ord_url: Option<String>,
     pub pulse_url: Option<String>,
     pub pulse_api_token: Option<String>,
+    pub pulse_session: Option<PulseSession>,
     pub ascii: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct PulseSession {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expires_at_unix: u64,
+    pub metadata: Option<serde_json::Value>,
 }
 
 pub(crate) fn persisted_config_path() -> PathBuf {
@@ -422,6 +431,8 @@ pub struct Profile {
     pub address_scan_depth: u32,
     pub accounts: BTreeMap<u32, AccountState>,
     pub updated_at_unix: u64,
+    #[serde(default)]
+    pub pulse_session: Option<PulseSession>,
 }
 
 pub fn default_gap_limit() -> u32 {

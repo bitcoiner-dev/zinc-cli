@@ -1301,7 +1301,23 @@ pub struct PulseArgs {
 pub enum PulseAction {
     #[command(about = "Login to Pulse Metadata Oracle")]
     Login {
-        #[arg(index = 1, help = "Pulse API Token")]
-        token: String,
+        #[arg(index = 1, help = "Legacy Pulse API Token")]
+        legacy_token: Option<String>,
+        #[arg(long = "token", help = "Directly specify token (CI/service accounts)")]
+        token: Option<String>,
+        #[arg(long, help = "Store credentials globally")]
+        global: bool,
+        #[arg(long, help = "Do not automatically open the browser")]
+        no_open: bool,
+    },
+    #[command(about = "Show current authentication status")]
+    Whoami {
+        #[arg(long, help = "Check global credentials")]
+        global: bool,
+    },
+    #[command(about = "Log out from Pulse Metadata Oracle")]
+    Logout {
+        #[arg(long, help = "Log out from global credentials")]
+        global: bool,
     },
 }

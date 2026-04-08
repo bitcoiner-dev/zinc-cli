@@ -10,6 +10,8 @@ mod network_retry;
 mod output;
 mod paths;
 mod presenter;
+mod pulse_auth_client;
+mod pulse_auth_resolver;
 #[cfg(feature = "ui")]
 mod ui;
 mod utils;
@@ -347,7 +349,7 @@ async fn main() -> miette::Result<()> {
             if cli_final.agent {
                 let envelope = wrap_envelope(Ok(val_json), &cli_final);
                 println!("{}", serde_json::to_string(&envelope).unwrap());
-            } else if !val_json.is_null() && !is_non_json_rendered_command(&cli_final.command) {
+            } else if !is_non_json_rendered_command(&cli_final.command) {
                 use crate::output::Presenter;
                 let presenter = crate::output::HumanPresenter::new(true);
                 println!("{}", presenter.render(&val));

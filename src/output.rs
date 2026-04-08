@@ -493,7 +493,7 @@ impl Presenter for AgentPresenter {
                 });
                 serde_json::to_string_pretty(&base).unwrap_or_default()
             }
-            CommandOutput::Message(msg) => msg.clone(),
+            CommandOutput::Message(msg) => serde_json::to_string(msg).unwrap_or_default(),
             CommandOutput::RawJson(val) => serde_json::to_string_pretty(val).unwrap_or_default(),
             _ => serde_json::to_string_pretty(output).unwrap_or_default(),
         }
@@ -1443,7 +1443,7 @@ impl HumanPresenter {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandOutput, HumanPresenter, Presenter};
+    use super::{AgentPresenter, CommandOutput, HumanPresenter, Presenter};
     use serde_json::json;
 
     fn sample_pair_start_output(
@@ -1498,6 +1498,15 @@ mod tests {
         let rendered = presenter.render(&sample_pair_start_output(None, false));
         assert!(rendered.contains("After wallet approval"));
         assert!(rendered.contains("zinc-cli pair finish"));
+    }
+
+    #[test]
+    fn agent_presenter_message_renders_valid_json_string() {
+        let presenter = AgentPresenter::new();
+        let rendered = presenter.render(&CommandOutput::Message("Logged in.".to_string()));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&rendered).expect("agent message should be valid JSON");
+        assert_eq!(parsed.as_str(), Some("Logged in."));
     }
 }
 

@@ -434,6 +434,7 @@ mod tests {
             address_scan_depth: crate::config::default_scan_depth(),
             accounts,
             updated_at_unix: 123,
+            pulse_session: None,
         };
 
         assert!(apply_scan_policy_migration(&mut profile));

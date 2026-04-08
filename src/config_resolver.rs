@@ -152,33 +152,14 @@ impl<'a> ConfigResolver<'a> {
         }
     }
 
-    pub fn resolve_pulse_api_token(&self) -> ResolvedValue<Option<String>> {
-        // Priority 1: Explicit CLI
-        if let Some(token) = self.service.pulse_api_token_override {
-            return ResolvedValue {
-                value: Some(token.to_string()),
-                source: ConfigSource::ExplicitCli,
-            };
-        }
-
-        // Priority 2: Global Config
-        if let Some(token) = self.persisted.pulse_api_token.as_ref() {
-            return ResolvedValue {
-                value: Some(token.clone()),
-                source: ConfigSource::GlobalConfig,
-            };
-        }
-
-        // Priority 3: Default fallback
-        ResolvedValue {
-            value: None,
-            source: ConfigSource::Default,
-        }
-    }
-
     pub fn resolve_pulse_url(&self, profile: Option<&Profile>) -> ResolvedValue<String> {
         // Priority 1: Explicit CLI
-        if let Some(url) = self.service.pulse_url_override {
+        if let Some(url) = self
+            .service
+            .pulse_url_override
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+        {
             return ResolvedValue {
                 value: url.to_string(),
                 source: ConfigSource::ExplicitCli,
@@ -187,16 +168,25 @@ impl<'a> ConfigResolver<'a> {
 
         // Priority 2: Profile
         if let Some(profile) = profile {
-            return ResolvedValue {
-                value: profile.pulse_url.clone(),
-                source: ConfigSource::Profile,
-            };
+            let profile_url = profile.pulse_url.trim();
+            if !profile_url.is_empty() {
+                return ResolvedValue {
+                    value: profile_url.to_string(),
+                    source: ConfigSource::Profile,
+                };
+            }
         }
 
         // Priority 3: Global Config
-        if let Some(url) = self.persisted.pulse_url.as_ref() {
+        if let Some(url) = self
+            .persisted
+            .pulse_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+        {
             return ResolvedValue {
-                value: url.clone(),
+                value: url.to_string(),
                 source: ConfigSource::GlobalConfig,
             };
         }
@@ -265,6 +255,7 @@ mod tests {
             address_scan_depth: default_scan_depth(),
             accounts: BTreeMap::new(),
             updated_at_unix: 1,
+            pulse_session: None,
         }
     }
 
@@ -324,5 +315,63 @@ mod tests {
         let result = resolver.resolve_pulse_url(None);
         assert_eq!(result.value, "http://localhost:8080");
         assert_eq!(result.source, ConfigSource::Default);
+    }
+
+    #[test]
+    fn resolve_pulse_url_skips_empty_profile_and_uses_global() {
+        let mut persisted = PersistedConfig::default();
+        persisted.pulse_url = Some("https://pulse.example".to_string());
+        let cfg = service_config(None);
+        let resolver = ConfigResolver::new(&persisted, &cfg);
+
+        let mut prof = profile(PaymentAddressTypeArg::Native);
+        prof.pulse_url = "   ".to_string();
+
+        let result = resolver.resolve_pulse_url(Some(&prof));
+        assert_eq!(result.value, "https://pulse.example");
+        assert_eq!(result.source, ConfigSource::GlobalConfig);
+    }
+
+    #[test]
+    fn resolve_pulse_url_skips_empty_global_and_uses_default() {
+        let mut persisted = PersistedConfig::default();
+        persisted.pulse_url = Some("   ".to_string());
+        let cfg = service_config(None);
+        let resolver = ConfigResolver::new(&persisted, &cfg);
+
+        let result = resolver.resolve_pulse_url(None);
+        assert_eq!(result.value, "http://localhost:8080");
+        assert_eq!(result.source, ConfigSource::Default);
+    }
+
+    #[test]
+    fn resolve_pulse_url_cli_override_wins_and_is_trimmed() {
+        let mut persisted = PersistedConfig::default();
+        persisted.pulse_url = Some("https://global.example".to_string());
+        let mut prof = profile(PaymentAddressTypeArg::Native);
+        prof.pulse_url = "https://profile.example".to_string();
+
+        let cfg = ServiceConfig {
+            data_dir: Some(Path::new("/tmp")),
+            profile: "default",
+            password_env: "ZINC_WALLET_PASSWORD",
+            password_stdin: false,
+            password_override: None,
+            agent: false,
+            network_override: None,
+            explicit_network: false,
+            scheme_override: None,
+            payment_address_type_override: None,
+            esplora_url_override: None,
+            ord_url_override: None,
+            pulse_url_override: Some("  https://cli.example  "),
+            pulse_api_token_override: None,
+            ascii_mode: false,
+        };
+
+        let resolver = ConfigResolver::new(&persisted, &cfg);
+        let result = resolver.resolve_pulse_url(Some(&prof));
+        assert_eq!(result.value, "https://cli.example");
+        assert_eq!(result.source, ConfigSource::ExplicitCli);
     }
 }

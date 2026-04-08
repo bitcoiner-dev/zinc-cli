@@ -349,7 +349,7 @@ Rules:
 - In human mode, thumbnails are enabled by default unless `--no-thumb` or `--no-images` is set.
 - In `--agent` mode, thumbnails are disabled by default unless `--thumb` is explicitly set.
 - `insight appraise` uses the configured Pulse Oracle to provide collection metadata and floor prices for all inscriptions in the current account.
-- `pulse login <token>` persists your Pulse Oracle API token to secure your connection.
+- `pulse login` authenticates you with Pulse Oracle using OAuth2 Device Authorization (default) or a manual token.
 
 ## 7) Oracle & Market Insight
 
@@ -374,13 +374,34 @@ zinc-cli insight search "pizza comrades"
 Authenticate with Pulse:
 
 ```bash
-zinc-cli pulse login <your-api-token>
+# Starts interactive OAuth browser flow (suggested)
+zinc-cli pulse login
+
+# Global login (shares session across all profiles)
+zinc-cli pulse login --global
+
+# Manual/CI login with token
+zinc-cli pulse login --token <your-api-token>
+```
+
+Check session status:
+
+```bash
+zinc-cli pulse whoami
+```
+
+Logout:
+
+```bash
+zinc-cli pulse logout
 ```
 
 Authentication precedence for Pulse:
-1. `--pulse-api-token`
-2. `ZINC_CLI_PULSE_API_TOKEN`
-3. Persisted value in `~/.zinc/config.json` (from `pulse login`)
+1. `--pulse-api-token` flag
+2. `ZINC_CLI_PULSE_API_TOKEN` env
+3. Profile session (from `pulse login`)
+4. Global session (from `pulse login --global`)
+5. Legacy global API token fallback
 
 ## 8) Profiles, Accounts, and Waits
 

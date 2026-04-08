@@ -142,17 +142,21 @@ impl PulseClient {
 }
 
 pub async fn run(cli: &Cli, args: &InsightArgs) -> Result<CommandOutput, AppError> {
-    let session = load_wallet_session(cli)?;
+    let mut session = load_wallet_session(cli)?;
     let persisted = load_persisted_config().unwrap_or_default();
     let service = crate::service_config(cli);
     let resolver = crate::config_resolver::ConfigResolver::new(&persisted, &service);
 
-    let token = resolver.resolve_pulse_api_token().value;
+    let auth_resolver = crate::pulse_auth_resolver::PulseAuthResolver::new(&persisted, &service);
+    let path = crate::profile_path(cli)?;
+    let token = auth_resolver
+        .resolve_token(Some(&mut session.profile), Some(&path))
+        .await?;
     let pulse_url = resolver.resolve_pulse_url(Some(&session.profile)).value;
 
     if pulse_url.is_empty() {
         return Err(AppError::Invalid(
-            "Pulse Oracle URL is not configured. Please set ZINC_CLI_PULSE_URL or run 'zinc pulse login' with a token.".to_string(),
+            "Pulse Oracle URL is not configured. Please set ZINC_CLI_PULSE_URL or run 'zinc pulse login'.".to_string(),
         ));
     }
 
@@ -238,15 +242,19 @@ async fn handle_appraise(
 
         let (col_name, floor, status) = match res {
             Some(ResolutionResult::Success(p)) => {
-                let floor_val = collection_map
-                    .get(&p.collection_slug)
-                    .map(|c| c.stats.floor_sats.to_string())
-                    .unwrap_or_else(|| "N/A".to_string());
-                (
-                    p.collection_slug.clone(),
-                    floor_val,
-                    style("Resolved").green().to_string(),
-                )
+                if let Some(collection) = collection_map.get(&p.collection_slug) {
+                    (
+                        p.collection_slug.clone(),
+                        collection.stats.floor_sats.to_string(),
+                        style("Resolved").green().to_string(),
+                    )
+                } else {
+                    (
+                        p.collection_slug.clone(),
+                        "N/A".to_string(),
+                        style("Stats Unavailable").yellow().to_string(),
+                    )
+                }
             }
             Some(ResolutionResult::NotFound) => {
                 if known_only {

@@ -161,6 +161,7 @@ pub async fn run(cli: &Cli, args: &SetupArgs) -> Result<CommandOutput, AppError>
             address_scan_depth: crate::config::default_scan_depth(),
             accounts: std::collections::BTreeMap::new(),
             updated_at_unix: now_unix(),
+            pulse_session: None,
         };
         let profile_path = profile_path(&wallet_cli)?;
         write_profile(&profile_path, &profile)?;

@@ -76,6 +76,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 address_scan_depth: crate::config::default_scan_depth(),
                 accounts: BTreeMap::new(),
                 updated_at_unix: now_unix(),
+                pulse_session: None,
             };
             write_profile(&profile_path, &profile)?;
 
@@ -242,6 +243,7 @@ pub async fn run(cli: &Cli, args: &WalletArgs) -> Result<CommandOutput, AppError
                 address_scan_depth: crate::config::default_scan_depth(),
                 accounts: BTreeMap::new(),
                 updated_at_unix: now_unix(),
+                pulse_session: None,
             };
             write_profile(&profile_path, &profile)?;
 

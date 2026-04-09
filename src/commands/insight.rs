@@ -14,11 +14,25 @@ pub struct CollectionMetadata {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DataQuality {
+    pub is_stale: bool,
+    pub is_fallback: bool,
+    pub source_reliable: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CollectionStats {
     pub slug: String,
     pub floor_sats: u64,
     pub owners: u32,
     pub listings: u32,
+    pub as_of: Option<chrono::DateTime<chrono::Utc>>,
+    pub change_6h_pct: Option<f64>,
+    pub change_24h_pct: Option<f64>,
+    pub change_7d_pct: Option<f64>,
+    pub change_30d_pct: Option<f64>,
+    pub owners_known: bool,
+    pub data_quality: DataQuality,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -138,6 +152,87 @@ impl PulseClient {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to parse search results: {e}")))
     }
+
+    pub async fn get_agent_snapshot(
+        &self,
+        ids: &[String],
+    ) -> Result<HashMap<String, Option<CollectionProfile>>, AppError> {
+        let url = format!("{}/v1/agent/snapshot", self.base_url);
+        let res = self
+            .authenticated_builder(reqwest::Method::POST, &url)
+            .json(&serde_json::json!({ "inscription_ids": ids }))
+            .send()
+            .await
+            .map_err(|e| AppError::Network(format!("Agent snapshot failed: {e}")))?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            let body_trimmed = body.trim();
+
+            if status == reqwest::StatusCode::FORBIDDEN {
+                let msg = serde_json::from_str::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("error")
+                            .and_then(|value| value.as_str())
+                            .map(ToString::to_string)
+                    })
+                    .or_else(|| {
+                        if body_trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(body_trimmed.to_string())
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        "Upgrade required: Access denied to agent intelligence features."
+                            .to_string()
+                    });
+                return Err(AppError::Capability(msg));
+            }
+
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                return Err(AppError::Auth(
+                    "Pulse authentication required. Run 'zinc pulse login'.".to_string(),
+                ));
+            }
+
+            if status == reqwest::StatusCode::INTERNAL_SERVER_ERROR
+                && body.contains("Missing request extension")
+                && body.contains("UserContext")
+            {
+                return Err(AppError::Auth(
+                    "Pulse authentication failed (token missing or expired). Run 'zinc pulse login'."
+                        .to_string(),
+                ));
+            }
+
+            if body_trimmed.is_empty() {
+                return Err(AppError::Network(format!(
+                    "Pulse snapshot returned error: {}",
+                    status
+                )));
+            }
+
+            return Err(AppError::Network(format!(
+                "Pulse snapshot returned error: {} ({})",
+                status, body_trimmed
+            )));
+        }
+
+        #[derive(Deserialize)]
+        struct SnapshotResponse {
+            inscriptions: HashMap<String, Option<CollectionProfile>>,
+        }
+
+        let resp: SnapshotResponse = res
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to parse Pulse response: {e}")))?;
+
+        Ok(resp.inscriptions)
+    }
 }
 
 pub async fn run(cli: &Cli, args: &InsightArgs) -> Result<CommandOutput, AppError> {
@@ -166,7 +261,140 @@ pub async fn run(cli: &Cli, args: &InsightArgs) -> Result<CommandOutput, AppErro
             handle_appraise(cli, &pulse_client, &session, *known_only).await
         }
         InsightAction::Search { query } => handle_search(cli, &pulse_client, query).await,
+        InsightAction::Snapshot { agent } => {
+            handle_snapshot(cli, &pulse_client, &session, *agent).await
+        }
+        InsightAction::RecommendSell {
+            agent,
+            strategy,
+            max,
+            min_confidence,
+        } => {
+            handle_recommend_sell(
+                cli,
+                &pulse_client,
+                &session,
+                *agent,
+                strategy,
+                *max,
+                *min_confidence,
+            )
+            .await
+        }
     }
+}
+
+async fn handle_snapshot(
+    cli: &Cli,
+    pulse: &PulseClient,
+    session: &crate::wallet_service::WalletSession,
+    agent: bool,
+) -> Result<CommandOutput, AppError> {
+    let inscriptions = session.wallet.inscriptions();
+    if inscriptions.is_empty() {
+        return Ok(CommandOutput::Message(
+            "No inscriptions found in wallet.".to_string(),
+        ));
+    }
+
+    let ids: Vec<String> = inscriptions.iter().map(|i| i.id.clone()).collect();
+    let snapshot = pulse.get_agent_snapshot(&ids).await?;
+
+    if agent || cli.agent {
+        return Ok(CommandOutput::RawJson(
+            serde_json::to_value(snapshot).unwrap(),
+        ));
+    }
+
+    Ok(CommandOutput::Message(
+        "Snapshot generated (use --agent for JSON output)".to_string(),
+    ))
+}
+
+async fn handle_recommend_sell(
+    cli: &Cli,
+    pulse: &PulseClient,
+    session: &crate::wallet_service::WalletSession,
+    agent: bool,
+    strategy: &str,
+    max: usize,
+    min_confidence: f64,
+) -> Result<CommandOutput, AppError> {
+    let inscriptions = session.wallet.inscriptions();
+    if inscriptions.is_empty() {
+        return Ok(CommandOutput::Message(
+            "No inscriptions found in wallet.".to_string(),
+        ));
+    }
+
+    let ids: Vec<String> = inscriptions.iter().map(|i| i.id.clone()).collect();
+    let snapshot = pulse.get_agent_snapshot(&ids).await?;
+
+    let mut recommendations = Vec::new();
+
+    for ins in inscriptions {
+        if let Some(Some(profile)) = snapshot.get(&ins.id) {
+            let stats = &profile.stats;
+
+            let mut score = 0.5; // Baseline
+            let mut reasons = Vec::new();
+
+            // Strategy logic (Balanced)
+            if let Some(change) = stats.change_24h_pct {
+                if change < -5.0 {
+                    score += 0.2;
+                    reasons.push(format!("24h trend negative ({:.1}%)", change));
+                }
+            }
+
+            if let Some(change) = stats.change_7d_pct {
+                if change > 50.0 {
+                    score += 0.1;
+                    reasons.push("7d surge suggests blow-off top risk".into());
+                }
+            }
+
+            if stats.listings < 50 {
+                score += 0.1;
+                reasons.push("Low listing density increases slippage risk".into());
+            }
+
+            if score >= min_confidence {
+                recommendations.push(serde_json::json!({
+                    "inscription_id": ins.id,
+                    "action": "sell",
+                    "confidence": score,
+                    "strategy": strategy,
+                    "reasons": reasons,
+                    "ask_band_sats": {
+                        "min": stats.floor_sats,
+                        "target": (stats.floor_sats as f64 * 1.05) as u64,
+                        "max": (stats.floor_sats as f64 * 1.15) as u64,
+                    },
+                    "as_of": stats.as_of,
+                    "data_quality": stats.data_quality,
+                }));
+            }
+        }
+    }
+
+    // Sort by confidence
+    recommendations.sort_by(|a, b| {
+        let sc_a = a["confidence"].as_f64().unwrap_or(0.0);
+        let sc_b = b["confidence"].as_f64().unwrap_or(0.0);
+        sc_b.partial_cmp(&sc_a).unwrap()
+    });
+
+    let result = recommendations.into_iter().take(max).collect::<Vec<_>>();
+
+    if agent || cli.agent {
+        return Ok(CommandOutput::RawJson(serde_json::Value::Array(result)));
+    }
+
+    Ok(CommandOutput::Message(format!(
+        "Found {} sell recommendations.",
+        result.len()
+    )))
 }
 
 async fn handle_appraise(
@@ -395,6 +623,58 @@ mod tests {
         });
 
         let _ = client.resolve_inscriptions_batch(&[]).await.unwrap();
+
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_agent_snapshot_unauthorized_maps_to_auth_error() {
+        let server = MockServer::start();
+        let client = PulseClient::new(server.base_url(), Some("token".to_string()));
+
+        let mock = server.mock(|when, then| {
+            when.method(POST).path("/v1/agent/snapshot");
+            then.status(401).body("unauthorized");
+        });
+
+        let err = client
+            .get_agent_snapshot(&["abc".to_string()])
+            .await
+            .expect_err("expected auth error");
+
+        match err {
+            AppError::Auth(message) => {
+                assert!(message.contains("zinc pulse login"));
+            }
+            other => panic!("expected auth error, got: {other:?}"),
+        }
+
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_agent_snapshot_missing_user_context_500_maps_to_auth_error() {
+        let server = MockServer::start();
+        let client = PulseClient::new(server.base_url(), Some("token".to_string()));
+
+        let mock = server.mock(|when, then| {
+            when.method(POST).path("/v1/agent/snapshot");
+            then.status(500).body(
+                "Missing request extension: Extension of type `ord_pulse::middleware::auth::UserContext` was not found. Perhaps you forgot to add it? See `axum::Extension`.",
+            );
+        });
+
+        let err = client
+            .get_agent_snapshot(&["abc".to_string()])
+            .await
+            .expect_err("expected auth error");
+
+        match err {
+            AppError::Auth(message) => {
+                assert!(message.contains("zinc pulse login"));
+            }
+            other => panic!("expected auth error, got: {other:?}"),
+        }
 
         mock.assert();
     }

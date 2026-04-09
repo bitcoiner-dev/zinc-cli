@@ -4,14 +4,27 @@ use crate::output::CommandOutput;
 use crate::{confirm, profile_path, read_profile, snapshot_dir, write_bytes_atomic};
 use std::fs;
 
+fn is_valid_snapshot_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+}
+
 pub async fn run(cli: &Cli, args: &SnapshotArgs) -> Result<CommandOutput, AppError> {
     let profile_path = profile_path(cli)?;
     let snap_dir = snapshot_dir(cli)?;
-    fs::create_dir_all(&snap_dir)
+    crate::paths::create_secure_dir_all(&snap_dir)
         .map_err(|e| AppError::Config(format!("failed to create snapshot dir: {e}")))?;
 
     match &args.action {
         SnapshotAction::Save { name, overwrite } => {
+            if !is_valid_snapshot_name(name) {
+                return Err(AppError::Invalid(
+                    "invalid snapshot name. Only alphanumeric, '_', and '-' are allowed."
+                        .to_string(),
+                ));
+            }
             let source = read_profile(&profile_path)?;
             let destination = snap_dir.join(format!("{name}.json"));
             if destination.exists() && !(*overwrite || cli.yes) {
@@ -27,6 +40,12 @@ pub async fn run(cli: &Cli, args: &SnapshotArgs) -> Result<CommandOutput, AppErr
             })
         }
         SnapshotAction::Restore { name } => {
+            if !is_valid_snapshot_name(name) {
+                return Err(AppError::Invalid(
+                    "invalid snapshot name. Only alphanumeric, '_', and '-' are allowed."
+                        .to_string(),
+                ));
+            }
             if !confirm(&format!("Are you sure you want to restore snapshot '{name}'? This will overwrite your current profile."), cli) {
                 return Err(AppError::Internal("aborted by user".to_string()));
             }

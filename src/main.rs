@@ -19,6 +19,7 @@ mod wizard;
 use crate::cli::{Cli, Command, PolicyMode};
 use crate::config::*;
 use crate::error::AppError;
+use crate::utils::validate_file_name;
 use crate::utils::{env_bool, env_non_empty};
 use clap::Parser;
 use is_terminal::IsTerminal;
@@ -741,13 +742,12 @@ fn command_fingerprint(cli: &Cli) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-fn idempotency_store_path(cli: &Cli) -> PathBuf {
-    crate::wallet_service::data_dir(&service_config(cli))
+fn idempotency_store_path(cli: &Cli) -> Result<PathBuf, AppError> {
+    let profile = cli.profile.as_deref().unwrap_or("default");
+    validate_file_name(profile)?;
+    Ok(crate::wallet_service::data_dir(&service_config(cli))
         .join("idempotency")
-        .join(format!(
-            "{}.json",
-            cli.profile.as_deref().unwrap_or("default")
-        ))
+        .join(format!("{}.json", profile)))
 }
 
 fn load_idempotency_store(path: &Path) -> Result<IdempotencyStore, AppError> {
@@ -791,7 +791,7 @@ fn try_replay_idempotent_result(
         return Ok(None);
     }
 
-    let path = idempotency_store_path(cli);
+    let path = idempotency_store_path(cli)?;
     let store = load_idempotency_store(&path)?;
     let Some(entry) = store.entries.get(key) else {
         return Ok(None);
@@ -824,7 +824,8 @@ fn record_idempotent_result(
         Some(k) => k.to_string(),
         None => return Ok(now_unix_ms()),
     };
-    let path = idempotency_store_path(cli);
+    validate_file_name(&key)?;
+    let path = idempotency_store_path(cli)?;
     let mut store = load_idempotency_store(&path)?;
     let fingerprint = command_fingerprint(cli);
 

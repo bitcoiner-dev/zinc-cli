@@ -3,6 +3,20 @@ use crate::error::AppError;
 use std::env;
 use std::path::{Path, PathBuf};
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(AppError::Invalid(format!(
+            "invalid file name '{}': must contain only alphanumeric characters, underscores, and dashes",
+            name
+        )));
+    }
+    Ok(())
+}
+
 pub fn home_dir() -> PathBuf {
     if let Some(home) = std::env::var_os("HOME") {
         PathBuf::from(home)

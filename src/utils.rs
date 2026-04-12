@@ -219,3 +219,18 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
     }
     Ok(indices)
 }
+
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("file name cannot be empty".to_string()));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(AppError::Invalid(
+            "file name contains invalid characters".to_string(),
+        ));
+    }
+    Ok(())
+}

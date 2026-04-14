@@ -219,3 +219,36 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
     }
     Ok(indices)
 }
+
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("file name cannot be empty".to_string()));
+    }
+    for c in name.chars() {
+        if !c.is_ascii_alphanumeric() && c != '_' && c != '-' {
+            return Err(AppError::Invalid(format!(
+                "invalid character in file name: '{}'",
+                c
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_file_name() {
+        assert!(validate_file_name("valid_name-123").is_ok());
+        assert!(validate_file_name("valid").is_ok());
+
+        assert!(validate_file_name("").is_err());
+        assert!(validate_file_name("../invalid").is_err());
+        assert!(validate_file_name("invalid/name").is_err());
+        assert!(validate_file_name("invalid\\name").is_err());
+        assert!(validate_file_name("invalid name").is_err());
+        assert!(validate_file_name("invalid.name").is_err());
+    }
+}

@@ -7,3 +7,8 @@
 **Vulnerability:** The `maybe_write_text` utility function was using `std::fs::write`, which resulted in sensitive data (like PSBT files and offers) being saved with insecure default file permissions, making them readable by other users on a shared system.
 **Learning:** Even generic utility functions used for saving user-requested command outputs must use secure file permissions (`0o600`) if the data they handle (like PSBTs and offers) is sensitive.
 **Prevention:** Always use `crate::paths::write_secure_file` instead of `std::fs::write` for all file writing operations that might contain sensitive material in this codebase.
+
+## 2024-03-24 - Path Traversal in Snapshot Management
+**Vulnerability:** The `snapshot` command directly interpolated user-provided names into file paths (`snap_dir.join(format!("{name}.json"))`) without validation.
+**Learning:** This allowed path traversal (e.g., `../something`) which could lead to arbitrary file reads or writes outside the dedicated snapshot directory, potentially exposing sensitive data.
+**Prevention:** Always sanitize and validate user-provided file names using an explicit allowlist (like `crate::utils::validate_file_name`) before joining them to directory paths.

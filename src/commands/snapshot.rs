@@ -7,11 +7,12 @@ use std::fs;
 pub async fn run(cli: &Cli, args: &SnapshotArgs) -> Result<CommandOutput, AppError> {
     let profile_path = profile_path(cli)?;
     let snap_dir = snapshot_dir(cli)?;
-    fs::create_dir_all(&snap_dir)
+    crate::paths::create_secure_dir_all(&snap_dir)
         .map_err(|e| AppError::Config(format!("failed to create snapshot dir: {e}")))?;
 
     match &args.action {
         SnapshotAction::Save { name, overwrite } => {
+            crate::utils::validate_file_name(name)?;
             let source = read_profile(&profile_path)?;
             let destination = snap_dir.join(format!("{name}.json"));
             if destination.exists() && !(*overwrite || cli.yes) {
@@ -27,6 +28,7 @@ pub async fn run(cli: &Cli, args: &SnapshotArgs) -> Result<CommandOutput, AppErr
             })
         }
         SnapshotAction::Restore { name } => {
+            crate::utils::validate_file_name(name)?;
             if !confirm(&format!("Are you sure you want to restore snapshot '{name}'? This will overwrite your current profile."), cli) {
                 return Err(AppError::Internal("aborted by user".to_string()));
             }

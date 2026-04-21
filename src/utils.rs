@@ -3,6 +3,21 @@ use crate::error::AppError;
 use std::env;
 use std::path::{Path, PathBuf};
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("filename cannot be empty".to_string()));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(AppError::Invalid(
+            "filename contains invalid characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn home_dir() -> PathBuf {
     if let Some(home) = std::env::var_os("HOME") {
         PathBuf::from(home)

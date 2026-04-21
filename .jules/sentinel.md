@@ -7,3 +7,8 @@
 **Vulnerability:** The `maybe_write_text` utility function was using `std::fs::write`, which resulted in sensitive data (like PSBT files and offers) being saved with insecure default file permissions, making them readable by other users on a shared system.
 **Learning:** Even generic utility functions used for saving user-requested command outputs must use secure file permissions (`0o600`) if the data they handle (like PSBTs and offers) is sensitive.
 **Prevention:** Always use `crate::paths::write_secure_file` instead of `std::fs::write` for all file writing operations that might contain sensitive material in this codebase.
+
+## 2025-02-23 - Path Traversal Vulnerability in Profile Loading
+**Vulnerability:** The CLI wallet was vulnerable to path traversal where an attacker could provide `../../../etc/passwd` or `/etc/passwd` via the `--profile` command-line argument. This could lead to writing or reading files outside the designated profile directory.
+**Learning:** `Path::join` (and `PathBuf::join`) explicitly replaces the base directory if the appended string is an absolute path (e.g., `/etc/passwd`), and traverses upwards if given `..`.
+**Prevention:** Always validate user input strings (especially CLI args like `--profile`) before passing them to `join` to prevent critical path traversal vulnerabilities. Use a strict allowlist character validation function.

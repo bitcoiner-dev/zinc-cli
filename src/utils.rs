@@ -185,6 +185,19 @@ pub fn resolve_psbt_source(
     ))
 }
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("file name cannot be empty".to_string()));
+    }
+    if name.chars().any(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '-') {
+        return Err(AppError::Invalid(format!(
+            "invalid file name '{}': only alphanumeric characters, underscores, and dashes are allowed",
+            name
+        )));
+    }
+    Ok(())
+}
+
 pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
     let s = match s {
         Some(s) => s,
@@ -218,4 +231,24 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
         }
     }
     Ok(indices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_file_name() {
+        assert!(validate_file_name("valid-name_123").is_ok());
+        assert!(validate_file_name("123").is_ok());
+        assert!(validate_file_name("name").is_ok());
+
+        assert!(validate_file_name("").is_err());
+        assert!(validate_file_name("invalid/name").is_err());
+        assert!(validate_file_name("invalid\\name").is_err());
+        assert!(validate_file_name("..").is_err());
+        assert!(validate_file_name(".").is_err());
+        assert!(validate_file_name("invalid name").is_err());
+        assert!(validate_file_name("invalid@name").is_err());
+    }
 }

@@ -228,6 +228,8 @@ pub fn persist_wallet_session(session: &mut WalletSession) -> Result<(), AppErro
 
 #[allow(dead_code)]
 pub fn run_bitcoin_cli(profile: &Profile, args: &[String]) -> Result<String, AppError> {
+    crate::utils::validate_bitcoin_cli_path(&profile.bitcoin_cli)?;
+
     let output = ShellCommand::new(&profile.bitcoin_cli)
         .args(&profile.bitcoin_cli_args)
         .args(args)

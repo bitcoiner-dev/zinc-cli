@@ -100,10 +100,52 @@ pub fn maybe_write_text(path: Option<&str>, text: &str) -> Result<(), crate::err
     }
 }
 
+pub fn validate_bitcoin_cli_path(path: &str) -> Result<(), crate::error::AppError> {
+    if path.contains("..") {
+        return Err(crate::error::AppError::Config(
+            "bitcoin-cli path cannot contain '..' traversal".to_string(),
+        ));
+    }
+
+    if path == "bitcoin-cli" || path == "bitcoin-cli.exe" {
+        return Ok(());
+    }
+
+    let p = Path::new(path);
+    if !p.is_absolute() {
+        let is_windows_abs = path.len() >= 3
+            && path.chars().nth(1) == Some(':')
+            && (path.chars().nth(2) == Some('\\') || path.chars().nth(2) == Some('/'))
+            && path.chars().next().unwrap_or_default().is_ascii_alphabetic();
+
+        if !is_windows_abs {
+            return Err(crate::error::AppError::Config(
+                "bitcoin-cli path must be an absolute path or exactly 'bitcoin-cli'".to_string(),
+            ));
+        }
+    }
+
+    let file_name = if cfg!(windows) {
+        p.file_name().and_then(|n| n.to_str()).unwrap_or_default().split('\\').last().unwrap_or_default().split('/').last().unwrap_or_default()
+    } else {
+        path.split('\\').last().unwrap_or_default().split('/').last().unwrap_or_default()
+    };
+
+    if file_name != "bitcoin-cli" && file_name != "bitcoin-cli.exe" {
+        return Err(crate::error::AppError::Config(
+            "bitcoin-cli executable must be named 'bitcoin-cli' or 'bitcoin-cli.exe'".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 pub fn run_bitcoin_cli(
     profile: &Profile,
     args: &[String],
 ) -> Result<String, crate::error::AppError> {
+    validate_bitcoin_cli_path(&profile.bitcoin_cli)?;
+
     let mut cmd = std::process::Command::new(&profile.bitcoin_cli);
     for arg in &profile.bitcoin_cli_args {
         cmd.arg(arg);
@@ -218,4 +260,27 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
         }
     }
     Ok(indices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_bitcoin_cli_path() {
+        assert!(validate_bitcoin_cli_path("bitcoin-cli").is_ok());
+        assert!(validate_bitcoin_cli_path("bitcoin-cli.exe").is_ok());
+        assert!(validate_bitcoin_cli_path("/usr/bin/bitcoin-cli").is_ok());
+        assert!(validate_bitcoin_cli_path("/usr/local/bin/bitcoin-cli").is_ok());
+        assert!(validate_bitcoin_cli_path("C:\\Program Files\\Bitcoin\\daemon\\bitcoin-cli.exe").is_ok());
+        assert!(validate_bitcoin_cli_path("c:/bitcoin/bitcoin-cli").is_ok());
+
+        assert!(validate_bitcoin_cli_path("ls").is_err());
+        assert!(validate_bitcoin_cli_path("./bitcoin-cli").is_err());
+        assert!(validate_bitcoin_cli_path("../bitcoin-cli").is_err());
+        assert!(validate_bitcoin_cli_path("/usr/bin/../bitcoin-cli").is_err());
+        assert!(validate_bitcoin_cli_path("bitcoin-cli-malicious").is_err());
+        assert!(validate_bitcoin_cli_path("/usr/bin/python").is_err());
+        assert!(validate_bitcoin_cli_path("C:\\Windows\\System32\\cmd.exe").is_err());
+    }
 }

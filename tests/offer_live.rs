@@ -6,8 +6,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const TEST_MNEMONIC: &str = "rotate text off rich waste jump grab doctor today renew fault exotic";
 const TEST_PASSWORD: &str = "test_password_123";
-const REGTEST_ESPLORA_URL: &str = "https://regtest.exittheloop.com/api";
-const REGTEST_ORD_URL: &str = "https://ord-regtest.exittheloop.com";
+const REGTEST_ESPLORA_URL: &str = "https://esplora-rt.exittheloop.com/api";
+const REGTEST_ORD_URL: &str = "https://ord-rt.exittheloop.com";
 const DEFAULT_NOSTR_RELAY_URL: &str = "wss://nostr-regtest.exittheloop.com";
 const TEST_SECRET_KEY_HEX: &str =
     "0000000000000000000000000000000000000000000000000000000000000001";

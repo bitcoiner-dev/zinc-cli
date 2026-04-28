@@ -7,6 +7,6 @@ set -euo pipefail
 
 export ZINC_CLI_NETWORK="${ZINC_CLI_NETWORK:-regtest}"
 export ZINC_CLI_SCHEME="${ZINC_CLI_SCHEME:-dual}"
-export ZINC_CLI_ESPLORA_URL="${ZINC_CLI_ESPLORA_URL:-https://regtest.exittheloop.com/api}"
-export ZINC_CLI_ORD_URL="${ZINC_CLI_ORD_URL:-https://ord-regtest.exittheloop.com}"
+export ZINC_CLI_ESPLORA_URL="${ZINC_CLI_ESPLORA_URL:-https://esplora-rt.exittheloop.com/api}"
+export ZINC_CLI_ORD_URL="${ZINC_CLI_ORD_URL:-https://ord-rt.exittheloop.com}"
 export ZINC_WALLET_PASSWORD="${ZINC_WALLET_PASSWORD:-demo_password_123}"

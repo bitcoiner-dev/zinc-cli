@@ -518,6 +518,6 @@ cargo test --test offer_live test_offer_nostr_publish_discover_live -- --nocaptu
 Notes:
 - Tests are opt-in and skipped unless `ZINC_CLI_LIVE_TESTS=1` is set.
 - Live infra defaults used by the suite:
-  - Esplora: `https://regtest.exittheloop.com/api`
-  - Ord: `https://ord-regtest.exittheloop.com`
+  - Esplora: `https://esplora-rt.exittheloop.com/api`
+  - Ord: `https://ord-rt.exittheloop.com`
   - Nostr relay: `wss://nostr-regtest.exittheloop.com`

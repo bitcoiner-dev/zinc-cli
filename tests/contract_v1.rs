@@ -1539,11 +1539,11 @@ fn test_setup_without_flags_uses_noninteractive_path_in_tests() {
     assert_eq!(json["defaults"]["network"], "regtest");
     assert_eq!(
         json["defaults"]["esplora_url"],
-        "https://regtest.exittheloop.com/api"
+        "https://esplora-rt.exittheloop.com/api"
     );
     assert_eq!(
         json["defaults"]["ord_url"],
-        "https://ord-regtest.exittheloop.com"
+        "https://ord-rt.exittheloop.com"
     );
     assert_eq!(json["wallet"]["requested"], false);
     assert_eq!(json["wallet"]["initialized"], false);

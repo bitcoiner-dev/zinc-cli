@@ -674,6 +674,22 @@ pub enum InsightAction {
         #[arg(index = 1, help = "Search query")]
         query: String,
     },
+    #[command(about = "One-shot portfolio snapshot for agents")]
+    Snapshot {
+        #[arg(long, help = "Agent mode (one-shot JSON payload)")]
+        agent: bool,
+    },
+    #[command(about = "Deterministic sell-side recommendations")]
+    RecommendSell {
+        #[arg(long, help = "Agent mode (one-shot JSON payload)")]
+        agent: bool,
+        #[arg(long, default_value = "balanced")]
+        strategy: String,
+        #[arg(long, default_value_t = 20)]
+        max: usize,
+        #[arg(long, default_value_t = 0.65)]
+        min_confidence: f64,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]

@@ -467,7 +467,7 @@ pub fn default_esplora_url(network: NetworkArg) -> &'static str {
         NetworkArg::Bitcoin => "https://m.exittheloop.com/api",
         NetworkArg::Signet => "https://mutinynet.com/api",
         NetworkArg::Testnet => "https://blockstream.info/testnet/api",
-        NetworkArg::Regtest => "https://regtest.exittheloop.com/api",
+        NetworkArg::Regtest => "https://esplora-rt.exittheloop.com",
     }
 }
 
@@ -477,7 +477,7 @@ pub fn default_ord_url(network: NetworkArg) -> &'static str {
         NetworkArg::Bitcoin => "https://o.exittheloop.com",
         NetworkArg::Signet => "https://signet.ordinals.com",
         NetworkArg::Testnet => "https://testnet.ordinals.com",
-        NetworkArg::Regtest => "https://ord-regtest.exittheloop.com",
+        NetworkArg::Regtest => "https://ord-rt.exittheloop.com",
     }
 }
 

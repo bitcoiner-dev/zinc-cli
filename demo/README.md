@@ -34,8 +34,8 @@ Artifacts are written to `demo/artifacts/`.
 
 By default the demo points to regtest endpoints:
 
-- `ZINC_CLI_ESPLORA_URL=https://regtest.exittheloop.com/api`
-- `ZINC_CLI_ORD_URL=https://ord-regtest.exittheloop.com`
+- `ZINC_CLI_ESPLORA_URL=https://esplora-rt.exittheloop.com/api`
+- `ZINC_CLI_ORD_URL=https://ord-rt.exittheloop.com`
 - `ZINC_CLI_NETWORK=regtest`
 - `ZINC_CLI_SCHEME=dual`
 

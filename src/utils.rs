@@ -91,6 +91,36 @@ pub(crate) fn best_match<'a>(needle: &str, candidates: &'a [&'a str]) -> Option<
     }
 }
 
+pub(crate) fn validate_bitcoin_cli_path(path_str: &str) -> Result<(), String> {
+    if path_str.contains("..") {
+        return Err("bitcoin_cli path contains directory traversal characters".to_string());
+    }
+
+    let is_simple_name = !path_str.contains('/') && !path_str.contains('\\');
+    if !is_simple_name {
+        let is_unix_abs = path_str.starts_with('/');
+        let is_win_abs = path_str.len() >= 3
+            && path_str.chars().nth(1) == Some(':')
+            && (path_str.chars().nth(2) == Some('\\') || path_str.chars().nth(2) == Some('/'));
+
+        if !is_unix_abs && !is_win_abs {
+            return Err("bitcoin_cli path must be absolute or a simple command name".to_string());
+        }
+    }
+
+    let file_name = path_str.split('/').last().unwrap_or(path_str);
+    let file_name = file_name.split('\\').last().unwrap_or(file_name);
+
+    if file_name != "bitcoin-cli" && file_name != "bitcoin-cli.exe" {
+        return Err(format!(
+            "invalid bitcoin_cli executable name: expected 'bitcoin-cli' or 'bitcoin-cli.exe', found '{}'",
+            file_name
+        ));
+    }
+
+    Ok(())
+}
+
 pub fn maybe_write_text(path: Option<&str>, text: &str) -> Result<(), crate::error::AppError> {
     if let Some(path) = path {
         crate::paths::write_secure_file(path, text.as_bytes())
@@ -104,6 +134,10 @@ pub fn run_bitcoin_cli(
     profile: &Profile,
     args: &[String],
 ) -> Result<String, crate::error::AppError> {
+    if let Err(e) = validate_bitcoin_cli_path(&profile.bitcoin_cli) {
+        return Err(crate::error::AppError::Config(format!("invalid bitcoin-cli configuration: {}", e)));
+    }
+
     let mut cmd = std::process::Command::new(&profile.bitcoin_cli);
     for arg in &profile.bitcoin_cli_args {
         cmd.arg(arg);

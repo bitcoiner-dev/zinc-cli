@@ -219,3 +219,35 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
     }
     Ok(indices)
 }
+
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("filename cannot be empty".to_string()));
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(AppError::Invalid(format!("invalid character in filename: '{}'. Only alphanumeric characters, underscores, and dashes are allowed.", name)));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_file_name_valid() {
+        assert!(validate_file_name("valid_name-123").is_ok());
+        assert!(validate_file_name("profile1").is_ok());
+        assert!(validate_file_name("my-snapshot").is_ok());
+    }
+
+    #[test]
+    fn test_validate_file_name_invalid() {
+        assert!(matches!(validate_file_name(""), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("../etc/passwd"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("/tmp/foo"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("foo.json"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("foo bar"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("foo\\bar"), Err(AppError::Invalid(_))));
+    }
+}

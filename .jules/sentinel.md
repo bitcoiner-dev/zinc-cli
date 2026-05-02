@@ -7,3 +7,8 @@
 **Vulnerability:** The `maybe_write_text` utility function was using `std::fs::write`, which resulted in sensitive data (like PSBT files and offers) being saved with insecure default file permissions, making them readable by other users on a shared system.
 **Learning:** Even generic utility functions used for saving user-requested command outputs must use secure file permissions (`0o600`) if the data they handle (like PSBTs and offers) is sensitive.
 **Prevention:** Always use `crate::paths::write_secure_file` instead of `std::fs::write` for all file writing operations that might contain sensitive material in this codebase.
+
+## 2025-02-14 - Arbitrary Binary Execution via Config Paths
+**Vulnerability:** The application executed arbitrary binaries passed via the `bitcoin_cli` configuration parameter in the user profile because it only used `std::process::Command::new` without validating the path. Even though `Command::new` mitigates shell command injection, providing an arbitrary path (e.g., `/bin/sh`) could still allow arbitrary binary execution.
+**Learning:** Checking for directory traversal (`..`) is insufficient. To fully prevent arbitrary binary execution when accepting an executable path from a configuration, the final filename in the path must also be strictly validated against an allowlist (e.g., ensuring it exactly matches `bitcoin-cli` or `bitcoin-cli.exe`).
+**Prevention:** Always validate user-provided executable paths using strict filename matching in addition to structural validations (e.g., rejecting traversal or relative paths) before passing them to execution functions.

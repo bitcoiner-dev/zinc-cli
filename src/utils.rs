@@ -100,10 +100,40 @@ pub fn maybe_write_text(path: Option<&str>, text: &str) -> Result<(), crate::err
     }
 }
 
+fn validate_bitcoin_cli_path(path: &str) -> Result<(), AppError> {
+    if path.trim().is_empty() {
+        return Err(AppError::Config("bitcoin_cli path cannot be empty".to_string()));
+    }
+    if path.contains("..") {
+        return Err(AppError::Config("bitcoin_cli path cannot contain '..' traversal".to_string()));
+    }
+
+    let is_plain_filename = !path.contains('/') && !path.contains('\\');
+    let is_absolute_like = path.starts_with('/')
+        || path.starts_with('\\')
+        || (path.len() >= 3 && path.chars().nth(1) == Some(':') && (path.chars().nth(2) == Some('\\') || path.chars().nth(2) == Some('/')));
+
+    if !is_plain_filename && !is_absolute_like {
+        return Err(AppError::Config("bitcoin_cli path must be absolute or a plain filename".to_string()));
+    }
+
+    let filename = path.rsplit(|c| c == '/' || c == '\\').next().unwrap_or("");
+    let filename_lower = filename.to_lowercase();
+
+    if filename_lower != "bitcoin-cli" && filename_lower != "bitcoin-cli.exe" {
+        return Err(AppError::Config(format!(
+            "invalid bitcoin_cli executable name: '{}'. Must be 'bitcoin-cli' or 'bitcoin-cli.exe'", filename
+        )));
+    }
+
+    Ok(())
+}
+
 pub fn run_bitcoin_cli(
     profile: &Profile,
     args: &[String],
 ) -> Result<String, crate::error::AppError> {
+    validate_bitcoin_cli_path(&profile.bitcoin_cli)?;
     let mut cmd = std::process::Command::new(&profile.bitcoin_cli);
     for arg in &profile.bitcoin_cli_args {
         cmd.arg(arg);
@@ -218,4 +248,24 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
         }
     }
     Ok(indices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_bitcoin_cli_path() {
+        assert!(validate_bitcoin_cli_path("bitcoin-cli").is_ok());
+        assert!(validate_bitcoin_cli_path("/usr/local/bin/bitcoin-cli").is_ok());
+        assert!(validate_bitcoin_cli_path("C:\\Program Files\\Bitcoin\\daemon\\bitcoin-cli.exe").is_ok());
+        assert!(validate_bitcoin_cli_path("bitcoin-cli.EXE").is_ok());
+
+        assert!(matches!(validate_bitcoin_cli_path(""), Err(AppError::Config(_))));
+        assert!(matches!(validate_bitcoin_cli_path("/bin/sh"), Err(AppError::Config(_))));
+        assert!(matches!(validate_bitcoin_cli_path("/usr/local/bin/bitcoin-cli/../sh"), Err(AppError::Config(_))));
+        assert!(matches!(validate_bitcoin_cli_path("src/bitcoin-cli"), Err(AppError::Config(_))));
+        assert!(matches!(validate_bitcoin_cli_path("./bitcoin-cli"), Err(AppError::Config(_))));
+        assert!(matches!(validate_bitcoin_cli_path("/usr/local/bin/../bitcoin-cli"), Err(AppError::Config(_))));
+    }
 }

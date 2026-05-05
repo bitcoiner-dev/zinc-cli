@@ -91,6 +91,18 @@ pub(crate) fn best_match<'a>(needle: &str, candidates: &'a [&'a str]) -> Option<
     }
 }
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("filename cannot be empty".to_string()));
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(AppError::Invalid(
+            "filename contains invalid characters (only alphanumeric, dash, underscore allowed)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn maybe_write_text(path: Option<&str>, text: &str) -> Result<(), crate::error::AppError> {
     if let Some(path) = path {
         crate::paths::write_secure_file(path, text.as_bytes())
@@ -218,4 +230,19 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
         }
     }
     Ok(indices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_file_name() {
+        assert!(validate_file_name("valid-name_123").is_ok());
+        assert!(validate_file_name("").is_err());
+        assert!(matches!(validate_file_name("../etc/passwd"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("name/with/slash"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("name\\with\\backslash"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("name space"), Err(AppError::Invalid(_))));
+    }
 }

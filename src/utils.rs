@@ -100,10 +100,28 @@ pub fn maybe_write_text(path: Option<&str>, text: &str) -> Result<(), crate::err
     }
 }
 
+pub fn validate_bitcoin_cli_path(path: &str) -> Result<(), AppError> {
+    if path.contains("..") {
+        return Err(AppError::Config(
+            "bitcoin_cli path cannot contain '..' traversal".to_string(),
+        ));
+    }
+
+    let file_name = path.split(|c| c == '/' || c == '\\').last().unwrap_or("");
+    if file_name != "bitcoin-cli" && file_name != "bitcoin-cli.exe" {
+        return Err(AppError::Config(
+            "insecure bitcoin_cli path: must be exactly 'bitcoin-cli' or 'bitcoin-cli.exe'"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn run_bitcoin_cli(
     profile: &Profile,
     args: &[String],
 ) -> Result<String, crate::error::AppError> {
+    validate_bitcoin_cli_path(&profile.bitcoin_cli)?;
     let mut cmd = std::process::Command::new(&profile.bitcoin_cli);
     for arg in &profile.bitcoin_cli_args {
         cmd.arg(arg);

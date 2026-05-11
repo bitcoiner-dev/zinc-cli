@@ -56,6 +56,7 @@ pub fn home_dir() -> PathBuf {
 }
 
 pub fn profile_path(config: &crate::config::ServiceConfig<'_>) -> Result<PathBuf, AppError> {
+    crate::utils::validate_file_name(config.profile)?;
     let root = data_dir(config);
     let profiles = root.join("profiles");
     if !profiles.exists() {
@@ -70,6 +71,7 @@ pub fn profile_lock_path(config: &crate::config::ServiceConfig<'_>) -> Result<Pa
 }
 
 pub fn snapshot_dir(config: &crate::config::ServiceConfig<'_>) -> Result<PathBuf, AppError> {
+    crate::utils::validate_file_name(config.profile)?;
     let root = data_dir(config);
     let directory = root.join("snapshots").join(config.profile);
     create_secure_dir_all(&directory)
@@ -99,4 +101,66 @@ pub fn write_bytes_atomic(path: &Path, bytes: &[u8], label: &str) -> Result<(), 
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ServiceConfig;
+
+    #[test]
+    fn test_profile_path_validation() {
+        let mut config = ServiceConfig {
+            profile: "valid_name",
+            data_dir: None,
+            password: None,
+            password_env: "ZINC_PASSWORD",
+            password_stdin: false,
+            agent: false,
+            network_override: None,
+            explicit_network: false,
+            scheme_override: None,
+            esplora_url_override: None,
+            ord_url_override: None,
+            ascii_mode: false,
+        };
+        assert!(profile_path(&config).is_ok());
+
+        config.profile = "../invalid";
+        assert!(matches!(profile_path(&config), Err(AppError::Invalid(_))));
+
+        config.profile = "/etc/passwd";
+        assert!(matches!(profile_path(&config), Err(AppError::Invalid(_))));
+
+        config.profile = "a/b";
+        assert!(matches!(profile_path(&config), Err(AppError::Invalid(_))));
+    }
+
+    #[test]
+    fn test_snapshot_dir_validation() {
+        let mut config = ServiceConfig {
+            profile: "valid-name-2",
+            data_dir: None,
+            password: None,
+            password_env: "ZINC_PASSWORD",
+            password_stdin: false,
+            agent: false,
+            network_override: None,
+            explicit_network: false,
+            scheme_override: None,
+            esplora_url_override: None,
+            ord_url_override: None,
+            ascii_mode: false,
+        };
+        assert!(snapshot_dir(&config).is_ok());
+
+        config.profile = "../invalid";
+        assert!(matches!(snapshot_dir(&config), Err(AppError::Invalid(_))));
+
+        config.profile = "/etc/passwd";
+        assert!(matches!(snapshot_dir(&config), Err(AppError::Invalid(_))));
+
+        config.profile = "a/b";
+        assert!(matches!(snapshot_dir(&config), Err(AppError::Invalid(_))));
+    }
 }

@@ -6,6 +6,7 @@ pub mod doctor;
 pub mod inscription;
 pub mod insight;
 pub mod intent;
+pub mod listing;
 pub mod lock;
 pub mod offer;
 pub mod psbt;

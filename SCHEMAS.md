@@ -141,6 +141,30 @@ Input modes and rules:
 - `offer create` accepts optional `--publisher-pubkey-hex` to override the embedded envelope publisher key.
 - `offer publish` and `offer discover` require at least one `--relay`.
 
+## Listing Commands
+
+Fixed-price listings are seller-initiated sale PSBT envelopes. They are distinct from buyer-initiated `offer` envelopes.
+
+- `listing create`: `inscription`, `ask_sats`, `fee_rate_sat_vb`, `seller_outpoint`, `passthrough_outpoint`, `seller_pubkey_hex`, `coordinator_pubkey_hex`, `expires_at_unix`, `raw_response`
+- `listing sell`: raw JSON with `action`, `inscription`, `ask_sats`, `fee_rate_sat_vb`, `seller_outpoint`, `passthrough_outpoint`, `seller_pubkey_hex`, `coordinator_pubkey_hex`, `expires_at_unix`, `listing`, `activation?`, `publish?`
+- `listing activate`: `inscription`, `txid`, `dry_run`, `inscription_risk`, `raw_response`
+- `listing publish`: `event_id`, `accepted_relays`, `total_relays`, `publish_results`, `raw_response`
+- `listing discover`: `event_count`, `listing_count`, `listings`, `raw_response`
+- `listing buy`: `inscription`, `ask_sats`, `fee_sats`, `buyer_input_count`, `raw_response`
+- `listing coordinator-sign`: `inscription`, `ask_sats`, `raw_response`
+- `listing finalize`: `inscription`, `ask_sats`, `txid`, `broadcast`, `raw_response`
+- `listing purchase`: raw JSON with `action`, `inscription`, `ask_sats`, `fee_sats`, `seller_input_index`, `buyer_input_count`, `buyer_receive_output_index`, `psbt`, `listing`, `coordinator?`, `finalized?`
+
+Input modes and rules:
+
+- For listing source commands, exactly one of `--listing-json`, `--listing-file`, `--listing-stdin` is required.
+- `--password-stdin` cannot be combined with `--listing-stdin`.
+- `listing publish` and `listing discover` require at least one `--relay`.
+- `listing sell` is the high-level seller wrapper; `--relay` requires `--secret-key-hex`, and `--dry-run` requires `--activate`.
+- `listing purchase` is the high-level buyer wrapper; it accepts either a listing source or relay discovery, and relay discovery requires `--expect-inscription`.
+- `listing create` requires ord indexer metadata and the inscription must already be in the wallet.
+- `listing activate` is the explicit TX1 signing/broadcast step; `--dry-run` signs locally without broadcast.
+
 ## Account/Wait/Snapshot
 
 - `account list`: `accounts`

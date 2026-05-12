@@ -240,6 +240,56 @@ pub enum CommandOutput {
         hide_inscription_ids: bool,
         raw_response: serde_json::Value,
     },
+    ListingCreate {
+        inscription: String,
+        ask_sats: u64,
+        fee_rate_sat_vb: u64,
+        seller_outpoint: String,
+        passthrough_outpoint: String,
+        seller_pubkey_hex: String,
+        coordinator_pubkey_hex: String,
+        expires_at_unix: i64,
+        raw_response: serde_json::Value,
+    },
+    ListingActivate {
+        inscription: String,
+        txid: String,
+        dry_run: bool,
+        inscription_risk: String,
+        raw_response: serde_json::Value,
+    },
+    ListingPublish {
+        event_id: String,
+        accepted_relays: u64,
+        total_relays: u64,
+        publish_results: Vec<serde_json::Value>,
+        raw_response: serde_json::Value,
+    },
+    ListingDiscover {
+        event_count: u64,
+        listing_count: u64,
+        listings: Vec<serde_json::Value>,
+        raw_response: serde_json::Value,
+    },
+    ListingBuy {
+        inscription: String,
+        ask_sats: u64,
+        fee_sats: u64,
+        buyer_input_count: u64,
+        raw_response: serde_json::Value,
+    },
+    ListingCoordinatorSign {
+        inscription: String,
+        ask_sats: u64,
+        raw_response: serde_json::Value,
+    },
+    ListingFinalize {
+        inscription: String,
+        ask_sats: u64,
+        txid: String,
+        broadcast: bool,
+        raw_response: serde_json::Value,
+    },
     IntentFixtureGenerate {
         schema_version: String,
         pairing_id: String,
@@ -2102,6 +2152,15 @@ impl Presenter for HumanPresenter {
             CommandOutput::OfferSubmitOrd { .. } => self.print_offer_submit_ord(output),
             CommandOutput::OfferListOrd { .. } => self.print_offer_list_ord(output),
             CommandOutput::OfferAccept { .. } => self.print_offer_accept(output),
+            CommandOutput::ListingCreate { .. }
+            | CommandOutput::ListingActivate { .. }
+            | CommandOutput::ListingPublish { .. }
+            | CommandOutput::ListingDiscover { .. }
+            | CommandOutput::ListingBuy { .. }
+            | CommandOutput::ListingCoordinatorSign { .. }
+            | CommandOutput::ListingFinalize { .. } => {
+                serde_json::to_string_pretty(output).unwrap_or_default()
+            }
             CommandOutput::IntentFixtureGenerate { .. } => {
                 self.print_intent_fixture_generate(output)
             }

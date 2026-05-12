@@ -419,6 +419,95 @@ Command:
 Success fields:
 `inscription`, `ask_sats`, `txid`, `dry_run`, `inscription_risk`, `thumbnail_lines?`, `hide_inscription_ids`, `raw_response`
 
+## 7.32.0 listing sell
+
+Command:
+`listing sell --inscription <id> --amount <u64> --fee-rate <u64> --coordinator-pubkey-hex <xonly-hex> [--expires-in-secs <u64>] [--created-at-unix <unix>] [--nonce <u64>] [--seller-payout-address <addr>] [--recovery-address <addr>] [--activate] [--dry-run] [--relay <url>... --secret-key-hex <hex>] [--listing-out-file <path>] [--tx1-out-file <path>] [--sale-psbt-out-file <path>] [--recovery-psbt-out-file <path>] [--signed-tx1-out-file <path>] [--timeout-ms N]`
+
+Success fields:
+raw JSON with `action`, `inscription`, `ask_sats`, `fee_rate_sat_vb`, `seller_outpoint`, `passthrough_outpoint`, `seller_pubkey_hex`, `coordinator_pubkey_hex`, `expires_at_unix`, `listing`, `ord_url`, `activation?`, `publish?`
+
+Notes:
+1. Agent convenience wrapper for seller flow.
+2. Builds the same listing envelope and PSBTs as `listing create`.
+3. When `--activate` is set, signs TX1; `--dry-run` avoids broadcast.
+4. When `--relay` is supplied, `--secret-key-hex` is required and the listing is published after creation/activation.
+
+## 7.32.1 listing create
+
+Command:
+`listing create --inscription <id> --amount <u64> --fee-rate <u64> --coordinator-pubkey-hex <xonly-hex> [--expires-in-secs <u64>] [--created-at-unix <unix>] [--nonce <u64>] [--seller-payout-address <addr>] [--recovery-address <addr>] [--listing-out-file <path>] [--tx1-out-file <path>] [--sale-psbt-out-file <path>] [--recovery-psbt-out-file <path>]`
+
+Success fields:
+`inscription`, `ask_sats`, `fee_rate_sat_vb`, `seller_outpoint`, `passthrough_outpoint`, `seller_pubkey_hex`, `coordinator_pubkey_hex`, `expires_at_unix`, `raw_response`
+
+Notes:
+1. Seller-initiated fixed-price listing flow; distinct from buyer-initiated `offer`.
+2. Requires the inscription to already be in the wallet.
+3. Builds TX1, sale, and recovery PSBTs; the sale PSBT is seller-signed with `SIGHASH_SINGLE|ANYONECANPAY`.
+
+## 7.32.2 listing activate
+
+Command:
+`listing activate [--listing-json <json> | --listing-file <path> | --listing-stdin] [--dry-run] [--signed-tx1-out-file <path>]`
+
+Success fields:
+`inscription`, `txid`, `dry_run`, `inscription_risk`, `raw_response`
+
+## 7.32.3 listing publish
+
+Command:
+`listing publish [--listing-json <json> | --listing-file <path> | --listing-stdin] --secret-key-hex <hex> --relay <url>... [--created-at-unix <unix>] [--timeout-ms N]`
+
+Success fields:
+`event_id`, `accepted_relays`, `total_relays`, `publish_results`, `raw_response`
+
+## 7.32.4 listing discover
+
+Command:
+`listing discover --relay <url>... [--limit N] [--timeout-ms N]`
+
+Success fields:
+`event_count`, `listing_count`, `listings`, `raw_response`
+
+## 7.32.5 listing buy
+
+Command:
+`listing buy [--listing-json <json> | --listing-file <path> | --listing-stdin] [--expect-inscription <id>] [--expect-ask-sats <u64>] [--listing-out-file <path>] [--psbt-out-file <path>]`
+
+Success fields:
+`inscription`, `ask_sats`, `fee_sats`, `buyer_input_count`, `raw_response`
+
+## 7.32.6 listing coordinator-sign
+
+Command:
+`listing coordinator-sign [--listing-json <json> | --listing-file <path> | --listing-stdin] --secret-key-hex <hex> [--created-at-unix <unix>] [--listing-out-file <path>] [--psbt-out-file <path>]`
+
+Success fields:
+`inscription`, `ask_sats`, `raw_response`
+
+## 7.32.7 listing finalize
+
+Command:
+`listing finalize [--listing-json <json> | --listing-file <path> | --listing-stdin] [--broadcast] [--finalized-psbt-out-file <path>] [--tx-hex-out-file <path>]`
+
+Success fields:
+`inscription`, `ask_sats`, `txid`, `broadcast`, `raw_response`
+
+## 7.32.8 listing purchase
+
+Command:
+`listing purchase ([--listing-json <json> | --listing-file <path> | --listing-stdin] | --relay <url>...) [--expect-inscription <id>] [--expect-ask-sats <u64>] [--limit N] [--timeout-ms N] [--coordinator-secret-key-hex <hex>] [--finalize] [--broadcast] [--listing-out-file <path>] [--psbt-out-file <path>] [--finalized-psbt-out-file <path>] [--tx-hex-out-file <path>]`
+
+Success fields:
+raw JSON with `action`, `inscription`, `ask_sats`, `fee_sats`, `seller_input_index`, `buyer_input_count`, `buyer_receive_output_index`, `psbt`, `listing`, `coordinator?`, `finalized?`
+
+Notes:
+1. Agent convenience wrapper for buyer flow.
+2. Accepts either a listing source or relay discovery, not both.
+3. `--expect-inscription` is required when purchasing from relay discovery.
+4. `--finalize` requires `--coordinator-secret-key-hex`; `--broadcast` requires `--finalize`.
+
 ## 7.33 pulse login
 
 Command:
@@ -502,7 +591,21 @@ For `offer publish` and `offer discover`, at least one `--relay <url>` is requir
 
 `offer create` requires `--ord-url` and a resolvable inscription on that ord indexer.
 
-When `--policy-mode strict` is set, `psbt sign`, `psbt broadcast`, and `offer accept` fail closed with `error.type="policy"` for unsafe, medium/high, or unknown inscription-risk outcomes.
+For `listing activate`, `listing publish`, `listing buy`, `listing coordinator-sign`, and `listing finalize`, exactly one listing source must be present:
+
+1. `--listing-json <json>`
+2. `--listing-file <path>`
+3. `--listing-stdin`
+
+If zero or multiple are provided, return `invalid`.
+
+For `listing publish` and `listing discover`, at least one `--relay <url>` is required.
+
+For `listing purchase`, provide either exactly one listing source or at least one `--relay <url>`, not both. Relay discovery requires `--expect-inscription`.
+
+`listing create` and `listing sell` require `--ord-url` and a resolvable wallet-owned inscription on that ord indexer.
+
+When `--policy-mode strict` is set, `psbt sign`, `psbt broadcast`, `offer accept`, and `listing activate` fail closed with `error.type="policy"` for unsafe, medium/high, or unknown inscription-risk outcomes.
 
 ## 9) Compatibility and Versioning Policy
 

@@ -97,3 +97,41 @@ For unstable networks, add:
 ```bash
 --network-timeout-secs 20 --network-retries 2
 ```
+
+## 5) Fixed-Price Listing Purchase
+
+Goal: Complete a seller-initiated fixed-price listing discovered over Nostr.
+
+Recommended compact flow:
+
+```bash
+zinc-cli --agent listing purchase \
+  --relay <relay-url> \
+  --expect-inscription <inscription-id> \
+  --expect-ask-sats <sats> \
+  --listing-out-file /tmp/listing.buyer.json
+```
+
+Primitive checkpoint flow:
+
+```bash
+zinc-cli --agent listing discover --relay <relay-url> --limit 50
+zinc-cli --agent listing buy \
+  --listing-json '<listing-json>' \
+  --expect-inscription <inscription-id> \
+  --expect-ask-sats <sats> \
+  --listing-out-file /tmp/listing.buyer.json
+zinc-cli --agent listing coordinator-sign \
+  --listing-file /tmp/listing.buyer.json \
+  --secret-key-hex <coordinator-secret-key-hex> \
+  --listing-out-file /tmp/listing.coordinator.json
+zinc-cli --agent listing finalize \
+  --listing-file /tmp/listing.coordinator.json \
+  --broadcast
+```
+
+Agent checks:
+- Treat `offer` and `listing` as different protocols: `offer` is buyer-initiated, `listing` is seller-initiated.
+- Require expectation flags before buying a listing from a relay.
+- Keep the updated listing envelope from each step; the sale PSBT is replaced as signatures are added.
+- Prefer `listing purchase` for ordinary agent buys; use primitive commands when a workflow needs explicit resume points.

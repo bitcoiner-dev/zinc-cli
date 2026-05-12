@@ -239,7 +239,7 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
                 .with_scheme(profile.scheme.into())
                 .with_payment_address_type(profile.payment_address_type.into())
                 .with_account_index(profile.account_index)
-                .with_scan_policy(zinc_core::ScanPolicy {
+                .scan_policy(zinc_core::ScanPolicy {
                     account_gap_limit: profile.account_gap_limit,
                     address_scan_depth: profile.address_scan_depth,
                 });
@@ -263,7 +263,7 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
                 .with_scheme(profile.scheme.into())
                 .with_payment_address_type(profile.payment_address_type.into())
                 .with_account_index(profile.account_index)
-                .with_scan_policy(zinc_core::ScanPolicy {
+                .scan_policy(zinc_core::ScanPolicy {
                     account_gap_limit: profile.account_gap_limit,
                     address_scan_depth: profile.address_scan_depth,
                 });
@@ -296,7 +296,7 @@ pub fn load_wallet_session(config: &ServiceConfig<'_>) -> Result<WalletSession, 
                 .with_scheme(profile.scheme.into())
                 .with_payment_address_type(profile.payment_address_type.into())
                 .with_account_index(profile.account_index)
-                .with_scan_policy(zinc_core::ScanPolicy {
+                .scan_policy(zinc_core::ScanPolicy {
                     account_gap_limit: profile.account_gap_limit,
                     address_scan_depth: profile.address_scan_depth,
                 })

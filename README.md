@@ -87,7 +87,7 @@ Reports are written to `demo/artifacts/`.
 - sync: `sync chain|ordinals`
 - addresses and balance: `address taproot|payment`, `balance`
 - transfers: `psbt create|analyze|sign|broadcast`
-- advanced offers (hidden from top-level help): `offer create|publish|discover|accept|submit-ord|list-ord`
+- advanced marketplace flows (hidden from top-level help): buyer offers via `offer create|publish|discover|accept|submit-ord|list-ord`; seller fixed-price listings via compact `listing sell|purchase` or primitive `listing create|activate|publish|discover|buy|coordinator-sign|finalize`
 - accounts: `account list|use`
 - waits and tx: `wait tx-confirmed|balance`, `tx list`
 - operations: `snapshot save|restore|list`, `lock info|clear`, `doctor`

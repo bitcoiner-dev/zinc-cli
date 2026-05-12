@@ -175,6 +175,8 @@ pub enum Command {
     Pair(IntentPairArgs),
     #[command(hide = true)]
     Offer(OfferArgs),
+    #[command(hide = true)]
+    Listing(ListingArgs),
     Account(AccountArgs),
     Wait(WaitArgs),
     Snapshot(SnapshotArgs),
@@ -374,6 +376,12 @@ pub enum PsbtAction {
 pub struct OfferArgs {
     #[command(subcommand)]
     pub action: OfferAction,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct ListingArgs {
+    #[command(subcommand)]
+    pub action: ListingAction,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -579,6 +587,192 @@ pub enum OfferAction {
     },
 }
 
+#[derive(Subcommand, Debug, Clone)]
+pub enum ListingAction {
+    Sell {
+        #[arg(long)]
+        inscription: String,
+        #[arg(long, alias = "ask-sats")]
+        amount: u64,
+        #[arg(long)]
+        fee_rate: u64,
+        #[arg(long)]
+        coordinator_pubkey_hex: String,
+        #[arg(long, default_value_t = 3600)]
+        expires_in_secs: u64,
+        #[arg(long)]
+        created_at_unix: Option<u64>,
+        #[arg(long)]
+        nonce: Option<u64>,
+        #[arg(long)]
+        seller_payout_address: Option<String>,
+        #[arg(long)]
+        recovery_address: Option<String>,
+        #[arg(long, help = "Sign and broadcast TX1 so the listing becomes buyable")]
+        activate: bool,
+        #[arg(long, help = "When activating, sign TX1 but do not broadcast")]
+        dry_run: bool,
+        #[arg(long = "relay")]
+        relay: Vec<String>,
+        #[arg(long)]
+        secret_key_hex: Option<String>,
+        #[arg(long)]
+        listing_out_file: Option<PathBuf>,
+        #[arg(long)]
+        tx1_out_file: Option<PathBuf>,
+        #[arg(long)]
+        sale_psbt_out_file: Option<PathBuf>,
+        #[arg(long)]
+        recovery_psbt_out_file: Option<PathBuf>,
+        #[arg(long)]
+        signed_tx1_out_file: Option<PathBuf>,
+        #[arg(long, default_value_t = 5000)]
+        timeout_ms: u64,
+    },
+    Create {
+        #[arg(long)]
+        inscription: String,
+        #[arg(long, alias = "ask-sats")]
+        amount: u64,
+        #[arg(long)]
+        fee_rate: u64,
+        #[arg(long)]
+        coordinator_pubkey_hex: String,
+        #[arg(long, default_value_t = 3600)]
+        expires_in_secs: u64,
+        #[arg(long)]
+        created_at_unix: Option<u64>,
+        #[arg(long)]
+        nonce: Option<u64>,
+        #[arg(long)]
+        seller_payout_address: Option<String>,
+        #[arg(long)]
+        recovery_address: Option<String>,
+        #[arg(long)]
+        listing_out_file: Option<PathBuf>,
+        #[arg(long)]
+        tx1_out_file: Option<PathBuf>,
+        #[arg(long)]
+        sale_psbt_out_file: Option<PathBuf>,
+        #[arg(long)]
+        recovery_psbt_out_file: Option<PathBuf>,
+    },
+    Activate {
+        #[arg(long)]
+        listing_json: Option<String>,
+        #[arg(long)]
+        listing_file: Option<PathBuf>,
+        #[arg(long)]
+        listing_stdin: bool,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        signed_tx1_out_file: Option<PathBuf>,
+    },
+    Publish {
+        #[arg(long)]
+        listing_json: Option<String>,
+        #[arg(long)]
+        listing_file: Option<PathBuf>,
+        #[arg(long)]
+        listing_stdin: bool,
+        #[arg(long)]
+        secret_key_hex: String,
+        #[arg(long)]
+        relay: Vec<String>,
+        #[arg(long)]
+        created_at_unix: Option<u64>,
+        #[arg(long, default_value_t = 5000)]
+        timeout_ms: u64,
+    },
+    Discover {
+        #[arg(long)]
+        relay: Vec<String>,
+        #[arg(long, default_value_t = 256)]
+        limit: usize,
+        #[arg(long, default_value_t = 5000)]
+        timeout_ms: u64,
+    },
+    Buy {
+        #[arg(long)]
+        listing_json: Option<String>,
+        #[arg(long)]
+        listing_file: Option<PathBuf>,
+        #[arg(long)]
+        listing_stdin: bool,
+        #[arg(long)]
+        expect_inscription: Option<String>,
+        #[arg(long)]
+        expect_ask_sats: Option<u64>,
+        #[arg(long)]
+        listing_out_file: Option<PathBuf>,
+        #[arg(long)]
+        psbt_out_file: Option<PathBuf>,
+    },
+    CoordinatorSign {
+        #[arg(long)]
+        listing_json: Option<String>,
+        #[arg(long)]
+        listing_file: Option<PathBuf>,
+        #[arg(long)]
+        listing_stdin: bool,
+        #[arg(long)]
+        secret_key_hex: String,
+        #[arg(long)]
+        created_at_unix: Option<u64>,
+        #[arg(long)]
+        listing_out_file: Option<PathBuf>,
+        #[arg(long)]
+        psbt_out_file: Option<PathBuf>,
+    },
+    Finalize {
+        #[arg(long)]
+        listing_json: Option<String>,
+        #[arg(long)]
+        listing_file: Option<PathBuf>,
+        #[arg(long)]
+        listing_stdin: bool,
+        #[arg(long)]
+        broadcast: bool,
+        #[arg(long)]
+        finalized_psbt_out_file: Option<PathBuf>,
+        #[arg(long)]
+        tx_hex_out_file: Option<PathBuf>,
+    },
+    Purchase {
+        #[arg(long)]
+        listing_json: Option<String>,
+        #[arg(long)]
+        listing_file: Option<PathBuf>,
+        #[arg(long)]
+        listing_stdin: bool,
+        #[arg(long = "relay")]
+        relay: Vec<String>,
+        #[arg(long)]
+        expect_inscription: Option<String>,
+        #[arg(long)]
+        expect_ask_sats: Option<u64>,
+        #[arg(long, default_value_t = 256)]
+        limit: usize,
+        #[arg(long, default_value_t = 5000)]
+        timeout_ms: u64,
+        #[arg(long)]
+        coordinator_secret_key_hex: Option<String>,
+        #[arg(long)]
+        finalize: bool,
+        #[arg(long)]
+        broadcast: bool,
+        #[arg(long)]
+        listing_out_file: Option<PathBuf>,
+        #[arg(long)]
+        psbt_out_file: Option<PathBuf>,
+        #[arg(long)]
+        finalized_psbt_out_file: Option<PathBuf>,
+        #[arg(long)]
+        tx_hex_out_file: Option<PathBuf>,
+    },
+}
+
 #[derive(Parser, Debug, Clone)]
 pub struct AccountArgs {
     #[command(subcommand)]
@@ -724,8 +918,11 @@ pub enum ScenarioAction {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, IntentAction, IntentPairAction, OfferAction};
+    use super::{
+        Cli, Command, IntentAction, IntentPairAction, ListingAction, ListingArgs, OfferAction,
+    };
     use clap::Parser;
+    use std::path::PathBuf;
 
     #[test]
     fn parses_global_thumb_switch() {
@@ -1292,6 +1489,302 @@ mod tests {
                 _ => panic!("expected offer accept action"),
             },
             _ => panic!("expected offer command"),
+        }
+    }
+
+    #[test]
+    fn parses_listing_create_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "listing",
+            "create",
+            "--inscription",
+            "inscription123",
+            "--amount",
+            "1234",
+            "--fee-rate",
+            "2",
+            "--coordinator-pubkey-hex",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "--expires-in-secs",
+            "7200",
+            "--listing-out-file",
+            "listing.json",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Listing(args) => match args.action {
+                ListingAction::Create {
+                    inscription,
+                    amount,
+                    fee_rate,
+                    coordinator_pubkey_hex,
+                    expires_in_secs,
+                    listing_out_file,
+                    ..
+                } => {
+                    assert_eq!(inscription, "inscription123");
+                    assert_eq!(amount, 1234);
+                    assert_eq!(fee_rate, 2);
+                    assert_eq!(
+                        coordinator_pubkey_hex,
+                        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+                    );
+                    assert_eq!(expires_in_secs, 7200);
+                    assert_eq!(listing_out_file.unwrap(), PathBuf::from("listing.json"));
+                }
+                _ => panic!("expected listing create action"),
+            },
+            _ => panic!("expected listing command"),
+        }
+    }
+
+    #[test]
+    fn parses_listing_sell_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "listing",
+            "sell",
+            "--inscription",
+            "inscription123",
+            "--amount",
+            "1234",
+            "--fee-rate",
+            "2",
+            "--coordinator-pubkey-hex",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "--activate",
+            "--dry-run",
+            "--relay",
+            "wss://relay.example",
+            "--secret-key-hex",
+            "abc123",
+            "--listing-out-file",
+            "listing.json",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Listing(args) => match args.action {
+                ListingAction::Sell {
+                    inscription,
+                    amount,
+                    fee_rate,
+                    coordinator_pubkey_hex,
+                    activate,
+                    dry_run,
+                    relay,
+                    secret_key_hex,
+                    listing_out_file,
+                    ..
+                } => {
+                    assert_eq!(inscription, "inscription123");
+                    assert_eq!(amount, 1234);
+                    assert_eq!(fee_rate, 2);
+                    assert_eq!(
+                        coordinator_pubkey_hex,
+                        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+                    );
+                    assert!(activate);
+                    assert!(dry_run);
+                    assert_eq!(relay, vec!["wss://relay.example".to_string()]);
+                    assert_eq!(secret_key_hex.as_deref(), Some("abc123"));
+                    assert_eq!(listing_out_file.unwrap(), PathBuf::from("listing.json"));
+                }
+                _ => panic!("expected listing sell action"),
+            },
+            _ => panic!("expected listing command"),
+        }
+    }
+
+    #[test]
+    fn parses_listing_activate_subcommand() {
+        let cli = Cli::try_parse_from([
+            "zinc-cli",
+            "listing",
+            "activate",
+            "--listing-json",
+            "{\"version\":1}",
+            "--dry-run",
+        ])
+        .expect("cli parse");
+
+        match cli.command {
+            Command::Listing(args) => match args.action {
+                ListingAction::Activate {
+                    listing_json,
+                    dry_run,
+                    ..
+                } => {
+                    assert_eq!(listing_json.as_deref(), Some("{\"version\":1}"));
+                    assert!(dry_run);
+                }
+                _ => panic!("expected listing activate action"),
+            },
+            _ => panic!("expected listing command"),
+        }
+    }
+
+    #[test]
+    fn parses_listing_publish_and_discover_subcommands() {
+        let publish = Cli::try_parse_from([
+            "zinc-cli",
+            "listing",
+            "publish",
+            "--listing-json",
+            "{\"version\":1}",
+            "--secret-key-hex",
+            "abc123",
+            "--relay",
+            "wss://relay.example",
+        ])
+        .expect("cli parse");
+
+        match publish.command {
+            Command::Listing(args) => match args.action {
+                ListingAction::Publish {
+                    relay,
+                    secret_key_hex,
+                    ..
+                } => {
+                    assert_eq!(relay, vec!["wss://relay.example".to_string()]);
+                    assert_eq!(secret_key_hex, "abc123");
+                }
+                _ => panic!("expected listing publish action"),
+            },
+            _ => panic!("expected listing command"),
+        }
+
+        let discover = Cli::try_parse_from([
+            "zinc-cli",
+            "listing",
+            "discover",
+            "--relay",
+            "wss://relay.example",
+            "--limit",
+            "50",
+        ])
+        .expect("cli parse");
+
+        match discover.command {
+            Command::Listing(args) => match args.action {
+                ListingAction::Discover { relay, limit, .. } => {
+                    assert_eq!(relay, vec!["wss://relay.example".to_string()]);
+                    assert_eq!(limit, 50);
+                }
+                _ => panic!("expected listing discover action"),
+            },
+            _ => panic!("expected listing command"),
+        }
+    }
+
+    #[test]
+    fn parses_listing_buy_coordinator_sign_and_finalize_subcommands() {
+        let buy = Cli::try_parse_from([
+            "zinc-cli",
+            "listing",
+            "buy",
+            "--listing-json",
+            "{\"version\":1}",
+            "--expect-inscription",
+            "inscription123",
+            "--expect-ask-sats",
+            "1234",
+        ])
+        .expect("cli parse");
+
+        match buy.command {
+            Command::Listing(args) => match args.action {
+                ListingAction::Buy {
+                    listing_json,
+                    expect_inscription,
+                    expect_ask_sats,
+                    ..
+                } => {
+                    assert_eq!(listing_json.as_deref(), Some("{\"version\":1}"));
+                    assert_eq!(expect_inscription.as_deref(), Some("inscription123"));
+                    assert_eq!(expect_ask_sats, Some(1234));
+                }
+                _ => panic!("expected listing buy action"),
+            },
+            _ => panic!("expected listing command"),
+        }
+
+        let coordinator = Cli::try_parse_from([
+            "zinc-cli",
+            "listing",
+            "coordinator-sign",
+            "--listing-json",
+            "{\"version\":1}",
+            "--secret-key-hex",
+            "abc123",
+        ])
+        .expect("cli parse");
+        assert!(matches!(
+            coordinator.command,
+            Command::Listing(ListingArgs {
+                action: ListingAction::CoordinatorSign { .. }
+            })
+        ));
+
+        let finalize = Cli::try_parse_from([
+            "zinc-cli",
+            "listing",
+            "finalize",
+            "--listing-json",
+            "{\"version\":1}",
+            "--broadcast",
+        ])
+        .expect("cli parse");
+        assert!(matches!(
+            finalize.command,
+            Command::Listing(ListingArgs {
+                action: ListingAction::Finalize {
+                    broadcast: true,
+                    ..
+                }
+            })
+        ));
+
+        let purchase = Cli::try_parse_from([
+            "zinc-cli",
+            "listing",
+            "purchase",
+            "--relay",
+            "wss://relay.example",
+            "--expect-inscription",
+            "inscription123",
+            "--expect-ask-sats",
+            "1234",
+            "--coordinator-secret-key-hex",
+            "def456",
+            "--finalize",
+            "--broadcast",
+        ])
+        .expect("cli parse");
+
+        match purchase.command {
+            Command::Listing(args) => match args.action {
+                ListingAction::Purchase {
+                    relay,
+                    expect_inscription,
+                    expect_ask_sats,
+                    coordinator_secret_key_hex,
+                    finalize,
+                    broadcast,
+                    ..
+                } => {
+                    assert_eq!(relay, vec!["wss://relay.example".to_string()]);
+                    assert_eq!(expect_inscription.as_deref(), Some("inscription123"));
+                    assert_eq!(expect_ask_sats, Some(1234));
+                    assert_eq!(coordinator_secret_key_hex.as_deref(), Some("def456"));
+                    assert!(finalize);
+                    assert!(broadcast);
+                }
+                _ => panic!("expected listing purchase action"),
+            },
+            _ => panic!("expected listing command"),
         }
     }
 }

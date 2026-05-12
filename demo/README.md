@@ -34,7 +34,7 @@ Artifacts are written to `demo/artifacts/`.
 
 By default the demo points to regtest endpoints:
 
-- `ZINC_CLI_ESPLORA_URL=https://esplora-rt.exittheloop.com/api`
+- `ZINC_CLI_ESPLORA_URL=https://esplora-rt.exittheloop.com`
 - `ZINC_CLI_ORD_URL=https://ord-rt.exittheloop.com`
 - `ZINC_CLI_NETWORK=regtest`
 - `ZINC_CLI_SCHEME=dual`
@@ -50,6 +50,11 @@ The first-5-minutes script validates:
 3. inscription listing
 4. account/address operations
 5. optional BTC transfer flow (only if spendable funds are sufficient)
+
+Marketplace demos can layer on the hidden advanced flows:
+
+- buyer-initiated offers: `offer create|publish|discover|accept`
+- seller-initiated fixed-price listings: compact `listing sell|purchase`, or primitive `listing create|activate|publish|discover|buy|coordinator-sign|finalize`
 
 The script marks the run as:
 

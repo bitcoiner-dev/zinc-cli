@@ -499,6 +499,205 @@ fn test_psbt_analyze_stdin_empty_is_invalid() {
 }
 
 #[test]
+fn test_listing_source_rules_are_enforced() {
+    let mut missing = cargo_cmd();
+    missing.args(&["run", "--quiet", "--", "--agent", "listing", "buy"]);
+    let output = missing.output().expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("requires one of --listing-json, --listing-file, --listing-stdin"));
+
+    let mut multiple = cargo_cmd();
+    multiple.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "listing",
+        "buy",
+        "--listing-json",
+        "{}",
+        "--listing-file",
+        "/tmp/not-used-listing.json",
+    ]);
+    let output = multiple.output().expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("accepts only one of --listing-json, --listing-file, --listing-stdin"));
+}
+
+#[test]
+fn test_listing_relay_rules_are_enforced() {
+    let mut publish = cargo_cmd();
+    publish.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "listing",
+        "publish",
+        "--listing-json",
+        "{}",
+        "--secret-key-hex",
+        "00",
+    ]);
+    let output = publish.output().expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("at least one --relay is required"));
+
+    let mut discover = cargo_cmd();
+    discover.args(&["run", "--quiet", "--", "--agent", "listing", "discover"]);
+    let output = discover.output().expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("at least one --relay is required"));
+}
+
+#[test]
+fn test_listing_compact_wrapper_rules_are_enforced() {
+    let mut sell_dry_run = cargo_cmd();
+    sell_dry_run.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "listing",
+        "sell",
+        "--inscription",
+        "abc",
+        "--amount",
+        "1000",
+        "--fee-rate",
+        "1",
+        "--coordinator-pubkey-hex",
+        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "--dry-run",
+    ]);
+    let output = sell_dry_run.output().expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("--dry-run only applies when --activate is set"));
+
+    let mut sell_relay = cargo_cmd();
+    sell_relay.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "listing",
+        "sell",
+        "--inscription",
+        "abc",
+        "--amount",
+        "1000",
+        "--fee-rate",
+        "1",
+        "--coordinator-pubkey-hex",
+        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "--relay",
+        "wss://relay.example",
+    ]);
+    let output = sell_relay.output().expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("--secret-key-hex is required when --relay is supplied"));
+
+    let mut purchase_missing_source = cargo_cmd();
+    purchase_missing_source.args(&["run", "--quiet", "--", "--agent", "listing", "purchase"]);
+    let output = purchase_missing_source
+        .output()
+        .expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("listing purchase requires a listing source or at least one --relay"));
+
+    let mut purchase_both_sources = cargo_cmd();
+    purchase_both_sources.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "listing",
+        "purchase",
+        "--listing-json",
+        "{}",
+        "--relay",
+        "wss://relay.example",
+    ]);
+    let output = purchase_both_sources
+        .output()
+        .expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("either a listing source or --relay discovery, not both"));
+}
+
+#[test]
+fn test_password_stdin_conflicts_with_listing_stdin() {
+    let mut cmd = cargo_cmd();
+    cmd.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--password-stdin",
+        "listing",
+        "buy",
+        "--listing-stdin",
+    ]);
+    let output = cmd.output().expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("--password-stdin cannot be combined with --listing-stdin"));
+}
+
+#[test]
 fn test_atomic_write_ignores_corrupt_temp_file() {
     let data_dir = unique_data_dir("zinc_test_atomic_temp");
     let _ = fs::remove_dir_all(&data_dir);
@@ -1539,7 +1738,7 @@ fn test_setup_without_flags_uses_noninteractive_path_in_tests() {
     assert_eq!(json["defaults"]["network"], "regtest");
     assert_eq!(
         json["defaults"]["esplora_url"],
-        "https://esplora-rt.exittheloop.com/api"
+        "https://esplora-rt.exittheloop.com"
     );
     assert_eq!(
         json["defaults"]["ord_url"],

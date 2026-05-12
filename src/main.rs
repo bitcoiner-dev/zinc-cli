@@ -740,6 +740,20 @@ fn is_mutating_command(command: &Command) -> bool {
                 | crate::cli::OfferAction::SubmitOrd { .. }
                 | crate::cli::OfferAction::Accept { dry_run: false, .. }
         ),
+        Command::Listing(args) => matches!(
+            &args.action,
+            crate::cli::ListingAction::Sell { .. }
+                | crate::cli::ListingAction::Create { .. }
+                | crate::cli::ListingAction::Activate { dry_run: false, .. }
+                | crate::cli::ListingAction::Publish { .. }
+                | crate::cli::ListingAction::Buy { .. }
+                | crate::cli::ListingAction::CoordinatorSign { .. }
+                | crate::cli::ListingAction::Finalize {
+                    broadcast: true,
+                    ..
+                }
+                | crate::cli::ListingAction::Purchase { .. }
+        ),
         Command::Account(args) => {
             matches!(&args.action, crate::cli::AccountAction::Use { .. })
         }
@@ -928,6 +942,7 @@ pub(crate) async fn dispatch(cli: &Cli) -> Result<crate::output::CommandOutput, 
         Command::Intent(args) => crate::commands::intent::run(cli, args).await,
         Command::Pair(args) => crate::commands::intent::run_pair(cli, args).await,
         Command::Offer(args) => crate::commands::offer::run(cli, args).await,
+        Command::Listing(args) => crate::commands::listing::run(cli, args).await,
         Command::Account(args) => crate::commands::account::run(cli, args).await,
         Command::Wait(args) => crate::commands::wait::run(cli, args).await,
         Command::Snapshot(args) => crate::commands::snapshot::run(cli, args).await,
@@ -971,6 +986,7 @@ pub(crate) fn needs_lock(command: &Command) -> bool {
             | Command::Intent(..)
             | Command::Pair(..)
             | Command::Offer { .. }
+            | Command::Listing { .. }
             | Command::Insight { .. }
     )
 }

@@ -351,6 +351,119 @@ Rules:
 - `insight appraise` uses the configured Pulse Oracle to provide collection metadata and floor prices for all inscriptions in the current account.
 - `pulse login` authenticates you with Pulse Oracle using OAuth2 Device Authorization (default) or a manual token.
 
+## 6.1) Fixed-Price Listing Commands (Nostr + Sale PSBT, Advanced)
+
+Listings are seller-initiated fixed-price sale PSBTs. Use `offer` when a buyer proposes to buy; use `listing` when a seller publishes a buyable price.
+
+Recommended agent path: use `listing sell` and `listing purchase` as the compact workflow, and fall back to the primitive commands below when you need manual checkpoints.
+
+Create, optionally activate, and publish a seller listing:
+
+```bash
+zinc-cli --agent --ord-url https://ord.example listing sell \
+  --inscription <inscription-id> \
+  --amount 100000 \
+  --fee-rate 1 \
+  --coordinator-pubkey-hex <coordinator-xonly-pubkey-hex> \
+  --activate \
+  --relay wss://nostr.example \
+  --secret-key-hex <seller-secret-key-hex> \
+  --listing-out-file /tmp/listing.json
+```
+
+Discover a matching listing from relays, fund buyer inputs, and write the updated envelope:
+
+```bash
+zinc-cli --agent listing purchase \
+  --relay wss://nostr.example \
+  --expect-inscription <inscription-id> \
+  --expect-ask-sats 100000 \
+  --listing-out-file /tmp/listing.buyer.json \
+  --psbt-out-file /tmp/listing.buyer.psbt
+```
+
+If the caller also controls the coordinator key, `listing purchase` can complete the remaining sale path:
+
+```bash
+zinc-cli --agent listing purchase \
+  --listing-file /tmp/listing.json \
+  --expect-inscription <inscription-id> \
+  --expect-ask-sats 100000 \
+  --coordinator-secret-key-hex <coordinator-secret-key-hex> \
+  --finalize \
+  --broadcast
+```
+
+Primitive seller flow: create a listing and write the relay-ready envelope:
+
+```bash
+zinc-cli --agent --ord-url https://ord.example listing create \
+  --inscription <inscription-id> \
+  --amount 100000 \
+  --fee-rate 1 \
+  --coordinator-pubkey-hex <coordinator-xonly-pubkey-hex> \
+  --listing-out-file /tmp/listing.json \
+  --tx1-out-file /tmp/listing.tx1.psbt \
+  --sale-psbt-out-file /tmp/listing.sale.psbt \
+  --recovery-psbt-out-file /tmp/listing.recovery.psbt
+```
+
+Activate the listing by signing and broadcasting TX1:
+
+```bash
+zinc-cli --agent listing activate \
+  --listing-file /tmp/listing.json
+```
+
+Publish and discover listings over Nostr:
+
+```bash
+zinc-cli --agent listing publish \
+  --listing-file /tmp/listing.json \
+  --secret-key-hex <seller-secret-key-hex> \
+  --relay wss://nostr.example
+
+zinc-cli --agent listing discover \
+  --relay wss://nostr.example \
+  --limit 256
+```
+
+Buyer funds and signs buyer inputs:
+
+```bash
+zinc-cli --agent listing buy \
+  --listing-file /tmp/listing.json \
+  --expect-inscription <inscription-id> \
+  --expect-ask-sats 100000 \
+  --listing-out-file /tmp/listing.buyer.json \
+  --psbt-out-file /tmp/listing.buyer.psbt
+```
+
+Coordinator signs, then finalize and optionally broadcast:
+
+```bash
+zinc-cli --agent listing coordinator-sign \
+  --listing-file /tmp/listing.buyer.json \
+  --secret-key-hex <coordinator-secret-key-hex> \
+  --listing-out-file /tmp/listing.coordinator.json
+
+zinc-cli --agent listing finalize \
+  --listing-file /tmp/listing.coordinator.json \
+  --broadcast
+```
+
+Rules:
+
+- Listing source commands require exactly one of `--listing-json`, `--listing-file`, `--listing-stdin`.
+- `--password-stdin` cannot be combined with `--listing-stdin`.
+- `listing publish` and `listing discover` require at least one `--relay`.
+- `listing sell --relay` requires `--secret-key-hex`; `listing sell --dry-run` requires `--activate`.
+- `listing purchase` accepts either a listing source or relay discovery, not both.
+- `listing purchase --relay` requires `--expect-inscription`.
+- `listing purchase --finalize` requires `--coordinator-secret-key-hex`; `--broadcast` requires `--finalize`.
+- `listing create` requires `--ord-url` and a wallet-owned inscription available from the ord indexer.
+- `listing activate --dry-run` signs TX1 locally without broadcasting.
+
 ## 7) Oracle & Market Insight
 
 Appraise your wallet (requires Pulse Oracle):
@@ -518,6 +631,6 @@ cargo test --test offer_live test_offer_nostr_publish_discover_live -- --nocaptu
 Notes:
 - Tests are opt-in and skipped unless `ZINC_CLI_LIVE_TESTS=1` is set.
 - Live infra defaults used by the suite:
-  - Esplora: `https://esplora-rt.exittheloop.com/api`
+  - Esplora: `https://esplora-rt.exittheloop.com`
   - Ord: `https://ord-rt.exittheloop.com`
   - Nostr relay: `wss://nostr-regtest.exittheloop.com`

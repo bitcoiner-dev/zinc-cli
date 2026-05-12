@@ -674,6 +674,78 @@ fn test_listing_compact_wrapper_rules_are_enforced() {
 }
 
 #[test]
+fn test_insight_market_json_source_rules_are_enforced() {
+    let data_dir = unique_data_dir("zinc_test_market_rules");
+    init_wallet(&data_dir, "testpass");
+
+    let mut missing = cargo_cmd();
+    missing.env("ZINC_WALLET_PASSWORD", "testpass");
+    missing.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "insight",
+        "market",
+        "buy-submit",
+        "--collection-slug",
+        "nodemonkes",
+        "--expect-inscription",
+        "inscription123",
+        "--expect-listing-id",
+        "listing123",
+        "--expect-price-sats",
+        "100000",
+    ]);
+    let output = missing.output().expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("requires exactly one of --json, --file, --stdin"));
+
+    let mut multiple = cargo_cmd();
+    multiple.env("ZINC_WALLET_PASSWORD", "testpass");
+    multiple.args(&[
+        "run",
+        "--quiet",
+        "--",
+        "--agent",
+        "--data-dir",
+        &data_dir,
+        "insight",
+        "market",
+        "buy-submit",
+        "--collection-slug",
+        "nodemonkes",
+        "--expect-inscription",
+        "inscription123",
+        "--expect-listing-id",
+        "listing123",
+        "--expect-price-sats",
+        "100000",
+        "--json",
+        "{}",
+        "--file",
+        "/tmp/not-used-market.json",
+    ]);
+    let output = multiple.output().expect("failed to execute process");
+    assert!(!output.status.success());
+    let json = parse_json_from_output(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["type"], "invalid");
+    assert!(json["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("requires exactly one of --json, --file, --stdin"));
+}
+
+#[test]
 fn test_password_stdin_conflicts_with_listing_stdin() {
     let mut cmd = cargo_cmd();
     cmd.args(&[

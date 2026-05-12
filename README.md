@@ -91,7 +91,7 @@ Reports are written to `demo/artifacts/`.
 - accounts: `account list|use`
 - waits and tx: `wait tx-confirmed|balance`, `tx list`
 - operations: `snapshot save|restore|list`, `lock info|clear`, `doctor`
-- oracle & market: `insight appraise|search`, `pulse login`
+- oracle & market: `insight appraise|search`, hidden hosted-market `insight market ...`, `pulse login`, `pulse ordnet bind`
 
 ## Docs
 

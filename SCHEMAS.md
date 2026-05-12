@@ -167,6 +167,17 @@ Input modes and rules:
 
 ## Account/Wait/Snapshot
 
+## Hosted Market
+
+Hidden `insight market` commands return raw JSON from the Pulse ord.net gateway. The gateway owns upstream ord.net session storage; the CLI only uses normal Pulse auth.
+
+- `pulse ordnet bind`: `bound`, `provider`, `ordinals_address`, `payment_address`, `requires_confirmed_payment_balance_btc`, `raw_response`
+- `insight market listings|sales|collection-inscriptions|offers|my-offers`: raw upstream JSON
+- `insight market buy-preflight`: raw upstream preflight JSON; CLI includes active payment public key and expectation metadata
+- JSON-body market commands require exactly one of `--json`, `--file`, `--stdin`
+- Submit-phase market commands require explicit expectation flags, validate those expectations against the preflight JSON, add signed PSBT fields, and return raw upstream submit JSON
+- If Pulse is configured with a non-ord.net trading provider such as Satflow, hosted market commands fail with a `capability` error because Satflow is metadata/statistics only.
+
 - `account list`: `accounts`
 - `account use`: `previous_account_index`, `account_index`, `taproot_address`, `payment_address?`
 - `wait tx-confirmed`: `txid`, `confirmation_time`, `confirmed`, `waited_secs`

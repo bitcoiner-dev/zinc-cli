@@ -522,7 +522,21 @@ Notes:
 3. Use `--token <token>` for manual/CI login (legacy behavior).
 4. Supports `--global` to persist session in global config; otherwise per-profile.
 
-## 7.33.1 pulse whoami
+## 7.33.1 pulse ordnet bind
+
+Command:
+`pulse ordnet bind`
+
+Success fields:
+`bound`, `provider`, `ordinals_address`, `payment_address`, `requires_confirmed_payment_balance_btc`, `raw_response`
+
+Notes:
+1. Requires an authenticated Pulse session.
+2. Requests ord.net challenges through Pulse, signs each challenge with the active wallet using BIP-322 simple hex signatures, and asks Pulse to verify/store the upstream ord.net session.
+3. The CLI stores no ord.net API key or ord.net bearer token.
+4. ord.net authenticated trading requires the bound payment address to satisfy the 0.01 BTC confirmed balance requirement.
+
+## 7.33.2 pulse whoami
 
 Command:
 `pulse whoami [--global]`
@@ -533,7 +547,7 @@ Success fields:
 Notes:
 1. Displays current authentication status for Pulse services.
 
-## 7.33.2 pulse logout
+## 7.33.3 pulse logout
 
 Command:
 `pulse logout [--global]`
@@ -543,6 +557,37 @@ Success fields:
 
 Notes:
 1. Revokes the active session and clears local credentials.
+
+## 7.33.4 insight market
+
+Commands:
+`insight market listings [--collection-slug <slug>] [--inscription-id <id>] [--seller-address <addr>] [--sort <recent|price>] [--limit N] [--cursor <cursor>]`
+`insight market sales [--collection-slug <slug>] [--limit N] [--cursor <cursor>]`
+`insight market collection-inscriptions --slug <slug> [--sort <oldest|newest>] [--limit N] [--cursor <cursor>]`
+`insight market buy-preflight --collection-slug <slug> --listing-id <id> --inscription-id <id> [--expect-price-sats <sats>] [--raw-out-file <path>]`
+`insight market buy-submit --collection-slug <slug> --expect-inscription <id> --expect-listing-id <id> --expect-price-sats <sats> [--expect-seller-address <addr>] [--expect-buyer-address <addr>] [--json <json> | --file <path> | --stdin]`
+`insight market list-preflight --collection-slug <slug> [--json <json> | --file <path> | --stdin]`
+`insight market list-submit --collection-slug <slug> --expect-inscription <id> --expect-price-sats <sats> [--expect-seller-address <addr>] [--json <json> | --file <path> | --stdin]`
+`insight market delist --collection-slug <slug> --expect-inscription <id> --expect-listing-id <id> [--expect-seller-address <addr>] [--json <json> | --file <path> | --stdin]`
+`insight market offers --inscription-id <id> [--history] [--page N]`
+`insight market offer-create --collection-slug <slug> [--submit] [--expect-inscription <id>] [--expect-price-sats <sats>] [--expect-buyer-address <addr>] [--json <json> | --file <path> | --stdin]`
+`insight market offer-cancel --inscription-id <id> --offer-id <id>`
+`insight market offer-reject --inscription-id <id> --offer-id <id>`
+`insight market offer-accept --inscription-id <id> --offer-id <id> [--submit] [--expect-price-sats <sats>] [--expect-seller-address <addr>] [--expect-buyer-address <addr>] [--json <json> | --file <path> | --stdin]`
+`insight market offer-counter --inscription-id <id> --offer-id <id> [--submit] [--reject] [--accept] [--expect-price-sats <sats>] [--expect-seller-address <addr>] [--expect-buyer-address <addr>] [--json <json> | --file <path> | --stdin]`
+`insight market my-offers [--view <owned|sent|history>] [--limit N] [--cursor <cursor>]`
+
+Success fields:
+raw JSON returned by the Pulse ord.net gateway.
+
+Notes:
+1. These commands are hidden, agent-facing hosted-market commands.
+2. They require Pulse authentication and an ord.net wallet binding for upstream authenticated access.
+3. JSON-body commands require exactly one of `--json`, `--file`, or `--stdin`.
+4. `buy-preflight` injects the active wallet payment public key and sends expectations for agent auditability.
+5. Submit-phase commands validate supplied `--expect-*` values against the preflight JSON before signing.
+6. Submit-phase commands analyze each unsigned PSBT step, enforce `--policy-mode strict`, sign only upstream-declared input indices when present, and submit the signed payload through Pulse.
+7. Hosted trading requires Pulse to be configured with the `ordnet` trading provider. Satflow-backed Pulse data is metadata/statistics only and returns `capability`/`trading_provider_unsupported` for hosted trading routes.
 
 ## 7.34 insight appraise
 

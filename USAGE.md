@@ -484,6 +484,60 @@ Search for collections and floor prices:
 zinc-cli insight search "pizza comrades"
 ```
 
+Bind the active wallet to ord.net through the Pulse service gateway:
+
+```bash
+zinc-cli --agent pulse ordnet bind
+```
+
+Hosted ord.net market data through Pulse:
+
+```bash
+zinc-cli --agent insight market listings \
+  --collection-slug <slug> \
+  --limit 20
+
+zinc-cli --agent insight market sales \
+  --collection-slug <slug> \
+  --limit 20
+
+zinc-cli --agent insight market collection-inscriptions \
+  --slug <slug> \
+  --sort newest \
+  --limit 20
+```
+
+Hosted purchase preflight through Pulse:
+
+```bash
+zinc-cli --agent insight market buy-preflight \
+  --collection-slug <slug> \
+  --listing-id <listing-id> \
+  --inscription-id <inscription-id> \
+  --expect-price-sats 100000 \
+  --raw-out-file /tmp/ordnet-buy-preflight.json
+```
+
+Hosted purchase submit through Pulse:
+
+```bash
+zinc-cli --agent insight market buy-submit \
+  --collection-slug <slug> \
+  --expect-inscription <inscription-id> \
+  --expect-listing-id <listing-id> \
+  --expect-price-sats 100000 \
+  --file /tmp/ordnet-buy-preflight.json
+```
+
+Rules:
+
+- `pulse ordnet bind` signs ord.net wallet challenges with the active wallet; the CLI does not store ord.net API keys.
+- ord.net requires a wallet binding and a payment address with 0.01 BTC confirmed for authenticated trading access.
+- Hosted market write flows stay two-phase: preflight first, then submit with explicit `--expect-*` checks.
+- Submit commands analyze preflight PSBT steps, honor `--policy-mode strict`, sign only upstream-declared input indices when present, and send the signed payload through Pulse.
+- Hosted trading requires Pulse's trading provider to be `ordnet`; Satflow can inform decisions with metadata/statistics but cannot create, buy, delist, accept, counter, or submit trades.
+- Existing decentralized `offer` and `listing` Nostr workflows are unchanged.
+
 Authenticate with Pulse:
 
 ```bash

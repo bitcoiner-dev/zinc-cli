@@ -884,6 +884,211 @@ pub enum InsightAction {
         #[arg(long, default_value_t = 0.65)]
         min_confidence: f64,
     },
+    #[command(hide = true, about = "Service-backed hosted market workflows")]
+    Market {
+        #[command(subcommand)]
+        action: MarketAction,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum MarketAction {
+    Listings {
+        #[arg(long)]
+        collection_slug: Option<String>,
+        #[arg(long)]
+        inscription_id: Option<String>,
+        #[arg(long)]
+        seller_address: Option<String>,
+        #[arg(long)]
+        sort: Option<String>,
+        #[arg(long)]
+        limit: Option<u64>,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    Sales {
+        #[arg(long)]
+        collection_slug: Option<String>,
+        #[arg(long)]
+        limit: Option<u64>,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    CollectionInscriptions {
+        #[arg(long)]
+        slug: String,
+        #[arg(long)]
+        sort: Option<String>,
+        #[arg(long)]
+        limit: Option<u64>,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    BuyPreflight {
+        #[arg(long)]
+        collection_slug: String,
+        #[arg(long)]
+        listing_id: String,
+        #[arg(long)]
+        inscription_id: String,
+        #[arg(long)]
+        expect_price_sats: Option<u64>,
+        #[arg(long)]
+        raw_out_file: Option<PathBuf>,
+    },
+    BuySubmit {
+        #[arg(long)]
+        collection_slug: String,
+        #[arg(long)]
+        expect_inscription: String,
+        #[arg(long)]
+        expect_listing_id: String,
+        #[arg(long)]
+        expect_price_sats: u64,
+        #[arg(long)]
+        expect_seller_address: Option<String>,
+        #[arg(long)]
+        expect_buyer_address: Option<String>,
+        #[arg(long)]
+        json: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long)]
+        stdin: bool,
+    },
+    ListPreflight {
+        #[arg(long)]
+        collection_slug: String,
+        #[arg(long)]
+        json: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long)]
+        stdin: bool,
+    },
+    ListSubmit {
+        #[arg(long)]
+        collection_slug: String,
+        #[arg(long)]
+        expect_inscription: String,
+        #[arg(long)]
+        expect_price_sats: u64,
+        #[arg(long)]
+        expect_seller_address: Option<String>,
+        #[arg(long)]
+        json: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long)]
+        stdin: bool,
+    },
+    Delist {
+        #[arg(long)]
+        collection_slug: String,
+        #[arg(long)]
+        expect_inscription: String,
+        #[arg(long)]
+        expect_listing_id: String,
+        #[arg(long)]
+        expect_seller_address: Option<String>,
+        #[arg(long)]
+        json: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long)]
+        stdin: bool,
+    },
+    Offers {
+        #[arg(long)]
+        inscription_id: String,
+        #[arg(long)]
+        history: bool,
+        #[arg(long)]
+        page: Option<u64>,
+    },
+    OfferCreate {
+        #[arg(long)]
+        collection_slug: String,
+        #[arg(long)]
+        submit: bool,
+        #[arg(long)]
+        expect_inscription: Option<String>,
+        #[arg(long)]
+        expect_price_sats: Option<u64>,
+        #[arg(long)]
+        expect_buyer_address: Option<String>,
+        #[arg(long)]
+        json: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long)]
+        stdin: bool,
+    },
+    OfferCancel {
+        #[arg(long)]
+        inscription_id: String,
+        #[arg(long)]
+        offer_id: String,
+    },
+    OfferReject {
+        #[arg(long)]
+        inscription_id: String,
+        #[arg(long)]
+        offer_id: String,
+    },
+    OfferAccept {
+        #[arg(long)]
+        inscription_id: String,
+        #[arg(long)]
+        offer_id: String,
+        #[arg(long)]
+        submit: bool,
+        #[arg(long)]
+        expect_price_sats: Option<u64>,
+        #[arg(long)]
+        expect_seller_address: Option<String>,
+        #[arg(long)]
+        expect_buyer_address: Option<String>,
+        #[arg(long)]
+        json: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long)]
+        stdin: bool,
+    },
+    OfferCounter {
+        #[arg(long)]
+        inscription_id: String,
+        #[arg(long)]
+        offer_id: String,
+        #[arg(long)]
+        submit: bool,
+        #[arg(long)]
+        reject: bool,
+        #[arg(long)]
+        accept: bool,
+        #[arg(long)]
+        expect_price_sats: Option<u64>,
+        #[arg(long)]
+        expect_seller_address: Option<String>,
+        #[arg(long)]
+        expect_buyer_address: Option<String>,
+        #[arg(long)]
+        json: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long)]
+        stdin: bool,
+    },
+    MyOffers {
+        #[arg(long)]
+        view: Option<String>,
+        #[arg(long)]
+        limit: Option<u64>,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -919,7 +1124,8 @@ pub enum ScenarioAction {
 #[cfg(test)]
 mod tests {
     use super::{
-        Cli, Command, IntentAction, IntentPairAction, ListingAction, ListingArgs, OfferAction,
+        Cli, Command, InsightAction, InsightArgs, IntentAction, IntentPairAction, ListingAction,
+        ListingArgs, MarketAction, OfferAction, PulseAction, PulseArgs, PulseOrdnetAction,
     };
     use clap::Parser;
     use std::path::PathBuf;
@@ -1787,6 +1993,98 @@ mod tests {
             _ => panic!("expected listing command"),
         }
     }
+
+    #[test]
+    fn parses_pulse_ordnet_bind_subcommand() {
+        let cli = Cli::try_parse_from(["zinc-cli", "pulse", "ordnet", "bind"]).expect("cli parse");
+        assert!(matches!(
+            cli.command,
+            Command::Pulse(PulseArgs {
+                action: PulseAction::Ordnet {
+                    action: PulseOrdnetAction::Bind
+                }
+            })
+        ));
+    }
+
+    #[test]
+    fn parses_insight_market_subcommands() {
+        let listings = Cli::try_parse_from([
+            "zinc-cli",
+            "insight",
+            "market",
+            "listings",
+            "--collection-slug",
+            "nodemonkes",
+            "--limit",
+            "10",
+        ])
+        .expect("cli parse");
+        match listings.command {
+            Command::Insight(args) => match args.action {
+                InsightAction::Market {
+                    action:
+                        MarketAction::Listings {
+                            collection_slug,
+                            limit,
+                            ..
+                        },
+                } => {
+                    assert_eq!(collection_slug.as_deref(), Some("nodemonkes"));
+                    assert_eq!(limit, Some(10));
+                }
+                _ => panic!("expected market listings action"),
+            },
+            _ => panic!("expected insight command"),
+        }
+
+        let buy_preflight = Cli::try_parse_from([
+            "zinc-cli",
+            "insight",
+            "market",
+            "buy-preflight",
+            "--collection-slug",
+            "nodemonkes",
+            "--listing-id",
+            "listing123",
+            "--inscription-id",
+            "inscription123",
+            "--expect-price-sats",
+            "100000",
+        ])
+        .expect("cli parse");
+        assert!(matches!(
+            buy_preflight.command,
+            Command::Insight(InsightArgs {
+                action: InsightAction::Market {
+                    action: MarketAction::BuyPreflight { .. }
+                }
+            })
+        ));
+
+        let offer_accept = Cli::try_parse_from([
+            "zinc-cli",
+            "insight",
+            "market",
+            "offer-accept",
+            "--inscription-id",
+            "inscription123",
+            "--offer-id",
+            "offer123",
+            "--submit",
+            "--json",
+            "{}",
+        ])
+        .expect("cli parse");
+        assert!(matches!(
+            offer_accept.command,
+            Command::Insight(InsightArgs {
+                action: InsightAction::Market {
+                    action: MarketAction::OfferAccept { submit: true, .. }
+                }
+            })
+        ));
+    }
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -1829,4 +2127,14 @@ pub enum PulseAction {
         #[arg(long, help = "Log out from global credentials")]
         global: bool,
     },
+    #[command(hide = true, about = "ord.net upstream wallet binding")]
+    Ordnet {
+        #[command(subcommand)]
+        action: PulseOrdnetAction,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum PulseOrdnetAction {
+    Bind,
 }

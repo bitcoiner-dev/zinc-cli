@@ -135,3 +135,32 @@ Agent checks:
 - Require expectation flags before buying a listing from a relay.
 - Keep the updated listing envelope from each step; the sale PSBT is replaced as signatures are added.
 - Prefer `listing purchase` for ordinary agent buys; use primitive commands when a workflow needs explicit resume points.
+
+## 6) Hosted ord.net Market Discovery
+
+Goal: Use Zinc/Pulse as the paid service boundary while ord.net acts as an upstream trading provider.
+
+```bash
+zinc-cli --agent pulse ordnet bind
+zinc-cli --agent insight market listings --collection-slug <slug> --limit 20
+zinc-cli --agent insight market buy-preflight \
+  --collection-slug <slug> \
+  --listing-id <listing-id> \
+  --inscription-id <inscription-id> \
+  --expect-price-sats <sats> \
+  --raw-out-file /tmp/ordnet-buy-preflight.json
+
+zinc-cli --agent insight market buy-submit \
+  --collection-slug <slug> \
+  --expect-inscription <inscription-id> \
+  --expect-listing-id <listing-id> \
+  --expect-price-sats <sats> \
+  --file /tmp/ordnet-buy-preflight.json
+```
+
+Agent checks:
+- Treat hosted ord.net market commands as separate from decentralized `offer` and `listing` commands.
+- Bind with the active user wallet; ord.net requires the payment address to satisfy the 0.01 BTC confirmed balance requirement.
+- Keep hosted writes two-phase: inspect preflight PSBT steps before any submit payload is sent.
+- Provide exact `--expect-*` values for submit commands; the CLI rejects mismatches before signing.
+- Do not route hosted trading through Satflow. Satflow-backed Pulse data is for metadata/statistics only.

@@ -1,10 +1,13 @@
-use crate::cli::{Cli, PulseAction, PulseArgs};
+use crate::cli::{Cli, PulseAction, PulseArgs, PulseOrdnetAction};
 use crate::config::{load_persisted_config, save_persisted_config, PulseSession};
 use crate::config_resolver::ConfigResolver;
 use crate::error::AppError;
+use crate::load_wallet_session;
 use crate::output::CommandOutput;
 use crate::pulse_auth_client::PulseAuthClient;
+use crate::pulse_auth_resolver::PulseAuthResolver;
 use crate::{now_unix, profile_path, read_profile, service_config, write_profile};
+use reqwest::StatusCode;
 use serde_json::json;
 
 pub async fn run(cli: &Cli, args: &PulseArgs) -> Result<CommandOutput, AppError> {
@@ -26,6 +29,133 @@ pub async fn run(cli: &Cli, args: &PulseArgs) -> Result<CommandOutput, AppError>
         }
         PulseAction::Whoami { global } => handle_whoami(cli, *global).await,
         PulseAction::Logout { global } => handle_logout(cli, *global).await,
+        PulseAction::Ordnet { action } => match action {
+            PulseOrdnetAction::Bind => handle_ordnet_bind(cli).await,
+        },
+    }
+}
+
+async fn handle_ordnet_bind(cli: &Cli) -> Result<CommandOutput, AppError> {
+    let mut session = load_wallet_session(cli)?;
+    session.require_seed_mode()?;
+    let persisted = load_persisted_config().unwrap_or_default();
+    let service = service_config(cli);
+    let resolver = ConfigResolver::new(&persisted, &service);
+    let auth_resolver = PulseAuthResolver::new(&persisted, &service);
+    let path = profile_path(cli)?;
+    let token = auth_resolver
+        .resolve_token(Some(&mut session.profile), Some(&path))
+        .await?
+        .ok_or_else(|| {
+            AppError::Auth("Pulse authentication required. Run 'zinc pulse login'.".to_string())
+        })?;
+    let pulse_url = resolver.resolve_pulse_url(Some(&session.profile)).value;
+    if pulse_url.trim().is_empty() {
+        return Err(AppError::Config(
+            "Pulse URL not found. Use --pulse-url or zinc setup.".to_string(),
+        ));
+    }
+
+    let ordinals_address = session.wallet.peek_taproot_address(0).to_string();
+    let payment_address = session
+        .wallet
+        .peek_payment_address(0)
+        .map(|address| address.to_string())
+        .unwrap_or_else(|| ordinals_address.clone());
+    let http = reqwest::Client::new();
+    let challenge_url = format!(
+        "{}/v1/ordnet/auth/challenge",
+        pulse_url.trim_end_matches('/')
+    );
+    let challenge: serde_json::Value = http
+        .post(challenge_url)
+        .bearer_auth(&token)
+        .json(&json!({
+            "ordinalsAddress": ordinals_address,
+            "paymentAddress": payment_address,
+        }))
+        .send()
+        .await
+        .map_err(|e| AppError::Network(format!("ord.net challenge request failed: {e}")))?
+        .error_for_status()
+        .map_err(|e| map_ordnet_http_error("ord.net challenge", e))?
+        .json()
+        .await
+        .map_err(|e| AppError::Internal(format!("failed to parse ord.net challenge: {e}")))?;
+
+    let auth_request_id = challenge
+        .get("authRequestId")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| AppError::Internal("ord.net challenge missing authRequestId".to_string()))?;
+    let challenges = challenge
+        .get("challenges")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| AppError::Internal("ord.net challenge missing challenges".to_string()))?;
+    let mut verifications = Vec::new();
+    for challenge in challenges {
+        let challenge_id = challenge
+            .get("challengeId")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                AppError::Internal("ord.net challenge missing challengeId".to_string())
+            })?;
+        let message = challenge
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| AppError::Internal("ord.net challenge missing message".to_string()))?;
+        let address = challenge
+            .get("address")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| AppError::Internal("ord.net challenge missing address".to_string()))?;
+        let signature = session
+            .wallet
+            .sign_bip322_simple_hex(address, message)
+            .map_err(crate::wallet_service::map_wallet_error)?;
+        verifications.push(json!({
+            "challengeId": challenge_id,
+            "address": address,
+            "signature": signature,
+        }));
+    }
+
+    let verify_url = format!("{}/v1/ordnet/auth/verify", pulse_url.trim_end_matches('/'));
+    let bound: serde_json::Value = http
+        .post(verify_url)
+        .bearer_auth(&token)
+        .json(&json!({
+            "authRequestId": auth_request_id,
+            "verifications": verifications,
+        }))
+        .send()
+        .await
+        .map_err(|e| AppError::Network(format!("ord.net verify request failed: {e}")))?
+        .error_for_status()
+        .map_err(|e| map_ordnet_http_error("ord.net verify", e))?
+        .json()
+        .await
+        .map_err(|e| AppError::Internal(format!("failed to parse ord.net verify response: {e}")))?;
+
+    Ok(CommandOutput::Generic(json!({
+        "bound": true,
+        "provider": "ord.net",
+        "ordinals_address": ordinals_address,
+        "payment_address": payment_address,
+        "requires_confirmed_payment_balance_btc": "0.01",
+        "raw_response": bound,
+    })))
+}
+
+fn map_ordnet_http_error(context: &str, err: reqwest::Error) -> AppError {
+    match err.status() {
+        Some(StatusCode::UNAUTHORIZED) => AppError::Auth(format!("{context} unauthorized")),
+        Some(StatusCode::PAYMENT_REQUIRED) | Some(StatusCode::FORBIDDEN) => {
+            AppError::Capability(format!(
+                "{context} rejected; ord.net requires an eligible wallet binding, including 0.01 BTC confirmed on the payment address"
+            ))
+        }
+        Some(StatusCode::TOO_MANY_REQUESTS) => AppError::Network(format!("{context} rate limited")),
+        Some(status) => AppError::Network(format!("{context} returned {status}")),
+        None => AppError::Network(format!("{context} failed: {err}")),
     }
 }
 

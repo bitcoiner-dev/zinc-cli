@@ -102,6 +102,24 @@ pub(crate) fn best_match<'a>(needle: &str, candidates: &'a [&'a str]) -> Option<
     }
 }
 
+pub fn validate_file_name(name: &str) -> Result<(), crate::error::AppError> {
+    if name.is_empty() {
+        return Err(crate::error::AppError::Invalid(
+            "file name cannot be empty".to_string(),
+        ));
+    }
+
+    for c in name.chars() {
+        if !c.is_ascii_alphanumeric() && c != '_' && c != '-' {
+            return Err(crate::error::AppError::Invalid(
+                format!("invalid character in file name: '{}'", c),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 pub fn maybe_write_text(path: Option<&str>, text: &str) -> Result<(), crate::error::AppError> {
     if let Some(path) = path {
         crate::paths::write_secure_file(path, text.as_bytes())

@@ -230,3 +230,17 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
     }
     Ok(indices)
 }
+
+pub fn validate_file_name(name: &str) -> Result<(), crate::error::AppError> {
+    if name.is_empty() {
+        return Err(crate::error::AppError::Invalid(
+            "filename cannot be empty".to_string(),
+        ));
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(crate::error::AppError::Invalid(
+            "filename contains invalid characters, only alphanumeric, underscores, and dashes are allowed".to_string(),
+        ));
+    }
+    Ok(())
+}

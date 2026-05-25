@@ -49,6 +49,18 @@ pub fn parse_scheme(s: &str) -> Result<SchemeArg, AppError> {
     }
 }
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("filename cannot be empty".to_string()));
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(AppError::Invalid(
+            "filename contains invalid characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn parse_payment_address_type(s: &str) -> Result<PaymentAddressTypeArg, AppError> {
     match s.trim().to_ascii_lowercase().as_str() {
         "native" => Ok(PaymentAddressTypeArg::Native),

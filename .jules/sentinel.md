@@ -7,3 +7,7 @@
 **Vulnerability:** The `maybe_write_text` utility function was using `std::fs::write`, which resulted in sensitive data (like PSBT files and offers) being saved with insecure default file permissions, making them readable by other users on a shared system.
 **Learning:** Even generic utility functions used for saving user-requested command outputs must use secure file permissions (`0o600`) if the data they handle (like PSBTs and offers) is sensitive.
 **Prevention:** Always use `crate::paths::write_secure_file` instead of `std::fs::write` for all file writing operations that might contain sensitive material in this codebase.
+## 2024-05-26 - Prevent Path Traversal in Snapshot and Profile File Handling
+**Vulnerability:** User-provided string input for the profile name and snapshot name was directly appended to path locations (e.g. `Path::join(format!("{}.json", config.profile))` and `snap_dir.join(format!("{name}.json"))`) without any validation.
+**Learning:** Because `.join()` can traverse paths using `../` or an absolute root `/`, this allowed arbitrary file writes and reads (path traversal) outside the intended `~/.zinc-cli/profiles` or `~/.zinc-cli/snapshots` directories.
+**Prevention:** Always strictly validate user inputs that construct local filenames against an alphanumeric allowlist (e.g., `validate_file_name`) before incorporating them into file path constructions.

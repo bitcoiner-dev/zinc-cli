@@ -7,3 +7,8 @@
 **Vulnerability:** The `maybe_write_text` utility function was using `std::fs::write`, which resulted in sensitive data (like PSBT files and offers) being saved with insecure default file permissions, making them readable by other users on a shared system.
 **Learning:** Even generic utility functions used for saving user-requested command outputs must use secure file permissions (`0o600`) if the data they handle (like PSBTs and offers) is sensitive.
 **Prevention:** Always use `crate::paths::write_secure_file` instead of `std::fs::write` for all file writing operations that might contain sensitive material in this codebase.
+
+## 2024-05-29 - Path Traversal in User Profile Paths
+**Vulnerability:** The `profile_path` and `snapshot_dir` functions constructed paths by directly using the `config.profile` string via `Path::join`, without validation. This allowed path traversal (e.g., using `../../../etc/passwd` as the profile name) where users could manipulate the filesystem locations for profiles or snapshot data.
+**Learning:** `Path::join` explicitly replaces the base directory if the appended string is an absolute path or traverses upward when `..` is present. User-provided file names must never be blindly passed into path construction.
+**Prevention:** Always validate user input strings intended for file names. Use a strict allowlist validation (e.g., ensuring it contains only alphanumeric characters, underscores, or dashes) before using it in any `Path` construction.

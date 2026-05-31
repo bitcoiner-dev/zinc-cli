@@ -7,3 +7,8 @@
 **Vulnerability:** The `maybe_write_text` utility function was using `std::fs::write`, which resulted in sensitive data (like PSBT files and offers) being saved with insecure default file permissions, making them readable by other users on a shared system.
 **Learning:** Even generic utility functions used for saving user-requested command outputs must use secure file permissions (`0o600`) if the data they handle (like PSBTs and offers) is sensitive.
 **Prevention:** Always use `crate::paths::write_secure_file` instead of `std::fs::write` for all file writing operations that might contain sensitive material in this codebase.
+
+## 2024-05-31 - [CRITICAL] Fix Path Traversal in Snapshot Commands
+**Vulnerability:** Path traversal in the `snapshot save` and `snapshot restore` commands.
+**Learning:** `snapshot_dir.join(format!("{name}.json"))` used user input (`name`) directly. The Rust `Path::join` function interprets absolute paths by replacing the base directory and processes `..` to traverse up the directory tree, allowing an attacker to read or write arbitrary `.json` files.
+**Prevention:** Always validate user-provided strings used in file paths (e.g., when calling `Path::join`) using a strict allowlist (alphanumeric, underscores, dashes) to ensure they only contain safe characters before they are used in path resolution.

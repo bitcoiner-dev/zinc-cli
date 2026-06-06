@@ -196,6 +196,19 @@ pub fn resolve_psbt_source(
     ))
 }
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("file name cannot be empty".to_string()));
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(AppError::Invalid(format!(
+            "invalid file name '{}': only alphanumeric characters, underscores, and dashes are allowed",
+            name
+        )));
+    }
+    Ok(())
+}
+
 pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
     let s = match s {
         Some(s) => s,
@@ -229,4 +242,35 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
         }
     }
     Ok(indices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_file_name() {
+        assert!(validate_file_name("default").is_ok());
+        assert!(validate_file_name("my-snapshot").is_ok());
+        assert!(validate_file_name("snapshot_1").is_ok());
+        assert!(validate_file_name("TEST-snapshot_123").is_ok());
+
+        assert!(matches!(validate_file_name(""), Err(AppError::Invalid(_))));
+        assert!(matches!(
+            validate_file_name("../etc/passwd"),
+            Err(AppError::Invalid(_))
+        ));
+        assert!(matches!(
+            validate_file_name("/etc/passwd"),
+            Err(AppError::Invalid(_))
+        ));
+        assert!(matches!(
+            validate_file_name("test.json"),
+            Err(AppError::Invalid(_))
+        ));
+        assert!(matches!(
+            validate_file_name("\\test"),
+            Err(AppError::Invalid(_))
+        ));
+    }
 }

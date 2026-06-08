@@ -2611,7 +2611,7 @@ mod tests {
     fn ensure_profile_parent_exists(cli: &Cli) {
         let profile_path = crate::profile_path(cli).expect("profile path");
         let parent = profile_path.parent().expect("profile parent");
-        std::fs::create_dir_all(parent).expect("create profile parent");
+        crate::paths::create_secure_dir_all(parent).expect("create profile parent");
     }
 
     fn unique_data_dir(prefix: &str) -> String {

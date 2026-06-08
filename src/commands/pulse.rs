@@ -377,7 +377,7 @@ mod tests {
             .as_nanos();
         let dir =
             std::env::temp_dir().join(format!("zinc-cli-{prefix}-{}-{nanos}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("failed to create temp directory");
+        crate::paths::create_secure_dir_all(&dir).expect("failed to create temp directory");
         dir
     }
 
@@ -437,7 +437,7 @@ mod tests {
     fn seed_profile(cli: &Cli, pulse_url: &str) {
         let path = profile_path(cli).expect("profile path");
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).expect("create profile parent");
+            crate::paths::create_secure_dir_all(parent).expect("create profile parent");
         }
         let mut profile = base_profile();
         profile.pulse_url = pulse_url.to_string();

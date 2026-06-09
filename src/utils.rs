@@ -11,6 +11,19 @@ pub fn home_dir() -> PathBuf {
     }
 }
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("file name cannot be empty".to_string()));
+    }
+    if name.chars().any(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '-') {
+        return Err(AppError::Invalid(format!(
+            "invalid file name '{}': only alphanumeric characters, underscores, and dashes are allowed",
+            name
+        )));
+    }
+    Ok(())
+}
+
 pub fn env_non_empty(name: &str) -> Option<String> {
     let value = env::var(name).ok()?;
     let trimmed = value.trim();

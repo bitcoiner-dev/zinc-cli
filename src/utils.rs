@@ -3,6 +3,18 @@ use crate::error::AppError;
 use std::env;
 use std::path::{Path, PathBuf};
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("file name cannot be empty".to_string()));
+    }
+    if name.chars().any(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '-') {
+        return Err(AppError::Invalid(
+            "file name must only contain alphanumeric characters, underscores, and dashes".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn home_dir() -> PathBuf {
     if let Some(home) = std::env::var_os("HOME") {
         PathBuf::from(home)
@@ -229,4 +241,25 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
         }
     }
     Ok(indices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_file_name() {
+        assert!(validate_file_name("valid_name-123").is_ok());
+
+        let empty_res = validate_file_name("");
+        assert!(empty_res.is_err());
+        assert!(matches!(empty_res.unwrap_err(), AppError::Invalid(_)));
+
+        let bad_chars = vec!["invalid/name", "name.with.dots", "../../passwd", "\\windows\\path"];
+        for bad in bad_chars {
+            let res = validate_file_name(bad);
+            assert!(res.is_err());
+            assert!(matches!(res.unwrap_err(), AppError::Invalid(_)));
+        }
+    }
 }

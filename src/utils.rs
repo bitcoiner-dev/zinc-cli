@@ -196,6 +196,22 @@ pub fn resolve_psbt_source(
     ))
 }
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("Filename cannot be empty".to_string()));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(AppError::Invalid(format!(
+            "Invalid filename '{}': must contain only alphanumeric characters, underscores, and dashes",
+            name
+        )));
+    }
+    Ok(())
+}
+
 pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
     let s = match s {
         Some(s) => s,

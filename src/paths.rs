@@ -56,6 +56,7 @@ pub fn home_dir() -> PathBuf {
 }
 
 pub fn profile_path(config: &crate::config::ServiceConfig<'_>) -> Result<PathBuf, AppError> {
+    crate::utils::validate_file_name(&config.profile)?;
     let root = data_dir(config);
     let profiles = root.join("profiles");
     if !profiles.exists() {
@@ -70,8 +71,9 @@ pub fn profile_lock_path(config: &crate::config::ServiceConfig<'_>) -> Result<Pa
 }
 
 pub fn snapshot_dir(config: &crate::config::ServiceConfig<'_>) -> Result<PathBuf, AppError> {
+    crate::utils::validate_file_name(&config.profile)?;
     let root = data_dir(config);
-    let directory = root.join("snapshots").join(config.profile);
+    let directory = root.join("snapshots").join(&config.profile);
     create_secure_dir_all(&directory)
         .map_err(|e| AppError::Config(format!("failed to create snapshot dir: {e}")))?;
     Ok(directory)

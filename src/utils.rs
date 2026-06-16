@@ -11,6 +11,21 @@ pub fn home_dir() -> PathBuf {
     }
 }
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("File name cannot be empty".to_string()));
+    }
+    for c in name.chars() {
+        if !c.is_ascii_alphanumeric() && c != '_' && c != '-' {
+            return Err(AppError::Invalid(format!(
+                "Invalid character '{}' in file name: '{}'. Only alphanumeric, '-', and '_' are allowed.",
+                c, name
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn env_non_empty(name: &str) -> Option<String> {
     let value = env::var(name).ok()?;
     let trimmed = value.trim();
@@ -229,4 +244,25 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
         }
     }
     Ok(indices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_file_name() {
+        // Valid cases
+        assert!(validate_file_name("valid_name-123").is_ok());
+        assert!(validate_file_name("profile1").is_ok());
+        assert!(validate_file_name("my-wallet_profile").is_ok());
+
+        // Invalid cases
+        assert!(matches!(validate_file_name(""), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("../invalid"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("/absolute"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("name with space"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("name.json"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("name$"), Err(AppError::Invalid(_))));
+    }
 }

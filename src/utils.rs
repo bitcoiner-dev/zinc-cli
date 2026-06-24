@@ -3,6 +3,21 @@ use crate::error::AppError;
 use std::env;
 use std::path::{Path, PathBuf};
 
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("file name cannot be empty".to_string()));
+    }
+    for c in name.chars() {
+        if !c.is_ascii_alphanumeric() && c != '-' && c != '_' {
+            return Err(AppError::Invalid(format!(
+                "invalid character in file name: '{}'. Only alphanumeric, hyphens, and underscores are allowed.",
+                c
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn home_dir() -> PathBuf {
     if let Some(home) = std::env::var_os("HOME") {
         PathBuf::from(home)
@@ -229,4 +244,21 @@ pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
         }
     }
     Ok(indices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_file_name() {
+        assert!(validate_file_name("valid-name_123").is_ok());
+        assert!(validate_file_name("Backup").is_ok());
+
+        assert!(matches!(validate_file_name(""), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("../etc/passwd"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("invalid/path"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("hidden\\file"), Err(AppError::Invalid(_))));
+        assert!(matches!(validate_file_name("name with space"), Err(AppError::Invalid(_))));
+    }
 }

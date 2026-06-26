@@ -12,6 +12,9 @@ pub async fn run(cli: &Cli, args: &SnapshotArgs) -> Result<CommandOutput, AppErr
 
     match &args.action {
         SnapshotAction::Save { name, overwrite } => {
+            crate::utils::validate_file_name(name)
+                .map_err(|e| AppError::Config(format!("invalid snapshot name: {e}")))?;
+
             let source = read_profile(&profile_path)?;
             let destination = snap_dir.join(format!("{name}.json"));
             if destination.exists() && !(*overwrite || cli.yes) {
@@ -27,6 +30,9 @@ pub async fn run(cli: &Cli, args: &SnapshotArgs) -> Result<CommandOutput, AppErr
             })
         }
         SnapshotAction::Restore { name } => {
+            crate::utils::validate_file_name(name)
+                .map_err(|e| AppError::Config(format!("invalid snapshot name: {e}")))?;
+
             if !confirm(&format!("Are you sure you want to restore snapshot '{name}'? This will overwrite your current profile."), cli) {
                 return Err(AppError::Internal("aborted by user".to_string()));
             }

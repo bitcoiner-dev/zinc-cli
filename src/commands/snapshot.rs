@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::output::CommandOutput;
 use crate::{confirm, profile_path, read_profile, snapshot_dir, write_bytes_atomic};
 use std::fs;
+use crate::utils::validate_file_name;
 
 pub async fn run(cli: &Cli, args: &SnapshotArgs) -> Result<CommandOutput, AppError> {
     let profile_path = profile_path(cli)?;
@@ -12,6 +13,7 @@ pub async fn run(cli: &Cli, args: &SnapshotArgs) -> Result<CommandOutput, AppErr
 
     match &args.action {
         SnapshotAction::Save { name, overwrite } => {
+            validate_file_name(name)?;
             let source = read_profile(&profile_path)?;
             let destination = snap_dir.join(format!("{name}.json"));
             if destination.exists() && !(*overwrite || cli.yes) {
@@ -27,6 +29,7 @@ pub async fn run(cli: &Cli, args: &SnapshotArgs) -> Result<CommandOutput, AppErr
             })
         }
         SnapshotAction::Restore { name } => {
+            validate_file_name(name)?;
             if !confirm(&format!("Are you sure you want to restore snapshot '{name}'? This will overwrite your current profile."), cli) {
                 return Err(AppError::Internal("aborted by user".to_string()));
             }

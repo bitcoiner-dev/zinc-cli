@@ -457,4 +457,119 @@ mod tests {
         assert_eq!(strip_line_endings("  abc  \n".to_string()), "  abc  ");
         assert_eq!(strip_line_endings("abc".to_string()), "abc");
     }
+
+    fn service<'a>(password_env: &'a str, password_override: Option<&'a str>, agent: bool) -> crate::config::ServiceConfig<'a> {
+        crate::config::ServiceConfig {
+            data_dir: Some(std::path::Path::new("/tmp")),
+            profile: "default",
+            password_env,
+            password_stdin: false,
+            password_override,
+            agent,
+            network_override: None,
+            explicit_network: false,
+            scheme_override: None,
+            payment_address_type_override: None,
+            esplora_url_override: None,
+            ord_url_override: None,
+            pulse_url_override: None,
+            pulse_api_token_override: None,
+            ascii_mode: false,
+        }
+    }
+
+    #[test]
+    fn map_wallet_error_classifies_messages() {
+        assert!(matches!(
+            map_wallet_error("Wrong password provided".to_string()),
+            AppError::Auth(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("decryption failed".to_string()),
+            AppError::Auth(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("capability missing for action".to_string()),
+            AppError::Capability(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("profile is read-only".to_string()),
+            AppError::Capability(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("this requires a seed-mode profile".to_string()),
+            AppError::Capability(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("insufficient funds".to_string()),
+            AppError::InsufficientFunds(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("not enough sats".to_string()),
+            AppError::InsufficientFunds(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("Ordinal Shield blocked this".to_string()),
+            AppError::Policy(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("safety lock engaged".to_string()),
+            AppError::Policy(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("esplora request failed".to_string()),
+            AppError::Network(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("HTTP 500".to_string()),
+            AppError::Network(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("inscription not found".to_string()),
+            AppError::NotFound(_)
+        ));
+        assert!(matches!(
+            map_wallet_error("something unexpected".to_string()),
+            AppError::Internal(_)
+        ));
+    }
+
+    #[test]
+    fn read_lock_metadata_parses_valid_and_handles_invalid() {
+        let dir = std::env::temp_dir().join(format!("zinc-cli-ws-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let valid = dir.join("valid.lock");
+        std::fs::write(&valid, b"{\"pid\":99,\"created_at_unix\":1700000000}").unwrap();
+        let meta = read_lock_metadata(&valid).expect("valid metadata parses");
+        assert_eq!(meta.pid, 99);
+        assert_eq!(meta.created_at_unix, 1_700_000_000);
+
+        let invalid = dir.join("invalid.lock");
+        std::fs::write(&invalid, b"not json").unwrap();
+        assert!(read_lock_metadata(&invalid).is_none());
+
+        let missing = dir.join("missing.lock");
+        assert!(read_lock_metadata(&missing).is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wallet_password_prefers_override() {
+        let cfg = service("ZINC_WALLET_PASSWORD", Some("hunter2"), false);
+        let pass = wallet_password(&cfg).expect("override password");
+        assert_eq!(pass.as_str(), "hunter2");
+    }
+
+    #[test]
+    fn wallet_password_agent_mode_missing_is_auth_error() {
+        // Use a uniquely-named env var that is guaranteed unset so the lookup
+        // falls through to the agent-mode error branch.
+        let env_name = format!("ZINC_CLI_TEST_PW_{}", std::process::id());
+        std::env::remove_var(&env_name);
+        let cfg = service(&env_name, None, true);
+        let err = wallet_password(&cfg).expect_err("missing password in agent mode");
+        assert!(matches!(err, AppError::Auth(_)));
+    }
 }

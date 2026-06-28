@@ -51,3 +51,49 @@ fn render_logo() -> std::io::Result<()> {
     stdout.write_all(b"\n")?;
     stdout.flush()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::run;
+    use crate::cli::Cli;
+    use crate::output::CommandOutput;
+    use clap::Parser;
+
+    fn cli(args: &[&str]) -> Cli {
+        let mut full = vec!["zinc-cli"];
+        full.extend_from_slice(args);
+        Cli::try_parse_from(full).expect("cli parse")
+    }
+
+    #[tokio::test]
+    async fn version_agent_mode_returns_generic_payload() {
+        let cli = cli(&["--agent", "version"]);
+        let out = run(&cli).await.expect("version run should succeed");
+        if let CommandOutput::Generic(v) = out {
+            assert_eq!(v["name"], "zinc-cli");
+            assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
+        } else {
+            panic!("expected Generic output");
+        }
+    }
+
+    #[tokio::test]
+    async fn version_default_mode_returns_generic_payload() {
+        // In tests stdout is not a terminal, so this takes the plain-text branch
+        // (no logo asset read) and still returns the structured payload.
+        let cli = cli(&["version"]);
+        let out = run(&cli).await.expect("version run should succeed");
+        assert!(matches!(out, CommandOutput::Generic(_)));
+    }
+
+    #[tokio::test]
+    async fn version_ascii_mode_returns_generic_payload() {
+        let cli = cli(&["--ascii", "version"]);
+        let out = run(&cli).await.expect("version run should succeed");
+        if let CommandOutput::Generic(v) = out {
+            assert_eq!(v["name"], "zinc-cli");
+        } else {
+            panic!("expected Generic output");
+        }
+    }
+}

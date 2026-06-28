@@ -94,3 +94,95 @@ impl From<String> for AppError {
         Self::Internal(msg)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::AppError;
+
+    fn all_variants() -> Vec<AppError> {
+        vec![
+            AppError::Invalid("x".into()),
+            AppError::Config("x".into()),
+            AppError::Internal("x".into()),
+            AppError::Io("x".into()),
+            AppError::NotFound("x".into()),
+            AppError::Auth("x".into()),
+            AppError::Network("x".into()),
+            AppError::InsufficientFunds("x".into()),
+            AppError::Policy("x".into()),
+            AppError::Capability("x".into()),
+        ]
+    }
+
+    #[test]
+    fn tag_matches_each_variant() {
+        assert_eq!(AppError::Invalid("a".into()).tag(), "invalid");
+        assert_eq!(AppError::Config("a".into()).tag(), "config");
+        assert_eq!(AppError::Io("a".into()).tag(), "config");
+        assert_eq!(AppError::NotFound("a".into()).tag(), "not_found");
+        assert_eq!(AppError::Auth("a".into()).tag(), "auth");
+        assert_eq!(AppError::Network("a".into()).tag(), "network");
+        assert_eq!(
+            AppError::InsufficientFunds("a".into()).tag(),
+            "insufficient_funds"
+        );
+        assert_eq!(AppError::Policy("a".into()).tag(), "policy");
+        assert_eq!(AppError::Capability("a".into()).tag(), "capability");
+        assert_eq!(AppError::Internal("a".into()).tag(), "internal");
+    }
+
+    #[test]
+    fn exit_code_matches_each_variant() {
+        assert_eq!(AppError::Invalid("a".into()).exit_code(), 2);
+        assert_eq!(AppError::Config("a".into()).exit_code(), 10);
+        assert_eq!(AppError::Io("a".into()).exit_code(), 10);
+        assert_eq!(AppError::NotFound("a".into()).exit_code(), 15);
+        assert_eq!(AppError::Auth("a".into()).exit_code(), 11);
+        assert_eq!(AppError::Network("a".into()).exit_code(), 12);
+        assert_eq!(AppError::InsufficientFunds("a".into()).exit_code(), 13);
+        assert_eq!(AppError::Policy("a".into()).exit_code(), 14);
+        assert_eq!(AppError::Capability("a".into()).exit_code(), 16);
+        assert_eq!(AppError::Internal("a".into()).exit_code(), 1);
+    }
+
+    #[test]
+    fn exit_codes_are_nonzero_and_tags_are_stable() {
+        for err in all_variants() {
+            assert_ne!(err.exit_code(), 0, "exit code must be non-zero");
+            assert!(!err.tag().is_empty(), "tag must be non-empty");
+        }
+    }
+
+    #[test]
+    fn display_includes_message_payload() {
+        assert_eq!(
+            AppError::Invalid("bad arg".into()).to_string(),
+            "Invalid input: bad arg"
+        );
+        assert_eq!(
+            AppError::Network("timeout".into()).to_string(),
+            "Network error: timeout"
+        );
+        assert_eq!(
+            AppError::Config("missing".into()).to_string(),
+            "Configuration error: missing"
+        );
+    }
+
+    #[test]
+    fn from_io_error_maps_to_io_variant() {
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "nope");
+        let err: AppError = io.into();
+        assert_eq!(err.tag(), "config");
+        assert!(matches!(err, AppError::Io(_)));
+        assert!(err.to_string().contains("nope"));
+    }
+
+    #[test]
+    fn from_string_maps_to_internal_variant() {
+        let err: AppError = String::from("boom").into();
+        assert_eq!(err.tag(), "internal");
+        assert_eq!(err.exit_code(), 1);
+        assert!(matches!(err, AppError::Internal(_)));
+    }
+}

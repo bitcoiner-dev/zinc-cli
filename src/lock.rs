@@ -73,3 +73,66 @@ pub fn now_unix() -> u64 {
         .unwrap_or_default()
         .as_secs()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{now_unix, LockMetadata, ProfileLock};
+    use crate::error::AppError;
+    use std::path::PathBuf;
+
+    fn unique_profile_path(tag: &str) -> PathBuf {
+        std::env::temp_dir()
+            .join(format!("zinc-cli-lock-{}-{}", std::process::id(), tag))
+            .join("profiles")
+            .join("default.json")
+    }
+
+    #[test]
+    fn now_unix_is_after_2020() {
+        // 2020-01-01 in unix seconds; guards against a broken clock conversion.
+        assert!(now_unix() > 1_577_836_800);
+    }
+
+    #[test]
+    fn lock_metadata_serde_roundtrip() {
+        let meta = LockMetadata {
+            pid: 4321,
+            created_at_unix: 1_700_000_000,
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let back: LockMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.pid, 4321);
+        assert_eq!(back.created_at_unix, 1_700_000_000);
+    }
+
+    #[test]
+    fn acquire_creates_lock_then_releases_on_drop() {
+        let profile_path = unique_profile_path("drop");
+        let lock_file = profile_path.with_extension("lock");
+
+        {
+            let _lock = ProfileLock::acquire(&profile_path).expect("acquire lock");
+            assert!(lock_file.exists(), "lock file should exist while held");
+        }
+        // Dropping the guard removes the lock file.
+        assert!(!lock_file.exists(), "lock file should be gone after drop");
+
+        let _ = std::fs::remove_dir_all(profile_path.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn second_acquire_is_rejected_while_held() {
+        let profile_path = unique_profile_path("contend");
+        // `ProfileLock` is not `Debug`, so match on the Result rather than unwrap.
+        let held = ProfileLock::acquire(&profile_path);
+        assert!(held.is_ok(), "first acquire should succeed");
+        match ProfileLock::acquire(&profile_path) {
+            Ok(_) => panic!("second acquire should fail while lock is held"),
+            Err(AppError::Config(msg)) => {
+                assert!(msg.contains("locked by another instance"));
+            }
+            Err(other) => panic!("expected Config error, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(profile_path.parent().unwrap().parent().unwrap());
+    }
+}

@@ -1558,6 +1558,840 @@ mod tests {
             serde_json::from_str(&rendered).expect("agent message should be valid JSON");
         assert_eq!(parsed.as_str(), Some("Logged in."));
     }
+
+    // ----- shared constructors -----
+
+    fn balance() -> super::BtcBalance {
+        super::BtcBalance {
+            immature: 0,
+            trusted_pending: 10,
+            untrusted_pending: 20,
+            confirmed: 1000,
+        }
+    }
+
+    fn account() -> zinc_core::Account {
+        zinc_core::Account {
+            index: 0,
+            label: "primary".to_string(),
+            taproot_address: "tb1ptaproot".to_string(),
+            taproot_public_key: "aa".repeat(32),
+            payment_address: Some("tb1qpayment".to_string()),
+            payment_public_key: Some("bb".repeat(33)),
+        }
+    }
+
+    fn tx_item() -> zinc_core::TxItem {
+        zinc_core::TxItem {
+            txid: "f".repeat(64),
+            amount_sats: -2500,
+            fee_sats: 250,
+            confirmation_time: Some(1_700_000_000),
+            tx_type: "send".to_string(),
+            inscriptions: vec![zinc_core::history::InscriptionDetails {
+                id: "insc1".to_string(),
+                number: 42,
+                content_type: Some("image/png".to_string()),
+            }],
+            parent_txids: vec![],
+            index: 0,
+        }
+    }
+
+    fn link_entry() -> super::IntentPairLinkEntry {
+        super::IntentPairLinkEntry {
+            pairing_id: "a".repeat(64),
+            fingerprint: "abcdef123456".to_string(),
+            agent_pubkey_hex: "b".repeat(64),
+            wallet_pubkey_hex: "c".repeat(64),
+            status: "active".to_string(),
+            send_allowed: true,
+            linked_at_unix: 1_700_000_000,
+            status_updated_at_unix: Some(1_700_000_100),
+            request_expires_at_unix: 1_700_001_000,
+            ack_expires_at_unix: 1_700_002_000,
+            granted_capabilities: json!({"sign": true}),
+        }
+    }
+
+    /// Render with both presenters; assert the agent output is valid JSON and
+    /// the human output is non-empty. Returns the human string for further
+    /// assertions.
+    fn render_both(output: &CommandOutput) -> String {
+        let agent = AgentPresenter::new().render(output);
+        serde_json::from_str::<serde_json::Value>(&agent)
+            .unwrap_or_else(|e| panic!("agent output must be valid JSON: {e}\n{agent}"));
+        let human = HumanPresenter::new(false).render(output);
+        assert!(!human.is_empty(), "human output should not be empty");
+        human
+    }
+
+    // ----- wallet / address / balance variants -----
+
+    #[test]
+    fn wallet_info_human_lists_profile_and_network() {
+        let out = CommandOutput::WalletInfo {
+            profile: Some("acct".to_string()),
+            version: 1,
+            network: "signet".to_string(),
+            scheme: "dual".to_string(),
+            payment_address_type: "native".to_string(),
+            account_index: 0,
+            esplora_url: "https://esplora".to_string(),
+            ord_url: "https://ord".to_string(),
+            pulse_url: "https://pulse".to_string(),
+            bitcoin_cli: "bitcoin-cli".to_string(),
+            bitcoin_cli_args: "-signet".to_string(),
+            has_persistence: true,
+            has_inscriptions: false,
+            updated_at_unix: 1_700_000_000,
+        };
+        let human = render_both(&out);
+        assert!(human.contains("signet"));
+        assert!(human.contains("acct"));
+    }
+
+    #[test]
+    fn wallet_init_human_shows_phrase_and_words() {
+        let out = CommandOutput::WalletInit {
+            profile: None,
+            version: 1,
+            network: "regtest".to_string(),
+            scheme: "unified".to_string(),
+            payment_address_type: "native".to_string(),
+            account_index: 0,
+            esplora_url: String::new(),
+            ord_url: String::new(),
+            pulse_url: String::new(),
+            bitcoin_cli: "bitcoin-cli".to_string(),
+            bitcoin_cli_args: String::new(),
+            phrase: "abandon ability able".to_string(),
+            words: Some(12),
+        };
+        let human = render_both(&out);
+        assert!(human.contains("Wallet initialized"));
+        assert!(human.contains("abandon ability able"));
+    }
+
+    #[test]
+    fn wallet_init_human_dims_hidden_phrase() {
+        let out = CommandOutput::WalletInit {
+            profile: Some("p".to_string()),
+            version: 1,
+            network: "regtest".to_string(),
+            scheme: "unified".to_string(),
+            payment_address_type: "native".to_string(),
+            account_index: 0,
+            esplora_url: String::new(),
+            ord_url: String::new(),
+            pulse_url: String::new(),
+            bitcoin_cli: "bitcoin-cli".to_string(),
+            bitcoin_cli_args: String::new(),
+            phrase: "<hidden; use --reveal to show>".to_string(),
+            words: None,
+        };
+        let human = render_both(&out);
+        assert!(human.contains("<hidden"));
+    }
+
+    #[test]
+    fn wallet_import_human_optional_phrase() {
+        let with_phrase = CommandOutput::WalletImport {
+            profile: Some("p".to_string()),
+            network: "signet".to_string(),
+            scheme: "dual".to_string(),
+            payment_address_type: "nested".to_string(),
+            account_index: 1,
+            pulse_url: String::new(),
+            imported: true,
+            phrase: Some("seed words here".to_string()),
+        };
+        let human = render_both(&with_phrase);
+        assert!(human.contains("Wallet imported"));
+        assert!(human.contains("seed words here"));
+
+        let no_phrase = CommandOutput::WalletImport {
+            profile: None,
+            network: "signet".to_string(),
+            scheme: "dual".to_string(),
+            payment_address_type: "nested".to_string(),
+            account_index: 1,
+            pulse_url: String::new(),
+            imported: true,
+            phrase: None,
+        };
+        let human = render_both(&no_phrase);
+        assert!(human.contains("Wallet imported"));
+    }
+
+    #[test]
+    fn reveal_mnemonic_human_shows_phrase_and_word_count() {
+        let out = CommandOutput::RevealMnemonic {
+            phrase: "one two three".to_string(),
+            words: 24,
+        };
+        let human = render_both(&out);
+        assert!(human.contains("one two three"));
+        assert!(human.contains("24"));
+    }
+
+    #[test]
+    fn address_human_renders_table_with_kind_and_address() {
+        let out = CommandOutput::Address {
+            kind: "taproot".to_string(),
+            address: "tb1pexample".to_string(),
+        };
+        let human = render_both(&out);
+        assert!(human.contains("taproot"));
+        assert!(human.contains("tb1pexample"));
+    }
+
+    #[test]
+    fn balance_human_renders_totals_and_inscribed() {
+        let out = CommandOutput::Balance {
+            total: balance(),
+            spendable: balance(),
+            inscribed_sats: 546,
+        };
+        let human = render_both(&out);
+        assert!(human.contains("1000")); // confirmed
+        assert!(human.contains("546")); // inscribed
+        assert!(human.contains("Spendable"));
+    }
+
+    #[test]
+    fn account_list_human_renders_rows() {
+        let out = CommandOutput::AccountList {
+            accounts: vec![account()],
+        };
+        let human = render_both(&out);
+        assert!(human.contains("primary"));
+        assert!(human.contains("tb1ptaproot"));
+    }
+
+    #[test]
+    fn account_use_human_shows_switch_and_optional_payment() {
+        let with_payment = CommandOutput::AccountUse {
+            previous_account_index: 0,
+            account_index: 2,
+            taproot_address: "tb1ptap".to_string(),
+            payment_address: Some("tb1qpay".to_string()),
+        };
+        let human = render_both(&with_payment);
+        assert!(human.contains("Switched account"));
+        assert!(human.contains("tb1qpay"));
+
+        let no_payment = CommandOutput::AccountUse {
+            previous_account_index: 0,
+            account_index: 2,
+            taproot_address: "tb1ptap".to_string(),
+            payment_address: None,
+        };
+        let human = render_both(&no_payment);
+        assert!(human.contains("Switched account"));
+    }
+
+    #[test]
+    fn tx_list_human_renders_abbreviated_txid_and_inscriptions() {
+        let out = CommandOutput::TxList {
+            transactions: vec![tx_item()],
+        };
+        let human = render_both(&out);
+        assert!(human.contains("send"));
+        assert!(human.contains("#42")); // inscription number
+    }
+
+    #[test]
+    fn tx_list_human_handles_unconfirmed_and_no_inscriptions() {
+        let mut tx = tx_item();
+        tx.confirmation_time = None;
+        tx.inscriptions = vec![];
+        let out = CommandOutput::TxList {
+            transactions: vec![tx],
+        };
+        let human = render_both(&out);
+        assert!(human.contains("Unconfirmed"));
+    }
+
+    // ----- psbt variants -----
+
+    #[test]
+    fn psbt_create_human_shows_psbt() {
+        let out = CommandOutput::PsbtCreate {
+            psbt: "cHNidP8=".to_string(),
+        };
+        let human = render_both(&out);
+        assert!(human.contains("PSBT Created"));
+        assert!(human.contains("cHNidP8="));
+    }
+
+    #[test]
+    fn psbt_analyze_human_safe_and_unsafe_paths() {
+        let safe = CommandOutput::PsbtAnalyze {
+            analysis: json!({"ok": true}),
+            safe_to_send: true,
+            inscription_risk: "none".to_string(),
+            policy_reasons: vec![],
+            policy: json!({}),
+        };
+        let human = render_both(&safe);
+        assert!(human.contains("PSBT Analysis"));
+
+        let unsafe_out = CommandOutput::PsbtAnalyze {
+            analysis: json!({"ok": false}),
+            safe_to_send: false,
+            inscription_risk: "high".to_string(),
+            policy_reasons: vec!["spends inscription".to_string()],
+            policy: json!({}),
+        };
+        let human = render_both(&unsafe_out);
+        assert!(human.contains("spends inscription"));
+    }
+
+    #[test]
+    fn psbt_sign_and_broadcast_human() {
+        let sign = CommandOutput::PsbtSign {
+            psbt: "signedpsbt".to_string(),
+            safe_to_send: true,
+            inscription_risk: "none".to_string(),
+            policy_reasons: vec![],
+            analysis: json!({}),
+        };
+        assert!(render_both(&sign).contains("PSBT Signed"));
+
+        let broadcast = CommandOutput::PsbtBroadcast {
+            txid: "deadbeef".to_string(),
+            safe_to_send: false,
+            inscription_risk: "medium".to_string(),
+            policy_reasons: vec![],
+            analysis: json!({}),
+        };
+        let human = render_both(&broadcast);
+        assert!(human.contains("PSBT Broadcasted"));
+        assert!(human.contains("deadbeef"));
+    }
+
+    // ----- sync / wait / snapshot / config / lock -----
+
+    #[test]
+    fn sync_human_outputs() {
+        let chain = CommandOutput::SyncChain {
+            events: vec!["a".to_string(), "b".to_string()],
+        };
+        assert!(render_both(&chain).contains("Synced 2 events"));
+
+        let ord = CommandOutput::SyncOrdinals { inscriptions: 5 };
+        assert!(render_both(&ord).contains("Synced 5 inscriptions"));
+    }
+
+    #[test]
+    fn wait_human_outputs() {
+        let tx = CommandOutput::WaitTxConfirmed {
+            txid: "abc".to_string(),
+            confirmation_time: Some(1),
+            confirmed: true,
+            waited_secs: 7,
+        };
+        let human = render_both(&tx);
+        assert!(human.contains("abc"));
+        assert!(human.contains("after 7s"));
+
+        let bal = CommandOutput::WaitBalance {
+            confirmed: 500,
+            confirmed_balance: 500,
+            target: 1000,
+            waited_secs: 3,
+        };
+        let human = render_both(&bal);
+        assert!(human.contains("Target balance 1000"));
+    }
+
+    #[test]
+    fn snapshot_human_outputs() {
+        assert!(render_both(&CommandOutput::SnapshotSave {
+            snapshot: "/snap/x.json".to_string()
+        })
+        .contains("Saved snapshot"));
+        assert!(render_both(&CommandOutput::SnapshotRestore {
+            restored: "/snap/x.json".to_string()
+        })
+        .contains("Restored snapshot"));
+        let list = CommandOutput::SnapshotList {
+            snapshots: vec!["/snap/alpha.json".to_string()],
+        };
+        let human = render_both(&list);
+        assert!(human.contains("alpha"));
+    }
+
+    #[test]
+    fn config_show_human_renders_table() {
+        let out = CommandOutput::ConfigShow {
+            config: json!({
+                "network": "signet",
+                "retries": 3,
+                "enabled": true,
+                "empty": serde_json::Value::Null,
+            }),
+        };
+        let human = render_both(&out);
+        assert!(human.contains("network"));
+        assert!(human.contains("signet"));
+    }
+
+    #[test]
+    fn config_set_and_unset_human() {
+        let set = CommandOutput::ConfigSet {
+            key: "network".to_string(),
+            value: "signet".to_string(),
+            saved: true,
+        };
+        assert!(render_both(&set).contains("Set network to signet"));
+
+        let unset = CommandOutput::ConfigUnset {
+            key: "network".to_string(),
+            was_set: true,
+            saved: true,
+        };
+        assert!(render_both(&unset).contains("Unset network"));
+
+        let unset_missing = CommandOutput::ConfigUnset {
+            key: "ghost".to_string(),
+            was_set: false,
+            saved: false,
+        };
+        assert!(render_both(&unset_missing).contains("ghost was not set"));
+    }
+
+    #[test]
+    fn lock_human_outputs() {
+        let info = CommandOutput::LockInfo {
+            profile: Some("p".to_string()),
+            lock_path: "/tmp/p.lock".to_string(),
+            locked: true,
+            owner_pid: Some(1234),
+            created_at_unix: Some(1_700_000_000),
+            age_secs: Some(42),
+        };
+        let human = render_both(&info);
+        assert!(human.contains("Lock Status"));
+        assert!(human.contains("1234"));
+        assert!(human.contains("42s"));
+
+        let cleared = CommandOutput::LockClear {
+            profile: None,
+            lock_path: "/tmp/p.lock".to_string(),
+            cleared: true,
+        };
+        assert!(render_both(&cleared).contains("Cleared lock"));
+
+        let nothing = CommandOutput::LockClear {
+            profile: None,
+            lock_path: "/tmp/p.lock".to_string(),
+            cleared: false,
+        };
+        assert!(render_both(&nothing).contains("No lock to clear"));
+    }
+
+    // ----- doctor / setup / scenario -----
+
+    #[test]
+    fn doctor_human_healthy_and_unhealthy() {
+        let healthy = CommandOutput::Doctor {
+            healthy: true,
+            esplora_url: "https://esplora".to_string(),
+            esplora_reachable: true,
+            ord_url: "https://ord".to_string(),
+            ord_reachable: true,
+            ord_indexing_height: Some(800_000),
+            ord_error: None,
+        };
+        let human = render_both(&healthy);
+        assert!(human.contains("Healthy"));
+        assert!(human.contains("800000"));
+
+        let unhealthy = CommandOutput::Doctor {
+            healthy: false,
+            esplora_url: "https://esplora".to_string(),
+            esplora_reachable: false,
+            ord_url: "https://ord".to_string(),
+            ord_reachable: false,
+            ord_indexing_height: None,
+            ord_error: Some("connection refused".to_string()),
+        };
+        let human = render_both(&unhealthy);
+        assert!(human.contains("Unhealthy"));
+        assert!(human.contains("connection refused"));
+    }
+
+    #[test]
+    fn setup_human_with_and_without_wallet() {
+        let with_wallet = CommandOutput::Setup {
+            config_saved: true,
+            wizard_used: false,
+            profile: Some("p".to_string()),
+            data_dir: "/data".to_string(),
+            password_env: "ZINC_PW".to_string(),
+            default_network: "signet".to_string(),
+            default_scheme: "dual".to_string(),
+            default_esplora_url: "https://esplora".to_string(),
+            default_ord_url: "https://ord".to_string(),
+            default_pulse_url: "https://pulse".to_string(),
+            wallet_requested: true,
+            wallet_initialized: true,
+            wallet_mode: Some("seed".to_string()),
+            wallet_phrase: Some("alpha bravo charlie".to_string()),
+            wallet_word_count: Some(12),
+        };
+        let human = render_both(&with_wallet);
+        assert!(human.contains("Setup complete"));
+        assert!(human.contains("alpha bravo charlie"));
+
+        let hidden_phrase = CommandOutput::Setup {
+            config_saved: true,
+            wizard_used: true,
+            profile: None,
+            data_dir: "/data".to_string(),
+            password_env: String::new(),
+            default_network: "regtest".to_string(),
+            default_scheme: "unified".to_string(),
+            default_esplora_url: String::new(),
+            default_ord_url: String::new(),
+            default_pulse_url: String::new(),
+            wallet_requested: true,
+            wallet_initialized: true,
+            wallet_mode: Some("watch".to_string()),
+            wallet_phrase: Some("<hidden; use --reveal to show>".to_string()),
+            wallet_word_count: None,
+        };
+        let human = render_both(&hidden_phrase);
+        assert!(human.contains("<hidden; use --reveal to show>"));
+    }
+
+    #[test]
+    fn scenario_human_outputs() {
+        let mine = CommandOutput::ScenarioMine {
+            blocks: 3,
+            address: "tb1qaddr".to_string(),
+            raw_output: "[\"hash\"]".to_string(),
+        };
+        let human = render_both(&mine);
+        assert!(human.contains("Mined 3 blocks"));
+
+        let fund = CommandOutput::ScenarioFund {
+            address: "tb1qaddr".to_string(),
+            amount_btc: "0.5".to_string(),
+            txid: "txid123".to_string(),
+            mine_blocks: 1,
+            mine_address: "tb1qminer".to_string(),
+            generated_blocks: "[\"h\"]".to_string(),
+        };
+        let human = render_both(&fund);
+        assert!(human.contains("Funded"));
+        assert!(human.contains("txid123"));
+
+        let reset = CommandOutput::ScenarioReset {
+            removed: vec!["/data/a".to_string(), "/data/b".to_string()],
+        };
+        let human = render_both(&reset);
+        assert!(human.contains("Scenario Reset"));
+        assert!(human.contains("/data/a"));
+    }
+
+    #[test]
+    fn inscription_list_human_empty_table_renders() {
+        let out = CommandOutput::InscriptionList {
+            inscriptions: vec![],
+            display_items: None,
+            thumb_mode_enabled: false,
+        };
+        // Agent output must be valid JSON; human output (table) is produced.
+        let agent = AgentPresenter::new().render(&out);
+        serde_json::from_str::<serde_json::Value>(&agent).expect("valid json");
+        let _human = HumanPresenter::new(false).render(&out);
+    }
+
+    // ----- offer variants -----
+
+    #[test]
+    fn offer_create_human_shows_header_and_ask() {
+        let out = CommandOutput::OfferCreate {
+            inscription: "insc".repeat(8),
+            ask_sats: 10_000,
+            fee_rate_sat_vb: 5,
+            seller_address: "tb1qselleraddress".to_string(),
+            seller_outpoint: "outpoint:0".to_string(),
+            seller_pubkey_hex: "ab".repeat(16),
+            expires_at_unix: 1_700_000_000,
+            thumbnail_lines: Some(vec!["THUMB".to_string()]),
+            hide_inscription_ids: false,
+            raw_response: json!({"ok": true}),
+        };
+        let human = render_both(&out);
+        assert!(human.contains("OFFER CREATE"));
+        assert!(human.contains("10000 sats"));
+        assert!(human.contains("THUMB"));
+    }
+
+    #[test]
+    fn offer_create_human_hides_inscription_when_requested() {
+        let out = CommandOutput::OfferCreate {
+            inscription: "insc".repeat(8),
+            ask_sats: 1,
+            fee_rate_sat_vb: 1,
+            seller_address: "tb1q".to_string(),
+            seller_outpoint: "o:0".to_string(),
+            seller_pubkey_hex: "ab".to_string(),
+            expires_at_unix: 1,
+            thumbnail_lines: None,
+            hide_inscription_ids: true,
+            raw_response: json!({}),
+        };
+        let human = render_both(&out);
+        assert!(human.contains("[thumbnail shown above]"));
+    }
+
+    #[test]
+    fn offer_publish_human_lists_relay_results() {
+        let out = CommandOutput::OfferPublish {
+            event_id: "evt".repeat(8),
+            accepted_relays: 2,
+            total_relays: 3,
+            publish_results: vec![
+                json!({"relay_url": "wss://r1", "accepted": true}),
+                json!({"relay_url": "wss://r2", "accepted": false}),
+            ],
+            raw_response: json!({}),
+        };
+        let human = render_both(&out);
+        assert!(human.contains("OFFER PUBLISH"));
+        assert!(human.contains("2/3"));
+        assert!(human.contains("wss://r1"));
+    }
+
+    #[test]
+    fn offer_discover_submit_list_accept_human() {
+        let discover = CommandOutput::OfferDiscover {
+            event_count: 4,
+            offer_count: 2,
+            offers: vec![json!({"inscription": "x"})],
+            thumbnail_lines: None,
+            hide_inscription_ids: false,
+            raw_response: json!({}),
+        };
+        assert!(render_both(&discover).contains("OFFER DISCOVER"));
+
+        let submit = CommandOutput::OfferSubmitOrd {
+            ord_url: "https://ord".to_string(),
+            submitted: true,
+            raw_response: json!({}),
+        };
+        let human = render_both(&submit);
+        assert!(human.contains("OFFER SUBMIT-ORD"));
+        assert!(human.contains("https://ord"));
+
+        let list = CommandOutput::OfferListOrd {
+            ord_url: "https://ord".to_string(),
+            count: 1,
+            offers: vec![json!({"inscription": "x"})],
+            raw_response: json!({}),
+        };
+        assert!(render_both(&list).contains("OFFER LIST-ORD"));
+
+        let accept = CommandOutput::OfferAccept {
+            inscription: "insc".repeat(8),
+            ask_sats: 5000,
+            txid: "txidacc".to_string(),
+            dry_run: true,
+            inscription_risk: "none".to_string(),
+            thumbnail_lines: None,
+            hide_inscription_ids: false,
+            raw_response: json!({}),
+        };
+        assert!(render_both(&accept).contains("OFFER ACCEPT"));
+    }
+
+    // ----- listing variants (json arm) -----
+
+    #[test]
+    fn listing_create_human_is_pretty_json() {
+        let out = CommandOutput::ListingCreate {
+            inscription: "insc".to_string(),
+            ask_sats: 1000,
+            fee_rate_sat_vb: 2,
+            seller_outpoint: "o:0".to_string(),
+            passthrough_outpoint: "o:1".to_string(),
+            seller_pubkey_hex: "ab".to_string(),
+            coordinator_pubkey_hex: "cd".to_string(),
+            expires_at_unix: 1,
+            raw_response: json!({}),
+        };
+        let human = render_both(&out);
+        // Human arm for listing falls back to pretty JSON.
+        assert!(serde_json::from_str::<serde_json::Value>(&human).is_ok());
+    }
+
+    // ----- intent variants -----
+
+    #[test]
+    fn intent_fixture_generate_and_verify_human() {
+        let gen = CommandOutput::IntentFixtureGenerate {
+            schema_version: "v1".to_string(),
+            pairing_id: "a".repeat(64),
+            intent_id: "i".repeat(64),
+            signed_pairing_request: json!({"x": 1}),
+            signed_pairing_ack: json!({"x": 2}),
+            signed_sign_intent: json!({"x": 3}),
+            signed_sign_intent_receipt: json!({"x": 4}),
+        };
+        assert!(render_both(&gen).contains("INTENT FIXTURE GENERATE"));
+
+        let verify = CommandOutput::IntentFixtureVerify {
+            schema_version: "v1".to_string(),
+            valid: true,
+            pairing_id: "a".repeat(64),
+            intent_id: "i".repeat(64),
+        };
+        assert!(render_both(&verify).contains("INTENT FIXTURE"));
+    }
+
+    #[test]
+    fn intent_send_and_wait_receipt_human() {
+        let send = CommandOutput::IntentSend {
+            pairing_id: "a".repeat(64),
+            fingerprint: "fp".to_string(),
+            intent_id: "i".repeat(64),
+            action: "sign".to_string(),
+            accepted_relays: 1,
+            total_relays: 2,
+        };
+        assert!(render_both(&send).contains("INTENT SENT"));
+
+        let receipt = CommandOutput::IntentWaitReceipt {
+            pairing_id: "a".repeat(64),
+            fingerprint: "fp".to_string(),
+            intent_id: "i".repeat(64),
+            receipt_id: "r".repeat(64),
+            status: "accepted".to_string(),
+            signer_pubkey_hex: "ab".repeat(16),
+            error_message: None,
+        };
+        assert!(render_both(&receipt).contains("INTENT RECEIPT"));
+    }
+
+    #[test]
+    fn intent_pair_await_timeout_finish_human() {
+        let timeout = CommandOutput::IntentPairAwaitTimeout {
+            pairing_id: "a".repeat(64),
+            fingerprint: "fp".to_string(),
+            request_path: "/tmp/req.json".to_string(),
+            links_path: "/tmp/links.json".to_string(),
+        };
+        assert!(render_both(&timeout).contains("INTENT PAIR"));
+
+        let finish = CommandOutput::IntentPairFinish {
+            paired: true,
+            pairing_id: "a".repeat(64),
+            fingerprint: "fp".to_string(),
+            agent_pubkey_hex: "b".repeat(64),
+            wallet_pubkey_hex: "c".repeat(64),
+            granted_capabilities: json!({"sign": true}),
+            linked_at_unix: 1_700_000_000,
+            ack_source: "relay".to_string(),
+            completion_receipt_published: true,
+            links_path: "/tmp/links.json".to_string(),
+        };
+        assert!(render_both(&finish).contains("INTENT PAIR"));
+    }
+
+    #[test]
+    fn intent_pair_list_show_update_human() {
+        let list = CommandOutput::IntentPairList {
+            links_path: "/tmp/links.json".to_string(),
+            total: 1,
+            active: 1,
+            paused: 0,
+            revoked: 0,
+            rotated: 0,
+            links: vec![link_entry()],
+        };
+        assert!(render_both(&list).contains("INTENT LINKS"));
+
+        let show = CommandOutput::IntentPairShow {
+            links_path: "/tmp/links.json".to_string(),
+            link: link_entry(),
+        };
+        assert!(render_both(&show).contains("INTENT LINK"));
+
+        let update = CommandOutput::IntentPairStatusUpdate {
+            links_path: "/tmp/links.json".to_string(),
+            pairing_id: "a".repeat(64),
+            fingerprint: "fp".to_string(),
+            status: "paused".to_string(),
+            updated_at_unix: 1_700_000_000,
+        };
+        assert!(render_both(&update).contains("INTENT LINK UPDATED"));
+    }
+
+    // ----- message / rawjson / generic -----
+
+    #[test]
+    fn message_human_is_plain_text_agent_is_json() {
+        let out = CommandOutput::Message("hello".to_string());
+        assert_eq!(HumanPresenter::new(false).render(&out), "hello");
+        let agent = AgentPresenter::new().render(&out);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&agent)
+                .unwrap()
+                .as_str(),
+            Some("hello")
+        );
+    }
+
+    #[test]
+    fn raw_json_and_generic_render_pretty_json() {
+        let raw = CommandOutput::RawJson(json!({"k": "v"}));
+        let human = render_both(&raw);
+        assert!(human.contains("\"k\""));
+
+        let generic = CommandOutput::Generic(json!({"g": 1}));
+        let human = HumanPresenter::new(false).render(&generic);
+        assert!(human.contains("\"g\""));
+    }
+
+    #[test]
+    fn config_show_agent_is_pretty_json_object() {
+        let out = CommandOutput::ConfigShow {
+            config: json!({"network": "signet"}),
+        };
+        let agent = AgentPresenter::new().render(&out);
+        let parsed: serde_json::Value = serde_json::from_str(&agent).unwrap();
+        assert_eq!(parsed["network"], "signet");
+    }
+
+    #[test]
+    fn setup_agent_emits_nested_defaults_and_wallet() {
+        let out = CommandOutput::Setup {
+            config_saved: true,
+            wizard_used: false,
+            profile: Some("p".to_string()),
+            data_dir: "/data".to_string(),
+            password_env: "ENV".to_string(),
+            default_network: "signet".to_string(),
+            default_scheme: "dual".to_string(),
+            default_esplora_url: "https://esplora".to_string(),
+            default_ord_url: "https://ord".to_string(),
+            default_pulse_url: "https://pulse".to_string(),
+            wallet_requested: false,
+            wallet_initialized: false,
+            wallet_mode: None,
+            wallet_phrase: None,
+            wallet_word_count: None,
+        };
+        let agent = AgentPresenter::new().render(&out);
+        let parsed: serde_json::Value = serde_json::from_str(&agent).unwrap();
+        assert_eq!(parsed["defaults"]["network"], "signet");
+        assert_eq!(parsed["wallet"]["requested"], false);
+    }
 }
 
 impl Presenter for HumanPresenter {

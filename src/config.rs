@@ -548,4 +548,240 @@ mod tests {
         assert_eq!(value.as_str(), Some("nested"));
         assert_eq!(cfg.payment_address_type.as_deref(), Some("nested"));
     }
+
+    use super::{
+        default_esplora_url, default_ord_url, default_pulse_url, read_profile, unset_config_field,
+        write_profile, AccountState, NetworkArg, PaymentAddressTypeArg, Profile, ProfileModeArg,
+        PulseSession, SchemeArg,
+    };
+    use zinc_core::{AddressScheme, Network, PaymentAddressType, ProfileMode};
+
+    fn sample_profile() -> Profile {
+        Profile {
+            version: 1,
+            scan_policy_version: 1,
+            network: NetworkArg::Signet,
+            scheme: SchemeArg::Dual,
+            payment_address_type: PaymentAddressTypeArg::Native,
+            account_index: 0,
+            esplora_url: "https://esplora".to_string(),
+            ord_url: "https://ord".to_string(),
+            pulse_url: "https://pulse".to_string(),
+            bitcoin_cli: "bitcoin-cli".to_string(),
+            bitcoin_cli_args: vec!["-signet".to_string()],
+            encrypted_mnemonic: Some("ciphertext".to_string()),
+            mode: ProfileModeArg::Seed,
+            taproot_xpub: None,
+            payment_xpub: None,
+            watch_address: None,
+            account_gap_limit: super::default_gap_limit(),
+            address_scan_depth: super::default_scan_depth(),
+            accounts: std::collections::BTreeMap::new(),
+            updated_at_unix: 1,
+            pulse_session: None,
+        }
+    }
+
+    #[test]
+    fn config_field_parse_roundtrips_canonical_keys() {
+        for key in super::CONFIG_KEYS {
+            let field = ConfigField::parse(key).expect("known key parses");
+            assert_eq!(&field.as_str(), key);
+        }
+    }
+
+    #[test]
+    fn config_field_parse_accepts_underscore_aliases() {
+        assert_eq!(ConfigField::parse("data_dir").unwrap(), ConfigField::DataDir);
+        assert_eq!(
+            ConfigField::parse("password_env").unwrap(),
+            ConfigField::PasswordEnv
+        );
+        assert_eq!(
+            ConfigField::parse("payment_address_type").unwrap(),
+            ConfigField::PaymentAddressType
+        );
+        assert_eq!(
+            ConfigField::parse("esplora_url").unwrap(),
+            ConfigField::EsploraUrl
+        );
+        assert_eq!(ConfigField::parse("ord_url").unwrap(), ConfigField::OrdUrl);
+        assert_eq!(
+            ConfigField::parse("pulse_url").unwrap(),
+            ConfigField::PulseUrl
+        );
+    }
+
+    #[test]
+    fn config_field_parse_unknown_key_suggests_close_match() {
+        let err = ConfigField::parse("netwrok").expect_err("unknown key rejected");
+        match err {
+            AppError::Invalid(msg) => {
+                assert!(msg.contains("unknown config key"));
+                assert!(msg.contains("network"));
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_config_field_stores_string_fields_trimmed() {
+        let mut cfg = PersistedConfig::default();
+        set_config_field(&mut cfg, ConfigField::Profile, "  alpha ").unwrap();
+        assert_eq!(cfg.profile.as_deref(), Some("alpha"));
+        set_config_field(&mut cfg, ConfigField::DataDir, "/data").unwrap();
+        assert_eq!(cfg.data_dir.as_deref(), Some("/data"));
+        set_config_field(&mut cfg, ConfigField::PasswordEnv, "ENV").unwrap();
+        assert_eq!(cfg.password_env.as_deref(), Some("ENV"));
+        set_config_field(&mut cfg, ConfigField::EsploraUrl, "https://e").unwrap();
+        assert_eq!(cfg.esplora_url.as_deref(), Some("https://e"));
+        set_config_field(&mut cfg, ConfigField::OrdUrl, "https://o").unwrap();
+        assert_eq!(cfg.ord_url.as_deref(), Some("https://o"));
+        set_config_field(&mut cfg, ConfigField::PulseUrl, "https://p").unwrap();
+        assert_eq!(cfg.pulse_url.as_deref(), Some("https://p"));
+        set_config_field(&mut cfg, ConfigField::PulseApiToken, "tok").unwrap();
+        assert_eq!(cfg.pulse_api_token.as_deref(), Some("tok"));
+    }
+
+    #[test]
+    fn set_config_field_rejects_empty_value() {
+        let mut cfg = PersistedConfig::default();
+        let err = set_config_field(&mut cfg, ConfigField::Profile, "   ")
+            .expect_err("empty value rejected");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn set_config_field_ascii_parses_bool() {
+        let mut cfg = PersistedConfig::default();
+        let value = set_config_field(&mut cfg, ConfigField::Ascii, "yes").unwrap();
+        assert_eq!(value.as_bool(), Some(true));
+        assert_eq!(cfg.ascii, Some(true));
+        let err = set_config_field(&mut cfg, ConfigField::Ascii, "maybe")
+            .expect_err("invalid bool rejected");
+        assert!(matches!(err, AppError::Invalid(_)));
+    }
+
+    #[test]
+    fn unset_config_field_reports_presence() {
+        let mut cfg = PersistedConfig::default();
+        assert!(!unset_config_field(&mut cfg, ConfigField::Network));
+        cfg.network = Some("signet".to_string());
+        assert!(unset_config_field(&mut cfg, ConfigField::Network));
+        assert!(cfg.network.is_none());
+    }
+
+    #[test]
+    fn display_impls_are_canonical() {
+        assert_eq!(NetworkArg::Bitcoin.to_string(), "bitcoin");
+        assert_eq!(NetworkArg::Regtest.to_string(), "regtest");
+        assert_eq!(SchemeArg::Unified.to_string(), "unified");
+        assert_eq!(SchemeArg::Dual.to_string(), "dual");
+        assert_eq!(ProfileModeArg::Seed.to_string(), "seed");
+        assert_eq!(ProfileModeArg::WatchAddress.to_string(), "watch-address");
+        assert_eq!(PaymentAddressTypeArg::Legacy.to_string(), "legacy");
+    }
+
+    #[test]
+    fn network_arg_converts_to_and_from_core() {
+        for arg in [
+            NetworkArg::Bitcoin,
+            NetworkArg::Signet,
+            NetworkArg::Testnet,
+            NetworkArg::Regtest,
+        ] {
+            let core: Network = arg.into();
+            let back: NetworkArg = core.into();
+            assert_eq!(arg.to_string(), back.to_string());
+        }
+        // Core-only Testnet4 folds into Testnet.
+        let folded: NetworkArg = Network::Testnet4.into();
+        assert!(matches!(folded, NetworkArg::Testnet));
+    }
+
+    #[test]
+    fn scheme_and_payment_and_mode_conversions() {
+        assert_eq!(AddressScheme::from(SchemeArg::Unified), AddressScheme::Unified);
+        assert_eq!(SchemeArg::from(AddressScheme::Dual), SchemeArg::Dual);
+
+        assert_eq!(
+            PaymentAddressType::from(PaymentAddressTypeArg::Nested),
+            PaymentAddressType::NestedSegwit
+        );
+        assert_eq!(
+            PaymentAddressTypeArg::from(PaymentAddressType::Legacy),
+            PaymentAddressTypeArg::Legacy
+        );
+
+        assert_eq!(ProfileMode::from(ProfileModeArg::Seed), ProfileMode::Seed);
+        // Both Watch variants map to the core Watch mode.
+        assert_eq!(ProfileMode::from(ProfileModeArg::Watch), ProfileMode::Watch);
+        assert_eq!(
+            ProfileMode::from(ProfileModeArg::WatchAddress),
+            ProfileMode::Watch
+        );
+        assert_eq!(ProfileModeArg::from(ProfileMode::Watch), ProfileModeArg::Watch);
+    }
+
+    #[test]
+    fn default_url_helpers_match_network() {
+        assert_eq!(default_esplora_url(NetworkArg::Regtest), "https://esplora-rt.exittheloop.com");
+        assert_eq!(default_ord_url(NetworkArg::Signet), "https://signet.ordinals.com");
+        assert_eq!(default_pulse_url(NetworkArg::Regtest), "http://localhost:8080");
+        assert_eq!(default_pulse_url(NetworkArg::Bitcoin), "");
+    }
+
+    #[test]
+    fn persisted_config_serde_roundtrip() {
+        let mut cfg = PersistedConfig::default();
+        cfg.network = Some("signet".to_string());
+        cfg.ascii = Some(true);
+        cfg.pulse_session = Some(PulseSession {
+            access_token: "at".to_string(),
+            refresh_token: Some("rt".to_string()),
+            expires_at_unix: 42,
+            metadata: Some(serde_json::json!({"k": "v"})),
+        });
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: PersistedConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.network.as_deref(), Some("signet"));
+        assert_eq!(back.ascii, Some(true));
+        assert_eq!(back.pulse_session, cfg.pulse_session);
+    }
+
+    #[test]
+    fn profile_account_state_default_and_set() {
+        let mut profile = sample_profile();
+        // No stored state yet -> default (all None).
+        let state = profile.account_state();
+        assert!(state.persistence_json.is_none());
+        assert!(state.inscriptions_json.is_none());
+
+        profile.set_account_state(AccountState {
+            persistence_json: Some("{\"p\":1}".to_string()),
+            inscriptions_json: None,
+        });
+        let state = profile.account_state();
+        assert_eq!(state.persistence_json.as_deref(), Some("{\"p\":1}"));
+    }
+
+    #[test]
+    fn write_then_read_profile_roundtrips() {
+        let dir = std::env::temp_dir().join(format!("zinc-cli-cfg-{}", std::process::id()));
+        let path = dir.join("profile.json");
+        let profile = sample_profile();
+        write_profile(&path, &profile).expect("write profile");
+        let loaded = read_profile(&path).expect("read profile");
+        assert_eq!(loaded.network.to_string(), "signet");
+        assert_eq!(loaded.esplora_url, "https://esplora");
+        assert_eq!(loaded.encrypted_mnemonic.as_deref(), Some("ciphertext"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_profile_missing_path_is_not_found() {
+        let path = std::path::Path::new("/nonexistent/zinc-cli/profile-does-not-exist.json");
+        let err = read_profile(path).expect_err("missing profile errors");
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
 }

@@ -196,6 +196,32 @@ pub fn resolve_psbt_source(
     ))
 }
 
+/// Validate a user-supplied name that will be used as a single filename
+/// component (e.g. a snapshot name). Rejects anything that could escape the
+/// intended directory via path separators, `..`, NUL, an absolute path, or a
+/// leading dot. Allows ordinary names like `my-snap_2` or `v1.0`.
+pub fn validate_file_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::Invalid("name cannot be empty".to_string()));
+    }
+    if name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+        || name.contains('\0')
+        || Path::new(name).is_absolute()
+    {
+        return Err(AppError::Invalid(format!(
+            "invalid name {name:?}: must not contain path separators or '..'"
+        )));
+    }
+    if name.starts_with('.') {
+        return Err(AppError::Invalid(format!(
+            "invalid name {name:?}: must not start with '.'"
+        )));
+    }
+    Ok(())
+}
+
 pub fn parse_indices(s: Option<&str>) -> Result<Vec<usize>, AppError> {
     let s = match s {
         Some(s) => s,
@@ -352,6 +378,33 @@ mod tests {
         let no_hint = unknown_with_hint("network", "zzzzzzzzz", &candidates);
         assert!(no_hint.contains("unknown network: zzzzzzzzz"));
         assert!(!no_hint.contains("did you mean"));
+    }
+
+    #[test]
+    fn validate_file_name_accepts_safe_names() {
+        for name in ["snap1", "my-snapshot", "backup_2024", "v1.0", "a"] {
+            assert!(validate_file_name(name).is_ok(), "{name} should be allowed");
+        }
+    }
+
+    #[test]
+    fn validate_file_name_rejects_traversal_and_separators() {
+        for bad in [
+            "",
+            "..",
+            "../etc/passwd",
+            "a/b",
+            "a\\b",
+            "/abs/path",
+            ".hidden",
+            "foo/../bar",
+            "with\0nul",
+        ] {
+            assert!(
+                matches!(validate_file_name(bad), Err(AppError::Invalid(_))),
+                "{bad:?} should be rejected"
+            );
+        }
     }
 
     #[test]

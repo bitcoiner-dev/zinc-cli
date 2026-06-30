@@ -506,6 +506,10 @@ fn resolve_effective_cli(mut cli: Cli) -> Result<Cli, AppError> {
         cli.ascii = true;
     }
 
+    if let Some(ref profile) = cli.profile {
+        crate::utils::validate_file_name(profile)?;
+    }
+
     Ok(cli)
 }
 

@@ -31,3 +31,7 @@ filing any new report on these topics.
 **Status:** Working as intended. Do not report as a vulnerability.
 **Analysis:** `run_bitcoin_cli` executes `std::process::Command::new(&profile.bitcoin_cli).args(...)`. There is no shell, so there is no `sh -c` / command-injection surface. The binary path and its arguments come from the user's own profile config on their own machine — the same trust level as the user invoking the CLI. A configurable external-binary path (custom `bitcoin-cli` location/flags) is a required feature, not attacker-controllable input.
 **Prevention:** Keep external-process invocation argv-based (`Command::args`), never a shell string. No validation of the user-owned binary path is required.
+## 2024-06-30 - Path Traversal in Profile Handling
+**Vulnerability:** Path Traversal
+**Learning:** `Path::join` with user input can traverse outside the intended directory if the input contains absolute paths or `..` traversals.
+**Prevention:** Always validate user-provided strings used in file paths (e.g., using a file name validation function) before passing them to `Path::join`.

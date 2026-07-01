@@ -31,3 +31,8 @@ filing any new report on these topics.
 **Status:** Working as intended. Do not report as a vulnerability.
 **Analysis:** `run_bitcoin_cli` executes `std::process::Command::new(&profile.bitcoin_cli).args(...)`. There is no shell, so there is no `sh -c` / command-injection surface. The binary path and its arguments come from the user's own profile config on their own machine — the same trust level as the user invoking the CLI. A configurable external-binary path (custom `bitcoin-cli` location/flags) is a required feature, not attacker-controllable input.
 **Prevention:** Keep external-process invocation argv-based (`Command::args`), never a shell string. No validation of the user-owned binary path is required.
+
+## 2024-03-24 - Path Traversal in Profile Names
+**Vulnerability:** The CLI application joined the user-provided profile name directly onto the profiles directory (e.g., `profiles.join(format!("{}.json", config.profile))`) without validation. A malicious profile name like `../etc/passwd` or `/etc/shadow` could bypass the intended directory, leading to an arbitrary file read/write or path traversal vulnerability. This affected both `profile_path` and `snapshot_dir` resolutions.
+**Learning:** Even internal configuration components that appear under the user's control can be attack vectors if they bypass intended containment boundaries. Validation of all user-supplied path components is necessary before executing a `Path::join`, as Rust's path concatenation allows arbitrary upward traversal and absolute path overriding.
+**Prevention:** Always validate configuration variables (like profile names) using the `crate::utils::validate_file_name` function before passing them to path construction logic, especially `Path::join`.

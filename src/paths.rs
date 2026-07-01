@@ -56,6 +56,7 @@ pub fn home_dir() -> PathBuf {
 }
 
 pub fn profile_path(config: &crate::config::ServiceConfig<'_>) -> Result<PathBuf, AppError> {
+    crate::utils::validate_file_name(config.profile)?;
     let root = data_dir(config);
     let profiles = root.join("profiles");
     if !profiles.exists() {
@@ -70,6 +71,7 @@ pub fn profile_lock_path(config: &crate::config::ServiceConfig<'_>) -> Result<Pa
 }
 
 pub fn snapshot_dir(config: &crate::config::ServiceConfig<'_>) -> Result<PathBuf, AppError> {
+    crate::utils::validate_file_name(config.profile)?;
     let root = data_dir(config);
     let directory = root.join("snapshots").join(config.profile);
     create_secure_dir_all(&directory)
@@ -174,6 +176,30 @@ mod tests {
         let snap = snapshot_dir(&svc).expect("snapshot dir");
         assert!(snap.ends_with("snapshots/myprofile"));
         assert!(snap.is_dir());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn profile_path_rejects_path_traversal() {
+        let dir = unique_dir("profile_trav");
+        let bad_profiles = vec!["../etc/passwd", "/etc/shadow", "my/profile"];
+        for bad in bad_profiles {
+            let svc = service(&dir, bad);
+            let err = profile_path(&svc).unwrap_err();
+            assert!(matches!(err, crate::error::AppError::Invalid(_)));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn snapshot_dir_rejects_path_traversal() {
+        let dir = unique_dir("snap_trav");
+        let bad_profiles = vec!["../etc/passwd", "/etc/shadow", "my/profile"];
+        for bad in bad_profiles {
+            let svc = service(&dir, bad);
+            let err = snapshot_dir(&svc).unwrap_err();
+            assert!(matches!(err, crate::error::AppError::Invalid(_)));
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

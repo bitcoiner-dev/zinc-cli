@@ -31,3 +31,8 @@ filing any new report on these topics.
 **Status:** Working as intended. Do not report as a vulnerability.
 **Analysis:** `run_bitcoin_cli` executes `std::process::Command::new(&profile.bitcoin_cli).args(...)`. There is no shell, so there is no `sh -c` / command-injection surface. The binary path and its arguments come from the user's own profile config on their own machine — the same trust level as the user invoking the CLI. A configurable external-binary path (custom `bitcoin-cli` location/flags) is a required feature, not attacker-controllable input.
 **Prevention:** Keep external-process invocation argv-based (`Command::args`), never a shell string. No validation of the user-owned binary path is required.
+
+## 2026-06-30 - Path Traversal in Profile Names
+**Vulnerability:** The CLI application resolved user profile configurations by dynamically joining the `config.profile` string to the profile storage directory (`data_dir().join("profiles").join(format!("{}.json", config.profile))`). Without validation, an attacker could supply `../../../etc/passwd` to read or write files outside the intended sandbox (path traversal).
+**Learning:** Any user-supplied value used directly as a file or directory name is a dangerous path traversal vector. Even core configuration loading mechanisms are vulnerable if they don't validate the requested identifier before using `Path::join()`.
+**Prevention:** Always validate all user inputs used as filename components (e.g., using `crate::utils::validate_file_name`) *before* passing them to path construction functions like `Path::join` or `with_extension`.

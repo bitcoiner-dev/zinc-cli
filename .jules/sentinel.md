@@ -31,3 +31,8 @@ filing any new report on these topics.
 **Status:** Working as intended. Do not report as a vulnerability.
 **Analysis:** `run_bitcoin_cli` executes `std::process::Command::new(&profile.bitcoin_cli).args(...)`. There is no shell, so there is no `sh -c` / command-injection surface. The binary path and its arguments come from the user's own profile config on their own machine — the same trust level as the user invoking the CLI. A configurable external-binary path (custom `bitcoin-cli` location/flags) is a required feature, not attacker-controllable input.
 **Prevention:** Keep external-process invocation argv-based (`Command::args`), never a shell string. No validation of the user-owned binary path is required.
+
+## 2024-03-24 - Redundant and Insecure Directory Creation
+**Vulnerability:** In `src/commands/snapshot.rs`, `fs::create_dir_all(&snap_dir)` is called using standard library functions, which rely on the default umask (insecure defaults for sensitive data). However, this call is actually completely redundant and harmless because the line right above it, `snapshot_dir(cli)?`, already securely creates the same directory with `0o700` permissions.
+**Learning:** Redundant standard library file system operations for sensitive directories can cause confusion during security audits, leading to false positives about insecure default permissions, even if the directory was previously created securely.
+**Prevention:** Avoid redundant `fs::create_dir_all` calls when the underlying path resolution function (like `snapshot_dir`) already securely handles directory initialization.

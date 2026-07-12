@@ -31,3 +31,8 @@ filing any new report on these topics.
 **Status:** Working as intended. Do not report as a vulnerability.
 **Analysis:** `run_bitcoin_cli` executes `std::process::Command::new(&profile.bitcoin_cli).args(...)`. There is no shell, so there is no `sh -c` / command-injection surface. The binary path and its arguments come from the user's own profile config on their own machine — the same trust level as the user invoking the CLI. A configurable external-binary path (custom `bitcoin-cli` location/flags) is a required feature, not attacker-controllable input.
 **Prevention:** Keep external-process invocation argv-based (`Command::args`), never a shell string. No validation of the user-owned binary path is required.
+
+## 2024-03-24 - Profile Path Traversal
+**Vulnerability:** The `profile_path` and `snapshot_dir` functions used the user-supplied `config.profile` string (sourced from the `--profile` CLI flag or `ZINC_CLI_PROFILE` env var) directly in `Path::join` without prior validation. Because `Path::join` replaces the base directory if given an absolute path (or traverses upward with `..`), an attacker or a malicious configuration could specify a profile name like `../../../etc/passwd` to read or overwrite arbitrary files on the filesystem.
+**Learning:** Any user-controllable input, including CLI flags and environment variables that are eventually used to construct file paths, must be strictly validated before being passed to `Path::join`.
+**Prevention:** Always use `crate::utils::validate_file_name` to validate any string that will be used as a single filename component before passing it to `Path::join`.
